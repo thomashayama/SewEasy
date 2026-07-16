@@ -1,57 +1,56 @@
-# GarmentCode: Programming Parametric Sewing Patterns
+# SewEasy: Programming Parametric Sewing Patterns
 
-![Examples of garments sampled from GarmentCode configurator](https://github.com/maria-korosteleva/GarmentCode/raw/main/assets/img/header.png)
+![Examples of garments sampled from the SewEasy configurator](https://github.com/thomashayama/SewEasy/raw/main/assets/img/header.png)
 
-Official Implementation of [GarmentCode: Programming Parametric Sewing Patterns](https://igl.ethz.ch/projects/garmentcode/) and [GarmentCodeData: A Dataset of 3D Made-to-Measure Garments With Sewing Patterns](https://igl.ethz.ch/projects/GarmentCodeData/).
+SewEasy is a modular programming framework for designing parametric sewing patterns, with a browser-based garment configurator and tools for draping patterns into simulated 3D garments.
 
-> You can find the body measurements part of the project here: https://github.com/mbotsch/GarmentMeasurements 
+SewEasy is a fork of [GarmentCode](https://github.com/maria-korosteleva/GarmentCode) by Maria Korosteleva et al., the official implementation of [GarmentCode: Programming Parametric Sewing Patterns](https://igl.ethz.ch/projects/garmentcode/) (SIGGRAPH Asia 2023) and [GarmentCodeData: A Dataset of 3D Made-to-Measure Garments With Sewing Patterns](https://igl.ethz.ch/projects/GarmentCodeData/) (ECCV 2024). All credit for the original system belongs to its authors — see [Attribution](#attribution) below.
 
-## News
-
-**[June 3, 2025]** GarmentCode online configurator demo is back online 🥳
-
-**[April, 2025]** GarmentCode online configurator demo is temporarily unavailable. We are working on bringing it back online!
-
-**[Nov 20, 2024]** GarmentCode configurator demo is now ONLINE 🥳 Check it out: https://garmentcode.ethz.ch/ (not for mobile) 
-
-**[Sept 4, 2024]** We release a new version of the dataset with a few fixes and updates: [GarmentCodeData (v2)](https://doi.org/10.3929/ethz-b-000690432). See documentation for new data version for more details.
-
-**[Aug 30, 2024]** Major release -- implementation of [GarmentCodeData](https://igl.ethz.ch/projects/GarmentCodeData/) in `pygarment v2.0.0`, new GUI, and other updates and improvements. Basic JSON representation classes are now part of PyGarment library! See CHANGELOG for more details
-
-**[July 1, 2024]** [GarmentCodeData](https://igl.ethz.ch/projects/GarmentCodeData/) is accepted to ECCV!
-
-**[May 29, 2024]** First release of [GarmentCodeData](https://doi.org/10.3929/ethz-b-000673889) dataset!
-
-**[Oct 18, 2023]** First release of GarmentCode!
+> The body measurements part of the upstream project lives here: https://github.com/mbotsch/GarmentMeasurements
 
 ## Documents
 
-1. [Installation](https://github.com/maria-korosteleva/GarmentCode/blob/main/docs/Installation.md)
-2. [Running Configurator](https://github.com/maria-korosteleva/GarmentCode/blob/main/docs/Running_garmentcode.md) 
-3. [Running Data Generation (warp)](https://github.com/maria-korosteleva/GarmentCode/blob/main/docs/Running_data_generation.md) 
-3. [Body measurements](https://github.com/maria-korosteleva/GarmentCode/blob/main/docs/Body%20Measurements%20GarmentCode.pdf)
-4. [Dataset documentation](https://www.research-collection.ethz.ch/handle/20.500.11850/673889)
-3. [Running Old Maya+Qualoth tools](https://github.com/maria-korosteleva/GarmentCode/blob/main/docs/Running_Maya_Qualoth.md) 
+1. [Installation](https://github.com/thomashayama/SewEasy/blob/main/docs/Installation.md)
+2. [Running Configurator](https://github.com/thomashayama/SewEasy/blob/main/docs/Running_seweasy.md)
+3. [Running Data Generation (warp)](https://github.com/thomashayama/SewEasy/blob/main/docs/Running_data_generation.md)
+4. [Body measurements](https://github.com/thomashayama/SewEasy/blob/main/docs/Body%20Measurements%20GarmentCode.pdf)
+5. [Dataset documentation](https://www.research-collection.ethz.ch/handle/20.500.11850/673889)
+6. [Running Old Maya+Qualoth tools](https://github.com/thomashayama/SewEasy/blob/main/docs/Running_Maya_Qualoth.md)
 
 ## Navigation
 
 ### Library
 
-[PyGarment](https://github.com/maria-korosteleva/GarmentCode/tree/main/pygarment) is the core library described in the GarmentCode paper. It contains the base types (Edge, Panel, Component, Interface, etc.), as well as edge factory and various helpers and operators that help you design sewing patterns.  
+[seweasy](https://github.com/thomashayama/SewEasy/tree/main/seweasy) is the core library, described in the GarmentCode paper. It contains the base types (Edge, Panel, Component, Interface, etc.), as well as edge factory and various helpers and operators that help you design sewing patterns.
 
-See [Installation instructions](https://github.com/maria-korosteleva/GarmentCode/tree/main/docs/Installation.md) before use.
+See [Installation instructions](https://github.com/thomashayama/SewEasy/tree/main/docs/Installation.md) before use.
 
 ### Examples
 
-* [assets/garment_programs/](https://github.com/maria-korosteleva/GarmentCode/tree/main/assets/garment_programs/) contains the code of garment components designed using PyGarment. 
-* [assets/design_params/](https://github.com/maria-korosteleva/GarmentCode/tree/main/assets/design_params/), [assets/bodies/](https://github.com/maria-korosteleva/GarmentCode/tree/main/assets/bodies/) contain examples of design and body measurements presets. They can be used in both GarmentCode GUI and `test_garmentcode.py` script.
+* [assets/garment_programs/](https://github.com/thomashayama/SewEasy/tree/main/assets/garment_programs/) contains the code of garment components designed using the seweasy library.
+* [assets/design_params/](https://github.com/thomashayama/SewEasy/tree/main/assets/design_params/), [assets/bodies/](https://github.com/thomashayama/SewEasy/tree/main/assets/bodies/) contain examples of design and body measurements presets. They can be used in both the SewEasy GUI and the `test_seweasy.py` script.
 
-> NOTE: [assets/design_params/default.yaml](https://github.com/maria-korosteleva/GarmentCode/blob/main/assets/design_params/default.yaml) is the setup used by GUI on load. Changing this file results in changes in the GUI initial state =) 
+> NOTE: [assets/design_params/default.yaml](https://github.com/thomashayama/SewEasy/blob/main/assets/design_params/default.yaml) is the setup used by GUI on load. Changing this file results in changes in the GUI initial state =)
 
+## Attribution
+
+This project is a fork of [GarmentCode](https://github.com/maria-korosteleva/GarmentCode) (MIT License, Copyright (c) 2024 Maria Korosteleva). The original system was created by:
+
+* [Maria Korosteleva](https://github.com/maria-korosteleva)
+* [Jasmin Koller](https://github.com/JasminKoller)
+* [Yuhan Zhang](https://github.com/yuhan-zh)
+* [Yuhan Liu](https://github.com/yuhanliu-tech)
+* [Ami Beuret](https://github.com/amibeuret)
+* [Olga Sorkine-Hornung](https://igl.ethz.ch/people/sorkine/index.php)
+
+The body measurements team developed [GarmentMeasurements](https://github.com/mbotsch/GarmentMeasurements):
+* [Fabian Kemper](https://github.com/fabiankemper)
+* [Stephan Wenninger](https://github.com/stephan-wenninger)
+* [Mario Botsch](https://github.com/mbotsch)
 
 ## Citation
 
-If you are using our system in your research, please cite our papers:
+If you are using this system in your research, please cite the original papers:
 
 ```bibtex
 @inproceedings{GarmentCodeData:2024,
@@ -83,22 +82,4 @@ If you are using our system in your research, please cite our papers:
 
 ## Issues, questions, suggestions
 
-Please post your issues and questions to [GitHub Issues](https://github.com/maria-korosteleva/GarmentCode/issues).
-
-For other requests you can find my info on https://korosteleva.com/.  
-
-## Contributors
-
-This project is brought to life by these people:
-
-* [Maria Korosteleva](https://github.com/maria-korosteleva)
-* [Jasmin Koller](https://github.com/JasminKoller)
-* [Yuhan Zhang](https://github.com/yuhan-zh)
-* [Yuhan Liu](https://github.com/yuhanliu-tech)
-* [Ami Beuret](https://github.com/amibeuret)
-* [Olga Sorkine-Hornung](https://igl.ethz.ch/people/sorkine/index.php)
-
-The body measurements team developed [GarmentMeasurements](https://github.com/mbotsch/GarmentMeasurements): 
-* [Fabian Kemper](https://github.com/fabiankemper)
-* [Stephan Wenninger](https://github.com/stephan-wenninger)
-* [Mario Botsch](https://github.com/mbotsch)
+Please post issues and questions about SewEasy to [GitHub Issues](https://github.com/thomashayama/SewEasy/issues). For the original GarmentCode project, see the [upstream repository](https://github.com/maria-korosteleva/GarmentCode).

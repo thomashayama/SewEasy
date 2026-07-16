@@ -1,4 +1,4 @@
-# Running GarmentCode Configurator 
+# Running SewEasy Configurator 
 
 ## How to run (GUI)
 
@@ -7,7 +7,7 @@ From the root directory run
 python gui.py
 ```
 
-It will launch a local version of GarmentCode web-interface. 
+It will launch a local version of SewEasy web-interface. 
 
 GUI can load body and design parameter files and display the corresponding sewing pattern right away, as well as display draped 3D models.
 Design files should be compatible with `MetaGarment` object (all examples provided [assets/design_params/](../assets/design_params) are compatible).
@@ -20,11 +20,11 @@ Design files should be compatible with `MetaGarment` object (all examples provid
 * All the 3D drapes are currently fitted to a neutral body model with the current design parameters. 
 * [assets/design_params/default.yaml](../assets/design_params/default.yaml)  is the setup used by GUI on load. Changing this file results in changes in the GUI initial state =)
 
-## How to run GarmentCode (command line)
+## How to run SewEasy (command line)
 
 Alternatively, one can use command line script to create sewing patterns from design and body parameters. From the root directory run
 ```
-python test_garmentcode.py
+python test_seweasy.py
 ```
 
 It will create sewing pattern for the current state of `assets/design_params/t-shirt.yaml` for neutral body, and put it to the logs folder. Modify the parameters inside the script as needed.
@@ -35,7 +35,7 @@ It will create sewing pattern for the current state of `assets/design_params/t-s
 [assets/design_params/t-shirt.yaml](../assets/design_params/t-shirt.yaml) contains the full set of style parameters for creating samples of our garment configurator.
 ​
 * Update some of parameter values ('v:' field under parameter name) within a given range 
-* run `test_garmentcode.py` 
+* run `test_seweasy.py` 
 * `system['output']/t-shirt_<timestamp>/` will contain the sewing patterns corresponding to given values
 ​
 NOTE:
@@ -44,7 +44,7 @@ NOTE:
 ### Changing body measurements
 
 To use another set of body measurements (among the ones used in the paper): 
- In `test_garmentcode.py` change `body_to_use` variable to another key from `bodies_measurements` dictionary to use 
+ In `test_seweasy.py` change `body_to_use` variable to another key from `bodies_measurements` dictionary to use 
 ​
  * Options: 'neutral', 'mean_female', 'mean_male', 'f_smpl', 'm_smpl'
  * Default: 'neutral'  (=gender neutral average body shape)
@@ -59,7 +59,7 @@ Utilized examples for body shapes are given in `./assets/bodies` for reference.
 
 ## How to simulate patterns (command line)
 
-One can use a python script to drape a sewing pattern in JSON representation, produced by GarmentCode:  
+One can use a python script to drape a sewing pattern in JSON representation, produced by SewEasy:  
 
 ```
 python test_garment_sim.py -p /path/to/pattern_specification.json -s /path/to/sim_props.json

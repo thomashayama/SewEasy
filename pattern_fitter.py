@@ -11,7 +11,7 @@ import traceback
 import argparse
 
 # Custom
-from pygarment.data_config import Properties
+from seweasy.data_config import Properties
 from assets.garment_programs.meta_garment import MetaGarment
 from assets.bodies.body_params import BodyParameters
 

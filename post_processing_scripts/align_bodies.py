@@ -4,7 +4,7 @@ import numpy as np
 from pathlib import Path
 import trimesh
 
-from pygarment.data_config import Properties
+from seweasy.data_config import Properties
 
 def load_mesh(path):
     v, f = igl.read_triangle_mesh(str(path))

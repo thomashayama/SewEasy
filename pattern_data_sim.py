@@ -14,8 +14,8 @@ import shutil
 from pathlib import Path
 
 # My modules
-import pygarment.data_config as data_config
-import pygarment.meshgen.datasim_utils as sim
+import seweasy.data_config as data_config
+import seweasy.meshgen.datasim_utils as sim
 
 
 def get_command_args():

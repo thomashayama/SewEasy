@@ -2,7 +2,7 @@ from pathlib import Path
 import yaml
 from datetime import datetime
 
-from pygarment.data_config import Properties
+from seweasy.data_config import Properties
 
 class PathCofig:
     """Routines for getting paths to various relevant objects with standard names"""

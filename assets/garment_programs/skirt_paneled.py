@@ -1,7 +1,7 @@
 import numpy as np
 from scipy.spatial.transform import Rotation as R
 
-import pygarment as pyg
+import seweasy as pyg
 from assets.garment_programs.base_classes import StackableSkirtComponent
 from assets.garment_programs.base_classes import BaseBottoms
 from assets.garment_programs import shapes

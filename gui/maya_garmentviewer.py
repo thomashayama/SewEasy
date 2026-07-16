@@ -8,7 +8,7 @@ from maya import cmds
 from importlib import reload
 
 # My modules
-from pygarment import mayaqltools as mymaya
+from seweasy import mayaqltools as mymaya
 reload(mymaya)
 
 # -------------- Main -------------

@@ -1,7 +1,7 @@
 
 # GarmentCodeData: Running data generation and simulation
 
-GarmentCode now supports a synthetic data generation pipeline of [GarmentCodeData](https://igl.ethz.ch/projects/GarmentCodeData/) using [our fork of NVIDIA Warp simulator](https://github.com/maria-korosteleva/NvidiaWarp-GarmentCode). For the technical details of the generation process, please, check the paper.
+SewEasy supports a synthetic data generation pipeline of [GarmentCodeData](https://igl.ethz.ch/projects/GarmentCodeData/) using [our fork of NVIDIA Warp simulator](https://github.com/maria-korosteleva/NvidiaWarp-GarmentCode). For the technical details of the generation process, please, check the paper.
 
 The default setup creates sewing pattern samples based on the [garment programs](../assets/garment_programs/) provided in this repo with sampling probabilities specified in [assets/design_params/default.yaml](../assets/design_params/default.yaml). 
 
@@ -18,13 +18,13 @@ More on each step below.
 Before generating garment data, make sure to 
 
 * Obtain dataset of sample body shapes, either by downloading it from GarmentCodeData, or by creating your own sample using [our tool](https://github.com/mbotsch/GarmentMeasurements).
-* Setup the paths `system.json` as described in [Installation](https://github.com/maria-korosteleva/GarmentCode/blob/main/docs/Installation.md).
+* Setup the paths `system.json` as described in [Installation](https://github.com/thomashayama/SewEasy/blob/main/docs/Installation.md).
 * Customize the parameter ranges and probabilities as suits your application, following the example of [assets/design_params/default.yaml](../assets/design_params/default.yaml) 
     > Example: to restrict the design space to upper garments only, set the default value for bottoms (`design['meta']['bottom']['v']`) to `null` and `defaul  t_prob` to 1.0 (`design['meta']['bottom']['defaul  t_prob']`).
 * Customize simulation config (see below for details).
 
 ## Sewing pattern sampling 
-`pattern_sampler.py` script generates 2D pattern samples from GarmentCode parametric garment programs and a body shape dataset. The tool will produce design samples each fitted to a neutral body shape and a random shape sample. By default,
+`pattern_sampler.py` script generates 2D pattern samples from SewEasy parametric garment programs and a body shape dataset. The tool will produce design samples each fitted to a neutral body shape and a random shape sample. By default,
 * It looks for `5000_body_shapes_and_measures` folder in system['bodies_default_path'] for the body samples.
 * It uses [assets/design_params/default.yaml](../assets/design_params/default.yaml) as a source of design parameter set, ranges and associated probabilites.
 

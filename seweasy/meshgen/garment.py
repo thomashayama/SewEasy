@@ -13,8 +13,8 @@ from warp.sim.collide import count_self_intersections, count_body_cloth_intersec
 from warp.sim.integrator_xpbd import replace_mesh_points
 
 # Custom
-from pygarment.meshgen.sim_config import PathCofig, SimConfig
-from pygarment.pattern.core import BasicPattern
+from seweasy.meshgen.sim_config import PathCofig, SimConfig
+from seweasy.pattern.core import BasicPattern
 
 class Cloth:
     def __init__(self, 

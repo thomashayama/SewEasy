@@ -1,6 +1,6 @@
 import numpy as np
 
-import pygarment as pyg
+import seweasy as pyg
 
 
 class BodyParameters(pyg.BodyParametrizationBase):

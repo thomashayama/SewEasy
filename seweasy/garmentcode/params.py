@@ -5,7 +5,7 @@ from pathlib import Path
 from copy import deepcopy
 import random 
 
-from pygarment.garmentcode.utils import nested_get, nested_set, close_enough
+from seweasy.garmentcode.utils import nested_get, nested_set, close_enough
 
 
 class BodyParametrizationBase:

@@ -21,7 +21,7 @@ import svgwrite as sw
 import matplotlib.pyplot as plt
 
 # my
-from pygarment import data_config
+from seweasy import data_config
 from . import core
 from .utils import *
 

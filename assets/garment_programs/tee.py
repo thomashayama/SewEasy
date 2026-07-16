@@ -2,7 +2,7 @@
     Note that the code is very similar to Bodice. 
 """
 import numpy as np
-import pygarment as pyg
+import seweasy as pyg
 
 from assets.garment_programs.base_classes import BaseBodicePanel
 

@@ -25,9 +25,9 @@ import trimesh
 import warp as wp
 
 # Custom code
-from pygarment.meshgen.render.pythonrender import render_images
-from pygarment.meshgen.garment import Cloth
-from pygarment.meshgen.sim_config import SimConfig, PathCofig
+from seweasy.meshgen.render.pythonrender import render_images
+from seweasy.meshgen.garment import Cloth
+from seweasy.meshgen.sim_config import SimConfig, PathCofig
 
 wp.init()
 

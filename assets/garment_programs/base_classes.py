@@ -1,4 +1,4 @@
-import pygarment as pyg
+import seweasy as pyg
 
 class BaseBodicePanel(pyg.Panel):
     """Base class for bodice panels that defines expected interfaces and common functions"""

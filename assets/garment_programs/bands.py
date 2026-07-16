@@ -1,4 +1,4 @@
-import pygarment as pyg
+import seweasy as pyg
 from assets.garment_programs.circle_skirt import CircleArcPanel
 from assets.garment_programs import skirt_paneled
 from assets.garment_programs.base_classes import BaseBand

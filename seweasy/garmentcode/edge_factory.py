@@ -3,14 +3,14 @@ from numpy.linalg import norm
 import svgpathtools as svgpath
 from scipy.optimize import minimize
 
-from pygarment.garmentcode.edge import EdgeSequence, Edge, CurveEdge
-from pygarment.garmentcode.edge import CircleEdge
-from pygarment.garmentcode.utils import vector_angle
-from pygarment.garmentcode.utils import bbox_paths
-from pygarment.garmentcode.utils import close_enough
-from pygarment.garmentcode.utils import c_to_list
-from pygarment.garmentcode.utils import list_to_c
-from pygarment.pattern.utils import rel_to_abs_2d, abs_to_rel_2d
+from seweasy.garmentcode.edge import EdgeSequence, Edge, CurveEdge
+from seweasy.garmentcode.edge import CircleEdge
+from seweasy.garmentcode.utils import vector_angle
+from seweasy.garmentcode.utils import bbox_paths
+from seweasy.garmentcode.utils import close_enough
+from seweasy.garmentcode.utils import c_to_list
+from seweasy.garmentcode.utils import list_to_c
+from seweasy.pattern.utils import rel_to_abs_2d, abs_to_rel_2d
 
 
 class EdgeFactory:

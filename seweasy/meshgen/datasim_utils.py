@@ -8,12 +8,12 @@ import signal
 from pathlib import Path
 
 # BoxMeshGen
-import pygarment.meshgen.boxmeshgen as bmg
-from pygarment.meshgen.boxmeshgen import BoxMesh
-from pygarment.meshgen.sim_config import PathCofig
+import seweasy.meshgen.boxmeshgen as bmg
+from seweasy.meshgen.boxmeshgen import BoxMesh
+from seweasy.meshgen.sim_config import PathCofig
 
 # Warp simulation
-from pygarment.meshgen.simulation import run_sim
+from seweasy.meshgen.simulation import run_sim
 
 
 def batch_sim(data_path, output_path, dataset_props,

@@ -1,7 +1,7 @@
 import math
 import numpy as np
 
-import pygarment as pyg
+import seweasy as pyg
 
 from assets.garment_programs.base_classes import BaseBottoms
 from assets.garment_programs import skirt_paneled as skirts

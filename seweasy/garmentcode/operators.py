@@ -7,11 +7,11 @@ from scipy.spatial.transform import Rotation as R
 from scipy.optimize import minimize
 import svgpathtools as svgpath
 
-from pygarment.garmentcode.edge import Edge, CurveEdge, EdgeSequence, ILENGTH_S_TOL
-from pygarment.garmentcode.interface import Interface
-from pygarment.garmentcode.utils import vector_angle, close_enough, c_to_list, c_to_np
-from pygarment.garmentcode.utils import list_to_c
-from pygarment.garmentcode.base import BaseComponent
+from seweasy.garmentcode.edge import Edge, CurveEdge, EdgeSequence, ILENGTH_S_TOL
+from seweasy.garmentcode.interface import Interface
+from seweasy.garmentcode.utils import vector_angle, close_enough, c_to_list, c_to_np
+from seweasy.garmentcode.utils import list_to_c
+from seweasy.garmentcode.base import BaseComponent
 
 
 # ANCHOR ----- Edge Sequences Modifiers ----

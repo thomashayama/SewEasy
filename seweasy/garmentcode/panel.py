@@ -3,12 +3,12 @@ from copy import copy
 from argparse import Namespace
 from scipy.spatial.transform import Rotation as R
 
-from pygarment.pattern.core import BasicPattern
-from pygarment.garmentcode.base import BaseComponent
-from pygarment.garmentcode.edge import Edge, EdgeSequence, CircleEdge
-from pygarment.garmentcode.utils import close_enough, vector_align_3D
-from pygarment.garmentcode.operators import cut_into_edge
-from pygarment.garmentcode.interface import Interface
+from seweasy.pattern.core import BasicPattern
+from seweasy.garmentcode.base import BaseComponent
+from seweasy.garmentcode.edge import Edge, EdgeSequence, CircleEdge
+from seweasy.garmentcode.utils import close_enough, vector_align_3D
+from seweasy.garmentcode.operators import cut_into_edge
+from seweasy.garmentcode.interface import Interface
 
 
 class Panel(BaseComponent):

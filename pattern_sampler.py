@@ -14,10 +14,10 @@ import traceback
 import argparse
 
 # Custom
-from pygarment.data_config import Properties
+from seweasy.data_config import Properties
 from assets.garment_programs.meta_garment import MetaGarment, IncorrectElementConfiguration
 from assets.bodies.body_params import BodyParameters
-import pygarment as pyg
+import seweasy as pyg
 import assets.garment_programs.stats_utils as stats_utils
 
 def get_command_args():

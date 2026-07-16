@@ -1,5 +1,5 @@
 """A decorative shapes"""
-import pygarment as pyg
+import seweasy as pyg
 
 
 def sample_arc(curve, length, stride, n_points, shift=0):

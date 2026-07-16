@@ -22,19 +22,19 @@ See the instructions in the [NvidiaWarp-GarmentCode](https://github.com/maria-ko
 
 ## Using pip
 
-With pip, you can install the core pygarment library and its dependencies to start writing your own garment programs!
+With pip, you can install the core seweasy library and its dependencies to start writing your own garment programs!
 
 ```
-pip install pygarment
+pip install seweasy
 ```
 
 ## Manual Installation
 
 If required, you could install the library and dependecies manually
 
-### pygarment uses the following dependencies:
+### seweasy uses the following dependencies:
 
-These dependencies are installed through [setup.cfg](https://github.com/maria-korosteleva/GarmentCode/blob/main/setup.cfg#L23).
+These dependencies are installed through [setup.cfg](https://github.com/thomashayama/SewEasy/blob/main/setup.cfg#L23).
 
 * Python 3.9
 * numpy<2
@@ -45,7 +45,7 @@ These dependencies are installed through [setup.cfg](https://github.com/maria-ko
 * matplotlib
 * [svgpathtools](https://github.com/mathandy/svgpathtools)
 * [cairoSVG](https://cairosvg.org/)
-    NOTE: this lib has some quirks on Windows, which we resolve with including needed dlls in `./pygarment/pattern/cairo_dlls` and adding the ditrectory to PATH in runtime
+    NOTE: this lib has some quirks on Windows, which we resolve with including needed dlls in `./seweasy/pattern/cairo_dlls` and adding the ditrectory to PATH in runtime
 * [NiceGUI](https://nicegui.io/#installation)
 * [trimesh](https://trimesh.org/)
 * [libigl](https://libigl.github.io/libigl-python-bindings/)
@@ -65,4 +65,4 @@ Add the root repository to `PYTHONPATH`.
 
 => The code is ready to run
 
-> NOTE: check out a full environment setup and running process from our early adopter: https://github.com/maria-korosteleva/GarmentCode/issues/17
+> NOTE: check out a full environment setup and running process from our early adopter: https://github.com/thomashayama/SewEasy/issues/17

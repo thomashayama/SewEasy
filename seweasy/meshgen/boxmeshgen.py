@@ -16,13 +16,13 @@ import yaml
 from typing import List, Dict, Tuple
 
 #Personal Modules
-import pygarment.pattern.core as core
-import pygarment.pattern.wrappers as wrappers
-from pygarment.pattern import rotation as rotation_tools
-import pygarment.pattern.utils as pat_utils
-import pygarment.meshgen.triangulation_utils as tri_utils
-from pygarment.meshgen.sim_config import PathCofig
-from pygarment.meshgen.render.texture_utils import texture_mesh_islands, save_obj
+import seweasy.pattern.core as core
+import seweasy.pattern.wrappers as wrappers
+from seweasy.pattern import rotation as rotation_tools
+import seweasy.pattern.utils as pat_utils
+import seweasy.meshgen.triangulation_utils as tri_utils
+from seweasy.meshgen.sim_config import PathCofig
+from seweasy.meshgen.render.texture_utils import texture_mesh_islands, save_obj
 
 # TODOLOW Some stitching errors are not getting detected
 

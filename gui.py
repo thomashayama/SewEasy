@@ -22,6 +22,6 @@ if __name__ == '__main__':
     ui.run(
             reload=False,
             favicon=icon_image_b64,
-            title='GarmentCode'
+            title='SewEasy'
         )
     

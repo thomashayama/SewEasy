@@ -1,6 +1,15 @@
 
 # Change Log
 
+## [SewEasy fork] - 2026-07-16
+
+Forked from [GarmentCode](https://github.com/maria-korosteleva/GarmentCode) v2.0.2 by Maria Korosteleva et al. (MIT License).
+
+### Changed
+- Renamed project to SewEasy; Python package `pygarment` renamed to `seweasy`
+- Updated README, docs, GUI labels, and package metadata for the fork
+- Entries below this point are the original GarmentCode change log and retain its naming
+
 ## [2.0.2] - 2025-04-18
 
 ### Fixed
@@ -28,7 +37,7 @@ Major update with release of [GarmentCodeData](https://igl.ethz.ch/projects/Garm
 - **[Stitch orientation]** GarmentCode now allows explicit specification of whether a stitch should be connecting the right side of the fabric on one side to the right side of the fabric on the other or right side to wrong side. It gives explicit control to developer on resolving the stitching direction. Most stitches require the default (right-to-right) setting, hence only a few need explicit update of this parameter. Internally, the right-to-right direction is found following the manifold property of connecting two panels with specified normal direction indicating the right side of the fabric. 
 
 ### Changed
-- **[Architecture]** We updated the structure of `pygarment` library. It now includes new mesh generation and cloth simulation routines, as well as the pattern serialization modules (`pattern` library) and the Maya + Qualoth routines for backward compatibility. This greatly simplifies the installation process and reduces module import issues.  
+- **[Architecture]** We updated the structure of `seweasy` library. It now includes new mesh generation and cloth simulation routines, as well as the pattern serialization modules (`pattern` library) and the Maya + Qualoth routines for backward compatibility. This greatly simplifies the installation process and reduces module import issues.  
 - **[GUI]** We re-wrote our GUI from PySimpleGUI to NiceGUI following the change in PySimpleGUI licensing scheme and desire for better UI look. GarmentCode GUI now runs in browser. Dependency on PySimpleGUI is removed.
 - **[Interface matching]** In addition to stitch orientation labels above, we removed extra heuristics involved in the matching of the edges in two interfaces connected by a stitch. We found that these heuristics behaved unintuitively in some cases, and it was difficult to determine the correct way to fix erroneous matched. The process is now fully controlled by the developer, making it more intuitive. As before, the default matching process should work in most cases, and only a few complex stitches require intervention.
  

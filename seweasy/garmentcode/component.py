@@ -1,8 +1,8 @@
 import numpy as np
 from scipy.spatial.transform import Rotation as R
 
-from pygarment.garmentcode.base import BaseComponent
-from pygarment.pattern.wrappers import VisPattern
+from seweasy.garmentcode.base import BaseComponent
+from seweasy.pattern.wrappers import VisPattern
 
 
 class Component(BaseComponent):

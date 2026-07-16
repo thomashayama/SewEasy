@@ -1,6 +1,6 @@
 """In simulated dataset, gather all the scene images in one folder"""
 
-import pygarment.data_config as config
+import seweasy.data_config as config
 from pathlib import Path
 import shutil
 

@@ -2,10 +2,10 @@ import os
 import argparse
 from pathlib import Path
 
-from pygarment.meshgen.boxmeshgen import BoxMesh
-from pygarment.meshgen.simulation import run_sim
-import pygarment.data_config as data_config
-from pygarment.meshgen.sim_config import PathCofig
+from seweasy.meshgen.boxmeshgen import BoxMesh
+from seweasy.meshgen.simulation import run_sim
+import seweasy.data_config as data_config
+from seweasy.meshgen.sim_config import PathCofig
 
 
 def get_command_args():

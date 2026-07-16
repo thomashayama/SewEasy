@@ -142,7 +142,7 @@ class GUIState:
         # Overall wrapping
         # NOTE: https://nicegui.io/documentation/section_pages_routing#page_layout
         with ui.header(elevated=True, fixed=False).classes(f'h-[{self.h_header}vh] items-center justify-end py-0 px-4 m-0'):
-            ui.label('GarmentCode design configurator').classes('mr-auto').style('font-size: 150%; font-weight: 400')
+            ui.label('SewEasy design configurator').classes('mr-auto').style('font-size: 150%; font-weight: 400')
             ui.button(
                 'About the project', 
                 on_click=lambda: ui.navigate.to('https://igl.ethz.ch/projects/garmentcode/', new_tab=True)
@@ -153,7 +153,7 @@ class GUIState:
                 'Dataset', 
                 on_click=lambda: ui.navigate.to('https://igl.ethz.ch/projects/GarmentCodeData/', new_tab=True)
                 ).props('flat color=white')
-            with ui.link(target='https://github.com/maria-korosteleva/GarmentCode', new_tab=True):
+            with ui.link(target='https://github.com/thomashayama/SewEasy', new_tab=True):
                 ui.html(icon_github).classes('w-8 bg-transparent')
         # NOTE No ui.left_drawer(), no ui.right_drawer()
         with ui.footer(fixed=False, elevated=True).classes('items-center justify-center p-0 m-0'): 
@@ -272,7 +272,7 @@ class GUIState:
                     # NOTE Events control: https://nicegui.io/documentation/slider#throttle_events_with_leading_and_trailing_options
                 elif 'file' in p_type:
                     print(f'GUI::NotImplementedERROR::{param}::'
-                          '"file" parameter type is not yet supported in Web GarmentCode. '
+                          '"file" parameter type is not yet supported in Web SewEasy. '
                           'Creation of corresponding UI element skipped'
                     )
                 else:
@@ -637,7 +637,7 @@ class GUIState:
                 ui_elems[param].value = design_params[param]['v']
 
     def toggle_param_update_events(self, ui_elems):
-        """Enable/disable event handling on the ui elements related to GarmentCode parameters"""
+        """Enable/disable event handling on the ui elements related to SewEasy parameters"""
         for param in ui_elems:
             if isinstance(ui_elems[param], dict):
                 self.toggle_param_update_events(ui_elems[param])

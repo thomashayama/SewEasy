@@ -1,6 +1,6 @@
 """Design analysis routines to supply intresting stats"""
 
-import pygarment.pattern.core as pattern
+import seweasy.pattern.core as pattern
 import yaml
 
 # panels

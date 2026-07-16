@@ -15,8 +15,8 @@ from maya import cmds
 import maya.mel as mel
 
 # My modules
-from pygarment import mayaqltools as mymaya
-from pygarment import data_config
+from seweasy import mayaqltools as mymaya
+from seweasy import data_config
 
 
 # -------- Main call - Draw the UI -------------
