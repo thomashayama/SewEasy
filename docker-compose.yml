@@ -1,4 +1,21 @@
 services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: seweasy
+      POSTGRES_PASSWORD: seweasy
+      POSTGRES_DB: seweasy
+    # No host port mapping — the app reaches it on the compose network;
+    # inspect with: docker compose exec db psql -U seweasy
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U seweasy"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
   seweasy:
     build: .
     image: seweasy:latest
@@ -6,4 +23,17 @@ services:
       - "8080:8080"
     environment:
       - PORT=8080
+      - DATABASE_URL=postgresql://seweasy:seweasy@db:5432/seweasy
+      # The values below interpolate from a local .env file (see .env.example)
+      - APP_URL=${APP_URL:-http://localhost:8080}
+      - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID:-}
+      - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET:-}
+      - GOOGLE_REDIRECT_URI=${GOOGLE_REDIRECT_URI:-http://localhost:8080/auth/callback}
+      - JWT_SECRET=${JWT_SECRET:-}
+    depends_on:
+      db:
+        condition: service_healthy
     restart: unless-stopped
+
+volumes:
+  pgdata:

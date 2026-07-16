@@ -22,6 +22,7 @@ It is a commercial fork of [GarmentCode](https://github.com/maria-korosteleva/Ga
 - `assets/garment_programs/` — example garment components written against the library
 - `assets/design_params/`, `assets/bodies/` — design and body-measurement presets (`default.yaml` is the GUI's initial state)
 - `gui.py` + `gui/` — NiceGUI-based browser configurator (launch with `python gui.py`)
+- `webapp/` — fork-specific web-service layer (not in upstream): SQLAlchemy models + Google OAuth sign-in + per-user body-measurement profiles. Postgres in docker-compose/prod, SQLite fallback (`data/seweasy.db`) for bare local runs. Config via env vars (see `.env.example`): `DATABASE_URL`, `GOOGLE_CLIENT_ID/SECRET`, `GOOGLE_REDIRECT_URI`, `JWT_SECRET`, `APP_URL`. Sign-in UI hides itself when Google creds are unset. Schema is created with `create_all` at startup — move to Alembic before there's production data to preserve.
 - `test_seweasy.py`, `test_garment_sim.py` — smoke-test scripts (not pytest suites)
 - `pattern_sampler.py`, `pattern_data_sim.py`, `pattern_fitter.py` — dataset generation / fitting pipeline
 - `docs/` — installation and usage docs

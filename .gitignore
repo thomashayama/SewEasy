@@ -31,3 +31,7 @@ output*
 
 # Nicegui
 .nicegui
+
+# Local secrets and dev database
+.env
+data/

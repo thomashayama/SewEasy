@@ -19,6 +19,7 @@ import asyncio
 
 # Custom
 from .gui_pattern import GUIPattern
+from webapp import gui_widgets as account_widgets
 
 
 icon_github = """
@@ -55,8 +56,9 @@ class GUIState:
             ('_', '-', etc.) 
 
     """
-    def __init__(self) -> None:
+    def __init__(self, user=None) -> None:
         self.window = None
+        self.user = user  # Signed-in account ({email, name, picture}) or None
 
         # Pattern
         self.pattern_state = GUIPattern()
@@ -155,6 +157,7 @@ class GUIState:
                 ).props('flat color=white')
             with ui.link(target='https://github.com/thomashayama/SewEasy', new_tab=True):
                 ui.html(icon_github).classes('w-8 bg-transparent')
+            account_widgets.auth_header_ui(self.user)
         # NOTE No ui.left_drawer(), no ui.right_drawer()
         with ui.footer(fixed=False, elevated=True).classes('items-center justify-center p-0 m-0'): 
             # https://www.termsfeed.com/blog/sample-copyright-notices/
@@ -196,7 +199,9 @@ class GUIState:
     
         # Set of buttons
         with ui.row():
-            ui.button('Upload', on_click=self.ui_body_dialog.open)  
+            ui.button('Upload', on_click=self.ui_body_dialog.open)
+            if self.user:
+                account_widgets.body_profiles_ui(self)
         
         self.ui_active_body_refs = {}
         self.ui_passive_body_refs = {}
