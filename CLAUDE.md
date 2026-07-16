@@ -34,6 +34,10 @@ It is a commercial fork of [GarmentCode](https://github.com/maria-korosteleva/Ga
 - The README file is `ReadMe.md` (not `README.md`).
 - Line endings: repo content is LF; Windows checkout with autocrlf — expect CRLF warnings from git, they're harmless.
 
+## Git workflow
+
+- The project is in early dev: after completing a piece of work, commit it and push to `origin main` without asking. Work directly on `main` — no feature branches or PRs needed for now.
+
 ## Git remotes
 
 - `origin` → https://github.com/thomashayama/SewEasy (this fork; push here)
