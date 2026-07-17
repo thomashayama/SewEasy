@@ -1,0 +1,171 @@
+"""Account page: identity + body-measurement library management.
+
+Registered by webapp.setup(); requires a signed-in user (redirects home
+otherwise). Uses the same visual theme as the studio (gui/theme.py).
+"""
+
+from fastapi import Request
+from fastapi.responses import RedirectResponse
+from nicegui import ui
+
+from assets.bodies.body_params import BodyParameters
+from gui import theme
+from webapp import auth, profiles
+
+BODY_DEFAULT_FILE = './assets/bodies/mean_all.yaml'
+
+
+def _default_measurements() -> dict:
+    return profiles.measurements_from_body(BodyParameters(BODY_DEFAULT_FILE))
+
+
+@ui.page('/account')
+async def account_page(request: Request):
+    user = auth.current_user(request)
+    if user is None:
+        return RedirectResponse('/')
+    email = user['email']
+
+    ui.add_head_html(theme.HEAD_HTML)
+    ui.colors(
+        primary=theme.colors.primary,
+        secondary=theme.colors.secondary,
+        accent=theme.colors.accent,
+        dark=theme.colors.dark,
+        positive=theme.colors.positive,
+        negative=theme.colors.negative,
+        info=theme.colors.info,
+        warning=theme.colors.warning,
+    )
+
+    # --- Header ---
+    with ui.header(elevated=False, fixed=False).classes('flex-col p-0 m-0 gap-0'):
+        with ui.row(wrap=False).classes('w-full items-center justify-between py-2 px-5 m-0'):
+            with ui.row(wrap=False).classes('items-center gap-2.5 cursor-pointer') \
+                    .on('click', lambda: ui.navigate.to('/')):
+                ui.icon('content_cut').classes('text-2xl rotate-[-90deg] opacity-90')
+                with ui.column().classes('gap-0.5'):
+                    ui.label('SewEasy').classes('se-wordmark')
+                    ui.label('account').classes('se-eyebrow')
+            ui.button('Back to studio', on_click=lambda: ui.navigate.to('/')) \
+                .props('flat color=white no-caps icon=arrow_back')
+        ui.element('div').classes('se-selvedge w-full')
+
+    with ui.column().classes('w-full max-w-3xl mx-auto gap-4 p-4'):
+
+        # --- Identity ---
+        with ui.card().classes('se-stitch-card w-full'):
+            with ui.row(wrap=False).classes('items-center gap-4 w-full'):
+                if user.get('picture'):
+                    ui.image(user['picture']).classes('w-14 h-14 rounded-full')
+                else:
+                    ui.icon('account_circle').classes('text-6xl text-gray-400')
+                with ui.column().classes('gap-0.5'):
+                    ui.label(user.get('name') or email).classes('se-section-label text-lg')
+                    ui.label(email).classes('se-param-label')
+                ui.space()
+                ui.button('Log out', on_click=lambda: ui.navigate.to('/auth/logout')) \
+                    .props('outline size=sm icon=logout')
+
+        # --- Body measurements library ---
+        with ui.card().classes('se-stitch-card w-full'):
+            with ui.row(wrap=False).classes('items-center w-full justify-between'):
+                ui.label('Body measurements').classes('se-section-label text-lg')
+                with ui.row().classes('gap-2'):
+                    ui.button('New profile', on_click=lambda: new_dialog.open()) \
+                        .props('outline size=sm icon=add')
+                    delete_btn = ui.button('Delete', on_click=lambda: delete_current()) \
+                        .props('outline size=sm icon=delete color=negative')
+
+            profile_select = ui.select(
+                {}, label='Profile',
+                on_change=lambda: load_editor(),
+            ).classes('w-64').props('outlined dense')
+
+            hint = ui.label('No saved measurements yet — create a profile to start') \
+                .classes('text-gray-500')
+            editor = ui.column().classes('w-full')
+            fields = {}
+
+            def save_changes():
+                data = profiles.get_profile(email, profile_select.value)
+                if data is None:
+                    ui.notify('Profile not found', type='negative')
+                    return
+                values = {}
+                for key, field in fields.items():
+                    try:
+                        values[key] = float(field.value)
+                    except (TypeError, ValueError):
+                        values[key] = data['measurements'].get(key)
+                profiles.save_profile(email, data['name'], values)
+                ui.notify(f'Updated "{data["name"]}"', type='positive')
+
+            def load_editor():
+                editor.clear()
+                fields.clear()
+                if profile_select.value is None:
+                    return
+                data = profiles.get_profile(email, profile_select.value)
+                if data is None:
+                    return
+                with editor:
+                    with ui.grid(columns=3).classes('w-full gap-x-4 gap-y-1 mt-2'):
+                        for key in sorted(data['measurements']):
+                            fields[key] = ui.number(
+                                label=key.replace('_', ' ').capitalize(),
+                                value=data['measurements'][key],
+                                format='%.2f',
+                                step=0.5,
+                            ).classes('se-mono').props('outlined dense')
+                    ui.button('Save changes', on_click=save_changes) \
+                        .props('unelevated icon=save').classes('mt-3 self-end')
+
+            def refresh_profiles(select_id=None):
+                rows = profiles.list_profiles(email)
+                options = {r['id']: r['name'] for r in rows}
+                profile_select.set_options(options)
+                has_rows = bool(options)
+                hint.set_visibility(not has_rows)
+                profile_select.set_visibility(has_rows)
+                delete_btn.set_visibility(has_rows)
+                if has_rows:
+                    profile_select.value = select_id if select_id in options \
+                        else next(iter(options))
+                else:
+                    profile_select.value = None
+                    editor.clear()
+                    fields.clear()
+
+            def delete_current():
+                if profile_select.value is None:
+                    return
+                profiles.delete_profile(email, profile_select.value)
+                ui.notify('Profile deleted')
+                refresh_profiles()
+
+            # --- New-profile dialog ---
+            def create_profile():
+                name = (new_name.value or '').strip()
+                if not name:
+                    ui.notify('Give the profile a name', type='warning')
+                    return
+                profiles.save_profile(email, name, _default_measurements())
+                new_dialog.close()
+                new_name.value = ''
+                rows = profiles.list_profiles(email)
+                created = next((r for r in rows if r['name'] == name), None)
+                refresh_profiles(created['id'] if created else None)
+                ui.notify(f'Created "{name}" from the default body', type='positive')
+
+            with ui.dialog() as new_dialog, ui.card().classes('items-center'):
+                ui.label('New measurement profile')
+                ui.label('Starts from the default body — adjust and save') \
+                    .classes('se-param-label')
+                new_name = ui.input(label='Name', placeholder='e.g. My measurements') \
+                    .classes('w-64').props('outlined dense')
+                with ui.row():
+                    ui.button('Create', on_click=create_profile)
+                    ui.button('Cancel', on_click=new_dialog.close).props('flat')
+
+            refresh_profiles()

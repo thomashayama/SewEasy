@@ -7,14 +7,17 @@ from webapp import config, designs, profiles
 
 
 def auth_header_ui(user):
-    """Header controls: sign-in button, or user identity + logout"""
+    """Header controls: sign-in button, or user identity (-> account page)"""
     if user:
-        if user.get('picture'):
-            ui.image(user['picture']).classes('w-8 h-8 rounded-full')
-        ui.label(user.get('name') or user['email']).classes('text-white')
-        ui.button('Log out',
-                  on_click=lambda: ui.navigate.to('/auth/logout')) \
-            .props('flat color=white no-caps')
+        with ui.row(wrap=False).classes(
+                'items-center gap-2 cursor-pointer rounded-md px-2 py-1 '
+                'hover:bg-white/10') \
+                .on('click', lambda: ui.navigate.to('/account')):
+            if user.get('picture'):
+                ui.image(user['picture']).classes('w-8 h-8 rounded-full')
+            else:
+                ui.icon('account_circle').classes('text-3xl')
+            ui.label(user.get('name') or user['email']).classes('text-white')
     elif config.google_configured():
         ui.button('Sign in with Google',
                   on_click=lambda: ui.navigate.to('/auth/login')) \
