@@ -21,8 +21,8 @@ def auth_header_ui(user):
             .props('outline color=white no-caps icon=login')
 
 
-def _library_ui(email, *, noun, save_label, load_label, load_icon,
-                snapshot, apply_item, list_items, save_item,
+def _library_ui(email, *, noun, noun_plural, save_label, load_label,
+                load_icon, snapshot, apply_item, list_items, save_item,
                 get_item, delete_item):
     """Two buttons + dialogs for a user's library of named, saved items.
 
@@ -69,7 +69,7 @@ def _library_ui(email, *, noun, save_label, load_label, load_icon,
         with item_list:
             rows = list_items(email)
             if not rows:
-                ui.label(f'No saved {noun}s yet').classes('text-gray-500')
+                ui.label(f'No saved {noun_plural} yet').classes('text-gray-500')
             for row in rows:
                 with ui.row().classes('items-center w-full justify-between'):
                     ui.label(row['name'])
@@ -113,6 +113,7 @@ def body_profiles_ui(state):
     _library_ui(
         state.user['email'],
         noun='measurements',
+        noun_plural='measurements',
         save_label='Save to account',
         load_label='My measurements',
         load_icon='straighten',
@@ -142,6 +143,7 @@ def designs_ui(state):
     _library_ui(
         state.user['email'],
         noun='design',
+        noun_plural='designs',
         save_label='Save design',
         load_label='My designs',
         load_icon='checkroom',
