@@ -447,9 +447,11 @@ class GUIState:
             # NOTE: texture is there, just needs a better setup
             self.ui_garment_3d = None
             # TODOLOW Update body model to a correct shape
-            self.ui_body_3d = self.ui_3d_scene.stl(
-                    '/body/mean_all.stl'
-                ).rotate(np.pi / 2, 0., 0.).material(color='#a89f8d')  # muslin dress form
+            # NOTE: decimated GLB (9k faces, ~180KB vs the 2.3MB full STL)
+            # with the muslin color baked in — loads much faster
+            self.ui_body_3d = self.ui_3d_scene.gltf(
+                    '/body/mean_all_display.glb'
+                ).rotate(np.pi / 2, 0., 0.)
 
     # !SECTION
     # SECTION -- Other UI details
