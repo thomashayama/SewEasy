@@ -16,6 +16,7 @@ from seweasy.meshgen.boxmeshgen import BoxMesh
 from seweasy.meshgen.simulation import run_sim
 import seweasy.data_config as data_config
 from seweasy.meshgen.sim_config import PathCofig
+from seweasy.pattern.print_export import save_print_pdf
 
 verbose = False
 
@@ -311,45 +312,46 @@ class GUIPattern:
             return (not is_strapless) and is_curve or has_hoody
 
     def save(self, pack=True, save_pattern: Optional[MetaGarment]=None):
-        """Save current garment design to self.save_path """
+        """Save current garment design to self.save_path
 
+            * pack=True (user download): a single true-scale, tiled,
+              print-ready PDF
+            * pack=False (internal, e.g. the 3D pipeline): serialized
+              pattern spec folder
+        """
         # Save current pattern
         if save_pattern is None:
             save_pattern = self.sew_pattern
 
         pattern = save_pattern.assembly()
 
-        # Save as json file
-        self.saved_garment_folder = pattern.serialize(
-            self.save_path, 
-            to_subfolder=True, 
-            with_3d=False, with_text=False, view_ids=False, 
-            with_printable=True,
-            empty_ok=True
-        )
+        if pack:
+            # Single user deliverable: print-at-home PDF
+            # (raises EmptyPatternError if there is nothing to print)
+            self.saved_garment_archive = save_print_pdf(
+                pattern,
+                self.save_path / f'{pattern.name}_print.pdf'
+            )
+            print(f'Success! {self.sew_pattern.name} print PDF saved to {self.saved_garment_archive}')
+            return self.saved_garment_archive
 
-        self.saved_garment_folder = Path(self.saved_garment_folder)
+        # Internal spec serialization (JSON + parameter files)
+        self.saved_garment_folder = Path(pattern.serialize(
+            self.save_path,
+            to_subfolder=True,
+            with_3d=False, with_text=False, view_ids=False,
+            empty_ok=True
+        ))
         self.body_params.save(self.saved_garment_folder)
 
         with open(self.saved_garment_folder / 'design_params.yaml', 'w') as f:
             yaml.dump(
-                {'design': self.design_params}, 
+                {'design': self.design_params},
                 f,
                 default_flow_style=False,
                 sort_keys=False
             )
 
-        # pack
-        if pack: 
-            # Only add geometry if design didn't change since last drape
-            if not self.is_in_3D:
-                self.clear_3d()  # Clean any saved 3D if it's not synced with current design
-            self.saved_garment_archive = Path(shutil.make_archive(
-                self.save_path / '..' / f'{self.saved_garment_folder.name}_{self.id}', 'zip',
-                root_dir=self.save_path
-            ))
-
         print(f'Success! {self.sew_pattern.name} saved to {self.saved_garment_folder}')
-
-        return self.saved_garment_archive if pack else self.saved_garment_folder
+        return self.saved_garment_folder
 

@@ -18,6 +18,7 @@ from concurrent.futures import ThreadPoolExecutor
 import asyncio
 
 # Custom
+import seweasy as pyg
 from .gui_pattern import GUIPattern
 from . import theme
 from webapp import gui_widgets as account_widgets
@@ -773,6 +774,11 @@ class GUIState:
     # !SECTION
 
     def state_download(self):
-        """Download current state of a garment"""
-        archive_path = self.pattern_state.save()
-        ui.download(archive_path, f'Configured_design_{datetime.now().strftime("%y%m%d-%H-%M-%S")}.zip')
+        """Download the current garment as a print-ready PDF"""
+        try:
+            pdf_path = self.pattern_state.save()
+        except pyg.EmptyPatternError:
+            ui.notify('Nothing to print yet — choose a garment first',
+                      type='warning')
+            return
+        ui.download(pdf_path, f'SewEasy_pattern_{datetime.now().strftime("%y%m%d-%H-%M-%S")}.pdf')
