@@ -29,6 +29,8 @@ class User(TimestampMixin, Base):
 
     body_profiles = relationship('BodyProfile', back_populates='owner',
                                  cascade='all,delete')
+    designs = relationship('Design', back_populates='owner',
+                           cascade='all,delete')
 
 
 class OAuthState(Base):
@@ -57,3 +59,26 @@ class BodyProfile(TimestampMixin, Base):
     measurements = Column(JSON, nullable=False)
 
     owner = relationship('User', back_populates='body_profiles')
+
+
+class Design(TimestampMixin, Base):
+    """A named garment design owned by a user.
+
+    A design is deliberately body-independent: it captures the user's
+    choices in the parametric design space (a garment is drafted as
+    design x body measurements, so the two are separate entities —
+    see BodyProfile for the other half). Params are stored in the same
+    self-describing format as the 'design' section of the design-param
+    YAML files, so saved designs and file uploads are interchangeable.
+    """
+    __tablename__ = 'designs'
+    __table_args__ = (UniqueConstraint('owner_email', 'name',
+                                       name='uq_designs_owner_name'),)
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    owner_email = Column(String, ForeignKey('users.email', ondelete='CASCADE'),
+                         nullable=False, index=True)
+    name = Column(String, nullable=False)
+    params = Column(JSON, nullable=False)
+
+    owner = relationship('User', back_populates='designs')

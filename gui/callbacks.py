@@ -213,7 +213,7 @@ class GUIState:
     def def_body_tab(self):
     
         # Set of buttons
-        with ui.row(wrap=False).classes('gap-2'):
+        with ui.row().classes('gap-2'):
             ui.button('Upload', on_click=self.ui_body_dialog.open).props('outline size=sm icon=upload_file')
             if self.user:
                 account_widgets.body_profiles_ui(self)
@@ -304,10 +304,12 @@ class GUIState:
                 
     def def_design_tab(self):
         # Set of buttons
-        with ui.row(wrap=False).classes('gap-2'):
+        with ui.row().classes('gap-2'):
             ui.button('Random', on_click=self.random).props('outline size=sm icon=shuffle')
             ui.button('Default', on_click=self.default).props('outline size=sm icon=restart_alt')
             ui.button('Upload', on_click=self.ui_design_dialog.open).props('outline size=sm icon=upload_file')
+            if self.user:
+                account_widgets.designs_ui(self)
     
         # Design parameters
         design_params = self.pattern_state.design_params
