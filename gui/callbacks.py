@@ -188,18 +188,20 @@ class GUIState:
 
     def view_tabs_layout(self):
         """2D/3D view tabs"""
-        with ui.column(wrap=False).classes(f'h-[{self.h_params_content}vh] w-full items-center'):
-            with ui.tabs() as tabs: 
+        with ui.column(wrap=False).classes(f'h-[{self.h_params_content}vh] w-full items-center relative'):
+            with ui.tabs() as tabs:
                 self.ui_2d_tab = ui.tab('Sewing Pattern')
                 self.ui_3d_tab = ui.tab('3D view')
-            with ui.tab_panels(tabs, value=self.ui_2d_tab, animated=True).classes('w-full h-full items-center'):  
-                with ui.tab_panel(self.ui_2d_tab).classes('w-full h-full items-center justify-center p-0 m-0'):
+            with ui.tab_panels(tabs, value=self.ui_2d_tab, animated=True).classes('w-full h-full items-center'):
+                with ui.tab_panel(self.ui_2d_tab).classes('w-full h-full p-0 m-0'):
                     self.def_pattern_display()
                 with ui.tab_panel(self.ui_3d_tab).classes('w-full h-full items-center p-0 m-0'):
                     self.def_3d_scene()
 
+            # Floating primary action over the workspace
             ui.button('Download pattern', on_click=lambda: self.state_download()) \
-                .props('unelevated icon=download').classes('self-end mr-6')
+                .props('unelevated icon=download') \
+                .classes('absolute bottom-4 right-6 z-50 shadow-lg')
 
     # !SECTION
     # SECTION -- Configuration side panel
@@ -382,11 +384,11 @@ class GUIState:
     # !SECTION
     # SECTION -- Pattern visuals
     def def_pattern_display(self):
-        """Prepare pattern display area"""
-        with ui.column().classes('h-full p-0 m-0'):
-            with ui.row().classes('w-full p-0 m-0 justify-between'):
+        """Prepare pattern display area: a pannable drafting workspace"""
+        with ui.column().classes('w-full h-full p-0 m-0'):
+            with ui.row().classes('w-full p-0 m-0 px-2 justify-between'):
                 switch = ui.switch(
-                    'Body Silhouette', value=True, 
+                    'Body Silhouette', value=True,
                 ).props('dense left-label').classes('text-stone-800')
 
                 self.ui_self_intersect = ui.label(
@@ -394,9 +396,9 @@ class GUIState:
                 ).classes('se-warning-chip') \
                 .bind_visibility(self.pattern_state, 'is_self_intersecting')
 
-            with ui.image(
+            with ui.element('div').classes('se-workspace w-full h-full'), ui.image(
                     f'{self.path_static_img}/millimiter_paper_1500_900.png'
-                ).classes(f'aspect-[{self.canvas_aspect_ratio}] h-[95%] p-0 m-0')  as self.ui_pattern_bg:  
+                ).classes('w-[1400px] min-w-[1400px] h-[840px] min-h-[840px] m-auto p-0')  as self.ui_pattern_bg:
                 # NOTE: Positioning: https://github.com/zauberzeug/nicegui/discussions/957 
                 with ui.row().classes('w-full h-full p-0 m-0 bg-transparent relative top-[0%] left-[0%]'):
                     self.body_outline_classes = 'bg-transparent h-full absolute top-[0%] left-[0%] p-0 m-0'

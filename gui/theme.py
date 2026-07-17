@@ -162,5 +162,48 @@ body {
     background: var(--se-chalkline);
     opacity: 0.55;
 }
+
+/* --- Draggable pattern workspace --- */
+/* Pan by dragging; native scroll bounds keep it inside the sheet */
+.se-workspace {
+    overflow: auto;
+    cursor: grab;
+    display: flex;
+    scrollbar-width: none;
+}
+.se-workspace::-webkit-scrollbar {
+    display: none;
+}
+.se-workspace.se-dragging {
+    cursor: grabbing;
+    user-select: none;
+}
+.se-workspace img {
+    -webkit-user-drag: none;
+    user-select: none;
+}
+</style>
+<script>
+document.addEventListener('pointerdown', (e) => {
+    const ws = e.target.closest('.se-workspace');
+    if (!ws || e.button !== 0) return;
+    e.preventDefault();
+    ws.classList.add('se-dragging');
+    const sx = e.clientX, sy = e.clientY;
+    const sl = ws.scrollLeft, st = ws.scrollTop;
+    const move = (ev) => {
+        ws.scrollLeft = sl - (ev.clientX - sx);
+        ws.scrollTop = st - (ev.clientY - sy);
+    };
+    const up = () => {
+        ws.classList.remove('se-dragging');
+        document.removeEventListener('pointermove', move);
+        document.removeEventListener('pointerup', up);
+    };
+    document.addEventListener('pointermove', move);
+    document.addEventListener('pointerup', up);
+});
+</script>
+<style>
 </style>
 """
