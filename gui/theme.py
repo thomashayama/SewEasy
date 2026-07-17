@@ -145,6 +145,11 @@ body {
     font-size: 0.85rem;
 }
 
+/* Tighter page padding so fixed-height layout fits the viewport */
+.nicegui-content {
+    padding: 0.5rem 0.75rem;
+}
+
 /* Quiet, thin scrollbars */
 .q-scrollarea__thumb {
     background: var(--se-chalkline);

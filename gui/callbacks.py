@@ -115,7 +115,7 @@ class GUIState:
 
         # as % of viewport width/height
         self.h_header = 5
-        self.h_params_content = 88
+        self.h_params_content = 86
         self.h_garment_display = 74 
         self.w_garment_display = 65
         self.w_splitter_design = 32
