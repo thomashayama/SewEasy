@@ -152,9 +152,17 @@ body {
     font-size: 0.85rem;
 }
 
-/* Tighter page padding so fixed-height layout fits the viewport */
+/* Full-bleed stage: overlays carry their own spacing */
 .nicegui-content {
-    padding: 0.5rem 0.75rem;
+    padding: 0;
+}
+
+/* Floating controls over the workspace */
+.se-overlay-chip {
+    background: rgba(255, 255, 255, 0.88);
+    backdrop-filter: blur(4px);
+    border-radius: 8px;
+    box-shadow: 0 1px 5px rgba(29, 43, 66, 0.14);
 }
 
 /* Quiet, thin scrollbars */

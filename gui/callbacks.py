@@ -131,13 +131,14 @@ class GUIState:
         # Configurator GUI
         # Collapsible configuration side panel
         self.ui_side_panel = ui.left_drawer(value=True, elevated=False, bordered=True) \
-            .classes('px-3 py-2 bg-[#fcfcfa]').props('width=390 breakpoint=0')
+            .classes('relative px-3 py-2 bg-[#fcfcfa]').props('width=390 breakpoint=0')
         with self.ui_side_panel:
             self.def_side_panel()
 
-        # Pattern visual
-        with ui.column(wrap=False).classes(f'w-full h-[{self.h_params_content}dvh] px-3 py-0 m-0'):
-            self.view_tabs_layout()
+        # Full-bleed pattern/3D stage; all controls float on top
+        with ui.element('div').classes(
+                f'relative w-full h-[calc(100dvh-{self.h_header}vh-11px)] p-0 m-0 overflow-hidden'):
+            self.view_stage()
 
         # Overall wrapping
         # NOTE: https://nicegui.io/documentation/section_pages_routing#page_layout
@@ -170,38 +171,41 @@ class GUIState:
                     account_widgets.auth_header_ui(self.user)
             # Signature: selvedge edge
             ui.element('div').classes('se-selvedge w-full')
-        # NOTE No ui.left_drawer(), no ui.right_drawer()
-        with ui.footer(fixed=False, elevated=False).classes(
-                'items-center justify-center gap-2 py-1.5 m-0 bg-[#1d2b42] text-[0.75rem]'):
-            # https://www.termsfeed.com/blog/sample-copyright-notices/
-            ui.link(
-                '© 2024 Interactive Geometry Lab',
-                'https://igl.ethz.ch/',
-                new_tab=True
-            ).classes('text-white opacity-80')
-            ui.label('·').classes('opacity-50')
-            ui.link(
-                'Built on GarmentCode',
-                'https://github.com/maria-korosteleva/GarmentCode',
-                new_tab=True
-            ).classes('text-white opacity-80')
+        # NOTE No footer: attribution floats over the stage (see view_stage)
 
-    def view_tabs_layout(self):
-        """2D/3D view tabs"""
-        with ui.column(wrap=False).classes(f'h-[{self.h_params_content}vh] w-full items-center relative'):
-            with ui.tabs() as tabs:
-                self.ui_2d_tab = ui.tab('Sewing Pattern')
-                self.ui_3d_tab = ui.tab('3D view')
-            with ui.tab_panels(tabs, value=self.ui_2d_tab, animated=True).classes('w-full h-full items-center'):
-                with ui.tab_panel(self.ui_2d_tab).classes('w-full h-full p-0 m-0'):
-                    self.def_pattern_display()
-                with ui.tab_panel(self.ui_3d_tab).classes('w-full h-full items-center p-0 m-0'):
-                    self.def_3d_scene()
+    def view_stage(self):
+        """Full-bleed 2D/3D stage; the view switcher and actions float on top"""
+        with ui.tabs().classes('hidden') as tabs:
+            self.ui_2d_tab = ui.tab('Sewing pattern')
+            self.ui_3d_tab = ui.tab('3D view')
+        with ui.tab_panels(tabs, value=self.ui_2d_tab, animated=False) \
+                .classes('w-full h-full p-0 m-0'):
+            with ui.tab_panel(self.ui_2d_tab).classes('w-full h-full p-0 m-0 relative'):
+                self.def_pattern_display()
+            with ui.tab_panel(self.ui_3d_tab).classes('w-full h-full p-0 m-0 relative'):
+                self.def_3d_scene()
 
-            # Floating primary action over the workspace
-            ui.button('Download pattern', on_click=lambda: self.state_download()) \
-                .props('unelevated icon=download') \
-                .classes('absolute bottom-4 right-6 z-50 shadow-lg')
+        # Floating view switcher
+        ui.toggle(['Sewing pattern', '3D view'], value='Sewing pattern',
+                  on_change=lambda e: tabs.set_value(e.value)) \
+            .props('no-caps unelevated rounded toggle-color=primary padding="2px 14px"') \
+            .classes('absolute top-3 left-1/2 -translate-x-1/2 z-50 se-overlay-chip')
+
+        # Floating primary action
+        ui.button('Download pattern', on_click=lambda: self.state_download()) \
+            .props('unelevated icon=download') \
+            .classes('absolute bottom-5 right-6 z-50 shadow-lg')
+
+        # Floating attribution
+        with ui.row(wrap=False).classes(
+                'absolute bottom-2 left-3 z-40 se-overlay-chip items-center '
+                'gap-1 px-2.5 py-0.5 text-[0.7rem]'):
+            ui.link('© 2024 Interactive Geometry Lab', 'https://igl.ethz.ch/',
+                    new_tab=True).classes('text-[#5a6270]')
+            ui.label('·').classes('text-[#5a6270] opacity-60')
+            ui.link('Built on GarmentCode',
+                    'https://github.com/maria-korosteleva/GarmentCode',
+                    new_tab=True).classes('text-[#5a6270]')
 
     # !SECTION
     # SECTION -- Configuration side panel
@@ -211,6 +215,10 @@ class GUIState:
         # measurement editing lives on the account page now
         self.ui_active_body_refs = {}
         self.ui_passive_body_refs = {}
+
+        ui.button(icon='chevron_left', on_click=self.ui_side_panel.toggle) \
+            .props('flat dense round size=sm color=grey-7') \
+            .classes('absolute top-1.5 right-1.5 z-10').tooltip('Collapse panel')
 
         ui.label('Body').classes('se-section-label')
         account_widgets.body_source_ui(self)
@@ -384,18 +392,9 @@ class GUIState:
     # !SECTION
     # SECTION -- Pattern visuals
     def def_pattern_display(self):
-        """Prepare pattern display area: a pannable drafting workspace"""
-        with ui.column().classes('w-full h-full p-0 m-0'):
-            with ui.row().classes('w-full p-0 m-0 px-2 justify-between'):
-                switch = ui.switch(
-                    'Body Silhouette', value=True,
-                ).props('dense left-label').classes('text-stone-800')
-
-                self.ui_self_intersect = ui.label(
-                    'Garment panels are self-intersecting'
-                ).classes('se-warning-chip') \
-                .bind_visibility(self.pattern_state, 'is_self_intersecting')
-
+        """Prepare pattern display area: a pannable drafting workspace
+        with floating controls"""
+        with ui.column().classes('w-full h-full p-0 m-0 gap-0'):
             with ui.element('div').classes('se-workspace w-full h-full'), ui.image(
                     f'{self.path_static_img}/millimiter_paper_1500_900.png'
                 ).classes('w-[1400px] min-w-[1400px] h-[840px] min-h-[840px] m-auto p-0')  as self.ui_pattern_bg:
@@ -403,15 +402,25 @@ class GUIState:
                 with ui.row().classes('w-full h-full p-0 m-0 bg-transparent relative top-[0%] left-[0%]'):
                     self.body_outline_classes = 'bg-transparent h-full absolute top-[0%] left-[0%] p-0 m-0'
                     self.ui_body_outline = ui.image(f'{self.path_static_img}/ggg_outline_mean_all.svg') \
-                        .classes(self.body_outline_classes) 
-                    switch.bind_value(self.ui_body_outline, 'visible')
+                        .classes(self.body_outline_classes)
                 
                 # NOTE: ui.row allows for correct classes application (e.g. no padding on svg pattern)
                 with ui.row().classes('w-full h-full p-0 m-0 bg-transparent relative'):
                     # Automatically updates from source
                     self.ui_pattern_display = ui.interactive_image(
                         ''
-                    ).classes('bg-transparent p-0 m-0')                    
+                    ).classes('bg-transparent p-0 m-0')
+
+            # Floating controls over the workspace
+            with ui.row(wrap=False).classes('absolute top-3 left-4 z-40 items-center gap-2'):
+                ui.switch(
+                    'Body Silhouette', value=True,
+                ).props('dense left-label').classes('se-overlay-chip text-stone-800 pl-2.5 pr-1.5 py-0.5') \
+                    .bind_value(self.ui_body_outline, 'visible')
+                self.ui_self_intersect = ui.label(
+                    'Garment panels are self-intersecting'
+                ).classes('se-warning-chip') \
+                    .bind_visibility(self.pattern_state, 'is_self_intersecting')
 
     # !SECTION
     # SECTION 3D view
@@ -460,26 +469,14 @@ class GUIState:
         def body_visibility(value):
             self.ui_body_3d.visible(value)
 
-        with ui.row().classes('w-full p-0 m-0 justify-between items-center'):
-            self.ui_body_3d_switch = ui.switch(
-                'Body Silhouette', 
-                value=True, 
-                on_change=lambda e: body_visibility(e.value) 
-            ).props('dense left-label').classes('text-stone-800')
-
-            ui.button('Drape current design', on_click=lambda: self.update_3d_scene()) \
-                .props('unelevated icon=checkroom')
-
-            ui.label('takes a few minutes').classes('se-hint-chip')
-
         camera = self.create_camera(camera_location, y_fov)
         with ui.scene(
-            width=self.scene_base_resoltion[0], 
-            height=self.scene_base_resoltion[1], 
-            camera=camera, 
-            grid=False, 
-            background_color=bg_color   
-            ).classes(f'w-[{self.w_garment_display}vw] h-[90%] p-0 m-0') as self.ui_3d_scene:
+            width=self.scene_base_resoltion[0],
+            height=self.scene_base_resoltion[1],
+            camera=camera,
+            grid=False,
+            background_color=bg_color
+            ).classes('w-full h-full p-0 m-0') as self.ui_3d_scene:
             # Lights setup
             self.create_lights(self.ui_3d_scene, intensity=10.)
             # NOTE: texture is there, just needs a better setup
@@ -490,6 +487,18 @@ class GUIState:
             self.ui_body_3d = self.ui_3d_scene.gltf(
                     '/body/mean_all_display.glb'
                 ).rotate(np.pi / 2, 0., 0.)
+
+        # Floating controls over the 3D stage
+        with ui.row(wrap=False).classes('absolute top-3 left-4 z-40 items-center'):
+            self.ui_body_3d_switch = ui.switch(
+                'Body Silhouette',
+                value=True,
+                on_change=lambda e: body_visibility(e.value)
+            ).props('dense left-label').classes('se-overlay-chip text-stone-800 pl-2.5 pr-1.5 py-0.5')
+        with ui.row(wrap=False).classes('absolute top-3 right-6 z-40 items-center gap-2'):
+            ui.label('takes a few minutes').classes('se-hint-chip se-overlay-chip')
+            ui.button('Drape current design', on_click=lambda: self.update_3d_scene()) \
+                .props('unelevated icon=checkroom').classes('shadow-lg')
 
     # !SECTION
     # SECTION -- Other UI details
