@@ -22,9 +22,8 @@ def error_handler(err_type, text, exception: Exception):
         img = random.choice(error_icons)
         ui.image(img).classes('h-[45vh]').props('fit="scale-down"') 
         
-        with ui.column().classes('h-fit w-fit py-4 px-10 items-center justify-center space-y-8 '
-                                 f'border border-[{theme_colors.primary}] rounded-md '
-                                 f'shadow-lg shadow-[{theme_colors.secondary}]'):
+        with ui.column().classes('h-fit w-fit py-6 px-12 items-center justify-center space-y-4 '
+                                 'se-stitch-card'):
             ui.label(err_type).classes('text-3xl')
             if text:
                 ui.label(text).classes('text-2xl')

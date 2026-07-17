@@ -14,11 +14,11 @@ def auth_header_ui(user):
         ui.label(user.get('name') or user['email']).classes('text-white')
         ui.button('Log out',
                   on_click=lambda: ui.navigate.to('/auth/logout')) \
-            .props('flat color=white')
+            .props('flat color=white no-caps')
     elif config.google_configured():
         ui.button('Sign in with Google',
                   on_click=lambda: ui.navigate.to('/auth/login')) \
-            .props('flat color=white')
+            .props('outline color=white no-caps icon=login')
 
 
 def body_profiles_ui(state):
@@ -45,7 +45,7 @@ def body_profiles_ui(state):
         ui.label('Save current measurements to your account')
         name_input = ui.input(
             label='Name', placeholder='e.g. My measurements'
-        ).classes('w-64')
+        ).classes('w-64').props('outlined dense')
         with ui.row():
             ui.button('Save', on_click=save_current)
             ui.button('Cancel', on_click=save_dialog.close).props('flat')
@@ -97,5 +97,7 @@ def body_profiles_ui(state):
         load_dialog.open()
 
     # --- The buttons themselves ---
-    ui.button('Save to account', on_click=save_dialog.open)
-    ui.button('My measurements', on_click=open_load_dialog)
+    ui.button('Save to account', on_click=save_dialog.open) \
+        .props('outline size=sm icon=cloud_upload')
+    ui.button('My measurements', on_click=open_load_dialog) \
+        .props('outline size=sm icon=straighten')

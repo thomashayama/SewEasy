@@ -19,6 +19,7 @@ import asyncio
 
 # Custom
 from .gui_pattern import GUIPattern
+from . import theme
 from webapp import gui_widgets as account_widgets
 
 
@@ -36,16 +37,7 @@ icon_github = """
     """
 icon_arxiv = """<svg id="primary_logo_-_single_color_-_white" data-name="primary logo - single color - white" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 246.978 110.119"><path d="M492.976,269.5l24.36-29.89c1.492-1.989,2.2-3.03,1.492-4.723a5.142,5.142,0,0,0-4.481-3.161h0a4.024,4.024,0,0,0-3.008,1.108L485.2,261.094Z" transform="translate(-358.165 -223.27)" fill="#fff"/><path d="M526.273,325.341,493.91,287.058l-.972,1.033-7.789-9.214-7.743-9.357-4.695,5.076a4.769,4.769,0,0,0,.015,6.53L520.512,332.2a3.913,3.913,0,0,0,3.137,1.192,4.394,4.394,0,0,0,4.027-2.818C528.4,328.844,527.6,327.133,526.273,325.341Z" transform="translate(-358.165 -223.27)" fill="#fff"/><path d="M479.215,288.087l6.052,6.485L458.714,322.7a2.98,2.98,0,0,1-2.275,1.194,3.449,3.449,0,0,1-3.241-2.144c-.513-1.231.166-3.15,1.122-4.168l.023-.024.021-.026,24.851-29.448m-.047-1.882-25.76,30.524c-1.286,1.372-2.084,3.777-1.365,5.5a4.705,4.705,0,0,0,4.4,2.914,4.191,4.191,0,0,0,3.161-1.563l27.382-29.007-7.814-8.372Z" transform="translate(-358.165 -223.27)" fill="#fff"/><path d="M427.571,255.154c1.859,0,3.1,1.24,3.985,3.453,1.062-2.213,2.568-3.453,4.694-3.453h14.878a4.062,4.062,0,0,1,4.074,4.074v7.828c0,2.656-1.327,4.074-4.074,4.074-2.656,0-4.074-1.418-4.074-4.074V263.3H436.515a2.411,2.411,0,0,0-2.656,2.745v27.188h10.007c2.658,0,4.074,1.329,4.074,4.074s-1.416,4.074-4.074,4.074h-26.39c-2.659,0-3.986-1.328-3.986-4.074s1.327-4.074,3.986-4.074h8.236V263.3h-7.263c-2.656,0-3.985-1.329-3.985-4.074,0-2.658,1.329-4.074,3.985-4.074Z" transform="translate(-358.165 -223.27)" fill="#fff"/><path d="M539.233,255.154c2.656,0,4.074,1.416,4.074,4.074v34.007h10.1c2.746,0,4.074,1.329,4.074,4.074s-1.328,4.074-4.074,4.074H524.8c-2.656,0-4.074-1.328-4.074-4.074s1.418-4.074,4.074-4.074h10.362V263.3h-8.533c-2.744,0-4.073-1.329-4.073-4.074,0-2.658,1.329-4.074,4.073-4.074Zm4.22-17.615a5.859,5.859,0,1,1-5.819-5.819A5.9,5.9,0,0,1,543.453,237.539Z" transform="translate(-358.165 -223.27)" fill="#fff"/><path d="M605.143,259.228a4.589,4.589,0,0,1-.267,1.594L590,298.9a3.722,3.722,0,0,1-3.721,2.48h-5.933a3.689,3.689,0,0,1-3.808-2.48l-15.055-38.081a3.23,3.23,0,0,1-.355-1.594,4.084,4.084,0,0,1,4.164-4.074,3.8,3.8,0,0,1,3.718,2.656l14.348,36.134,13.9-36.134a3.8,3.8,0,0,1,3.72-2.656A4.084,4.084,0,0,1,605.143,259.228Z" transform="translate(-358.165 -223.27)" fill="#fff"/><path d="M390.61,255.154c5.018,0,8.206,3.312,8.206,8.4v37.831H363.308a4.813,4.813,0,0,1-5.143-4.929V283.427a8.256,8.256,0,0,1,7-8.148l25.507-3.572v-8.4H362.306a4.014,4.014,0,0,1-4.141-4.074c0-2.87,2.143-4.074,4.355-4.074Zm.059,38.081V279.942l-24.354,3.4v9.9Z" transform="translate(-358.165 -223.27)" fill="#fff"/><path d="M448.538,224.52h.077c1,.024,2.236,1.245,2.589,1.669l.023.028.024.026,46.664,50.433a3.173,3.173,0,0,1-.034,4.336l-4.893,5.2-6.876-8.134L446.652,230.4c-1.508-2.166-1.617-2.836-1.191-3.858a3.353,3.353,0,0,1,3.077-2.02m0-1.25a4.606,4.606,0,0,0-4.231,2.789c-.705,1.692-.2,2.88,1.349,5.1l39.493,47.722,7.789,9.214,5.853-6.221a4.417,4.417,0,0,0,.042-6.042L452.169,225.4s-1.713-2.08-3.524-2.124Z" transform="translate(-358.165 -223.27)" fill="#fff"/></svg>"""
 
-theme_colors = Namespace(
-    primary='#4a90d2',
-    secondary='#2f6da8',
-    accent='#1e5f9b',
-    dark='#16324f',
-    positive='#22ba38',
-    negative='#f50000',
-    info='#31CCEC',
-    warning='#9333ea'
-)
+theme_colors = theme.colors
 
 # State of GUI
 class GUIState:
@@ -90,9 +82,10 @@ class GUIState:
         self.ui_pattern_display = None
         self._async_executor = ThreadPoolExecutor(1)  
 
-        self.pattern_state.reload_garment()
+        # NOTE: the pattern itself is already assembled by GUIPattern's constructor
         self.stylings()
         self.layout()
+        self.update_pattern_display()  # Show the initial garment
 
     def release(self):
         """Clean-up after the sesssion"""
@@ -102,6 +95,7 @@ class GUIState:
     # Initial definitions
     def stylings(self):
         """Theme definition"""
+        ui.add_head_html(theme.HEAD_HTML)
         # Theme
         # Here: https://quasar.dev/style/theme-builder
         ui.colors(
@@ -134,7 +128,7 @@ class GUIState:
         self.def_body_file_dialog()
 
         # Configurator GUI
-        with ui.row(wrap=False).classes(f'w-full h-[{self.h_params_content}dvh] p-0 m-0 '): 
+        with ui.row(wrap=False).classes(f'w-full h-[{self.h_params_content}dvh] px-3 py-0 m-0 gap-2'):
             # Tabs
             self.def_param_tabs_layout()
             
@@ -143,29 +137,48 @@ class GUIState:
 
         # Overall wrapping
         # NOTE: https://nicegui.io/documentation/section_pages_routing#page_layout
-        with ui.header(elevated=True, fixed=False).classes(f'h-[{self.h_header}vh] items-center justify-end py-0 px-4 m-0'):
-            ui.label('SewEasy design configurator').classes('mr-auto').style('font-size: 150%; font-weight: 400')
-            ui.button(
-                'About the project', 
-                on_click=lambda: ui.navigate.to('https://igl.ethz.ch/projects/garmentcode/', new_tab=True)
-                ).props('flat color=white')
-            with ui.link(target='https://arxiv.org/abs/2306.03642', new_tab=True):
-                ui.html(icon_arxiv).classes('w-16 bg-transparent')
-            ui.button(
-                'Dataset', 
-                on_click=lambda: ui.navigate.to('https://igl.ethz.ch/projects/GarmentCodeData/', new_tab=True)
-                ).props('flat color=white')
-            with ui.link(target='https://github.com/thomashayama/SewEasy', new_tab=True):
-                ui.html(icon_github).classes('w-8 bg-transparent')
-            account_widgets.auth_header_ui(self.user)
+        with ui.header(elevated=False, fixed=False).classes('flex-col p-0 m-0 gap-0'):
+            with ui.row(wrap=False).classes(f'w-full h-[{self.h_header}vh] items-center justify-between py-0 px-5 m-0'):
+                # Brand
+                with ui.row(wrap=False).classes('items-center gap-2.5'):
+                    ui.icon('content_cut').classes('text-2xl rotate-[-90deg] opacity-90')
+                    with ui.column().classes('gap-0.5'):
+                        ui.label('SewEasy').classes('se-wordmark')
+                        ui.label('parametric pattern studio').classes('se-eyebrow')
+                # Links + account
+                with ui.row(wrap=False).classes('items-center gap-1'):
+                    with ui.button('Resources').props('flat color=white no-caps icon-right=expand_more'):
+                        with ui.menu():
+                            ui.menu_item(
+                                'About GarmentCode',
+                                lambda: ui.navigate.to('https://igl.ethz.ch/projects/garmentcode/', new_tab=True))
+                            ui.menu_item(
+                                'Paper (arXiv)',
+                                lambda: ui.navigate.to('https://arxiv.org/abs/2306.03642', new_tab=True))
+                            ui.menu_item(
+                                'GarmentCodeData dataset',
+                                lambda: ui.navigate.to('https://igl.ethz.ch/projects/GarmentCodeData/', new_tab=True))
+                            ui.menu_item(
+                                'Source on GitHub',
+                                lambda: ui.navigate.to('https://github.com/thomashayama/SewEasy', new_tab=True))
+                    account_widgets.auth_header_ui(self.user)
+            # Signature: selvedge edge
+            ui.element('div').classes('se-selvedge w-full')
         # NOTE No ui.left_drawer(), no ui.right_drawer()
-        with ui.footer(fixed=False, elevated=True).classes('items-center justify-center p-0 m-0'): 
+        with ui.footer(fixed=False, elevated=False).classes(
+                'items-center justify-center gap-2 py-1.5 m-0 bg-[#1d2b42] text-[0.75rem]'):
             # https://www.termsfeed.com/blog/sample-copyright-notices/
             ui.link(
-                '© 2024 Interactive Geometry Lab', 
-                'https://igl.ethz.ch/', 
+                '© 2024 Interactive Geometry Lab',
+                'https://igl.ethz.ch/',
                 new_tab=True
-            ).classes('text-white')
+            ).classes('text-white opacity-80')
+            ui.label('·').classes('opacity-50')
+            ui.link(
+                'Built on GarmentCode',
+                'https://github.com/maria-korosteleva/GarmentCode',
+                new_tab=True
+            ).classes('text-white opacity-80')
 
     def view_tabs_layout(self):
         """2D/3D view tabs"""
@@ -179,7 +192,8 @@ class GUIState:
                 with ui.tab_panel(self.ui_3d_tab).classes('w-full h-full items-center p-0 m-0'):
                     self.def_3d_scene()
 
-            ui.button('Download Current Garment', on_click=lambda: self.state_download()).classes('justify-self-end')
+            ui.button('Download pattern', on_click=lambda: self.state_download()) \
+                .props('unelevated icon=download').classes('self-end mr-6')
 
     # !SECTION
     # SECTION -- Parameter menu
@@ -198,8 +212,8 @@ class GUIState:
     def def_body_tab(self):
     
         # Set of buttons
-        with ui.row():
-            ui.button('Upload', on_click=self.ui_body_dialog.open)
+        with ui.row(wrap=False).classes('gap-2'):
+            ui.button('Upload', on_click=self.ui_body_dialog.open).props('outline size=sm icon=upload_file')
             if self.user:
                 account_widgets.body_profiles_ui(self)
         
@@ -210,12 +224,12 @@ class GUIState:
             for param in body:
                 param_name = param.replace('_', ' ').capitalize()
                 elem = ui.number(
-                        label=param_name, 
-                        value=str(body[param]), 
+                        label=param_name,
+                        value=str(body[param]),
                         format='%.2f',
                         precision=2,
                         step=0.5,
-                ).classes('text-[0.85rem]')
+                ).classes('text-[0.85rem] se-mono').props('outlined dense')
 
                 if param[0] == '_':  # Info elements for calculatable parameters
                     elem.disable()
@@ -234,14 +248,14 @@ class GUIState:
             if 'v' not in design_params[param]:
                 ui_elems[param] = {}
                 if use_collapsible:
-                    with ui.expansion().classes('w-full p-0 m-0') as expansion: 
+                    with ui.expansion().classes('w-full p-0 m-0') as expansion:
                         with expansion.add_slot('header'):
-                            ui.label(f'{param_name}').classes('text-base self-center w-full h-full p-0 m-0')
+                            ui.label(f'{param_name}').classes('se-section-label self-center w-full h-full p-0 m-0')
                         with ui.row().classes('w-full h-full p-0 m-0'):  # Ensures correct application of style classes for children
                             self.def_flat_design_subtab(ui_elems[param], design_params[param])
                 else:
-                    with ui.card().classes('w-full shadow-md border m-0 rounded-md'): 
-                        ui.label(f'{param_name}').classes('text-base self-center w-full h-full p-0 m-0')
+                    with ui.card().classes('w-full se-stitch-card m-0'):
+                        ui.label(f'{param_name}').classes('se-section-label self-center w-full h-full p-0 m-0')
                         self.def_flat_design_subtab(ui_elems[param], design_params[param])
             else:
                 # Leaf value
@@ -252,18 +266,18 @@ class GUIState:
                     values = design_params[param]['range']
                     if 'null' in p_type and None not in values: 
                         values.append(None)  # NOTE: Displayable value
-                    ui.label(param_name).classes('p-0 m-0 mt-2 text-stone-500 text-[0.85rem]') 
+                    ui.label(param_name).classes('p-0 m-0 mt-2 se-param-label')
                     ui_elems[param] = ui.select(
                         values, value=val,
                         on_change=lambda e, dic=design_params, param=param: self.update_pattern_ui_state(dic, param, e.value)
-                    ).classes('w-full') 
+                    ).classes('w-full').props('outlined dense options-dense')
                 elif p_type == 'bool':
                     ui_elems[param] = ui.switch(
                         param_name, value=val, 
                         on_change=lambda e, dic=design_params, param=param: self.update_pattern_ui_state(dic, param, e.value)
                     ).classes('text-stone-500')
                 elif p_type == 'float' or p_type == 'int':
-                    ui.label(param_name).classes('p-0 m-0 mt-2 text-stone-500 text-[0.85rem]')
+                    ui.label(param_name).classes('p-0 m-0 mt-2 se-param-label')
                     ui_elems[param] = ui.slider(
                         value=val, 
                         min=p_range[0], 
@@ -285,14 +299,14 @@ class GUIState:
                     ui_elems[param] = ui.input(label=param_name, value=val, placeholder='Type the value',
                         validation={'Input too long': lambda value: len(value) < 20},
                         on_change=lambda e, dic=design_params, param=param: self.update_pattern_ui_state(dic, param, e.value)
-                    ).classes('w-full')
+                    ).classes('w-full').props('outlined dense')
                 
     def def_design_tab(self):
         # Set of buttons
-        with ui.row():
-            ui.button('Random', on_click=self.random)
-            ui.button('Default', on_click=self.default)
-            ui.button('Upload', on_click=self.ui_design_dialog.open)  
+        with ui.row(wrap=False).classes('gap-2'):
+            ui.button('Random', on_click=self.random).props('outline size=sm icon=shuffle')
+            ui.button('Default', on_click=self.default).props('outline size=sm icon=restart_alt')
+            ui.button('Upload', on_click=self.ui_design_dialog.open).props('outline size=sm icon=upload_file')
     
         # Design parameters
         design_params = self.pattern_state.design_params
@@ -337,8 +351,8 @@ class GUIState:
                 ).props('dense left-label').classes('text-stone-800')
 
                 self.ui_self_intersect = ui.label(
-                    'WARNING: Garment panels are self-intersecting!'
-                ).classes('font-semibold text-purple-600 border-purple-600 border py-0 px-1.5 rounded-md') \
+                    'Garment panels are self-intersecting'
+                ).classes('se-warning-chip') \
                 .bind_visibility(self.pattern_state, 'is_self_intersecting')
 
             with ui.image(
@@ -399,8 +413,8 @@ class GUIState:
 
     def def_3d_scene(self):
         y_fov = 30   # Degrees == np.pi / 6. rad FOV
-        camera_location = [0, -4.15, 1.25] 
-        bg_color='#ffffff'
+        camera_location = [0, -4.15, 1.25]
+        bg_color = '#f7f5f0'  # pattern paper
 
         def body_visibility(value):
             self.ui_body_3d.visible(value)
@@ -412,12 +426,10 @@ class GUIState:
                 on_change=lambda e: body_visibility(e.value) 
             ).props('dense left-label').classes('text-stone-800')
 
-            ui.button('Drape current design', on_click=lambda: self.update_3d_scene())
+            ui.button('Drape current design', on_click=lambda: self.update_3d_scene()) \
+                .props('unelevated icon=checkroom')
 
-            ui.label(
-                'INFO: it takes a few minutes'
-            ).classes(f'font-semibold text-[{theme_colors.primary}] border-[{theme_colors.primary}] '
-                    'border py-0 px-1.5 rounded-md')
+            ui.label('takes a few minutes').classes('se-hint-chip')
 
         camera = self.create_camera(camera_location, y_fov)
         with ui.scene(
@@ -428,13 +440,13 @@ class GUIState:
             background_color=bg_color   
             ).classes(f'w-[{self.w_garment_display}vw] h-[90%] p-0 m-0') as self.ui_3d_scene:
             # Lights setup
-            self.create_lights(self.ui_3d_scene, intensity=60.)
+            self.create_lights(self.ui_3d_scene, intensity=10.)
             # NOTE: texture is there, just needs a better setup
             self.ui_garment_3d = None
             # TODOLOW Update body model to a correct shape
             self.ui_body_3d = self.ui_3d_scene.stl(
-                    '/body/mean_all.stl' 
-                ).rotate(np.pi / 2, 0., 0.).material(color='#000000')
+                    '/body/mean_all.stl'
+                ).rotate(np.pi / 2, 0., 0.).material(color='#a89f8d')  # muslin dress form
 
     # !SECTION
     # SECTION -- Other UI details
@@ -447,7 +459,7 @@ class GUIState:
             'persistent maximized'
         ) as self.spin_dialog, ui.card().classes('bg-transparent'):
             # Styles https://quasar.dev/vue-components/spinners
-            ui.spinner('hearts', size='15em').classes('fixed-center')   # NOTE: 'dots' 'ball' 
+            ui.spinner('tail', size='6em', color='white').classes('fixed-center')
 
     def def_body_file_dialog(self):
         """ Dialog for loading parameter files (body)
@@ -563,8 +575,12 @@ class GUIState:
         # NOTE This is the slow part 
         self.pattern_state.reload_garment()
 
-        # TODOLOW the pattern is floating around when collars are added.. 
         # Update display
+        self.update_pattern_display()
+
+    def update_pattern_display(self):
+        """Sync the pattern canvas with the current pattern state"""
+        # TODOLOW the pattern is floating around when collars are added..
         if self.ui_pattern_display is not None:
 
             if self.pattern_state.svg_filename:
