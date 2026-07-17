@@ -185,11 +185,24 @@ class GUIState:
             with ui.tab_panel(self.ui_3d_tab).classes('w-full h-full p-0 m-0 relative'):
                 self.def_3d_scene()
 
-        # Floating view switcher
-        ui.toggle(['Sewing pattern', '3D view'], value='Sewing pattern',
-                  on_change=lambda e: tabs.set_value(e.value)) \
-            .props('no-caps unelevated rounded toggle-color=primary padding="2px 14px"') \
-            .classes('absolute top-3 left-1/2 -translate-x-1/2 z-50 se-overlay-chip')
+        # Floating view switcher + fabric color picker
+        with ui.row(wrap=False).classes(
+                'absolute top-3 left-1/2 -translate-x-1/2 z-50 items-center gap-2'):
+            ui.toggle(['Sewing pattern', '3D view'], value='Sewing pattern',
+                      on_change=lambda e: tabs.set_value(e.value)) \
+                .props('no-caps unelevated rounded toggle-color=primary padding="2px 14px"') \
+                .classes('se-overlay-chip')
+
+            # Fabric color: applies to both the 2D pattern and the 3D drape
+            with ui.button(icon='palette') \
+                    .props('round unelevated size=sm') \
+                    .classes('shadow-lg') \
+                    .tooltip('Fabric color') as self.ui_fabric_color_btn:
+                self.ui_fabric_color_picker = ui.color_picker(
+                    on_pick=lambda e: self.update_fabric_color(e.color))
+            self.ui_fabric_color_picker.set_color(self.pattern_state.fabric_color)
+            self.ui_fabric_color_btn.style(
+                f'background-color: {self.pattern_state.fabric_color} !important')
 
         # Floating primary action
         ui.button('Download pattern', on_click=lambda: self.state_download()) \
@@ -795,6 +808,62 @@ class GUIState:
         # Put the new one for display
         self.garm_3d_filename = f'garm_3d_{self.pattern_state.id}_{time.time()}.glb'
         shutil.copy2(path / filename, self.local_path_3d / self.garm_3d_filename)
+
+    async def update_fabric_color(self, color):
+        """Apply a new fabric color to the 2D pattern and the draped 3D garment"""
+        if not color or color == self.pattern_state.fabric_color:
+            return
+
+        print('INFO::Updating fabric color...')
+        self.ui_fabric_color_btn.style(f'background-color: {color} !important')
+
+        # 2D: cheap SVG re-serialization of the already-assembled pattern
+        self.pattern_state.set_fabric_color(color)
+        self.update_pattern_display()
+
+        # 3D: re-tint the existing drape -- material re-export only,
+        # no re-simulation needed
+        if self.ui_garment_3d is None or self.pattern_state.paths_3d is None:
+            return
+        try:
+            self.spin_dialog.open()
+            self.loop = asyncio.get_event_loop()
+            updated = await self.loop.run_in_executor(
+                self._async_executor, self._sync_recolor_3d)
+
+            if updated:
+                self.ui_garment_3d.delete()
+                with self.ui_3d_scene:
+                    self.ui_garment_3d = self.ui_3d_scene.gltf(
+                                f'geo/{self.garm_3d_filename}',
+                            ).scale(0.01).rotate(np.pi / 2, 0., 0.)
+            self.spin_dialog.close()
+        except KeyboardInterrupt as e:
+            raise e
+        except BaseException as e:
+            traceback.print_exc()
+            print(e)
+            self.spin_dialog.close()  # If open
+            ui.notify(
+                'Failed to apply the fabric color to the 3D view',
+                type='negative',
+                close_button=True,
+                position='center'
+            )
+
+    def _sync_recolor_3d(self):
+        """Re-export the draped garment GLB in the current fabric color"""
+        res = self.pattern_state.recolor_3d()
+        if res is None:
+            return False
+        path, filename = res
+
+        # Delete previous file
+        (self.local_path_3d / self.garm_3d_filename).unlink(missing_ok=True)
+        # Put the new one for display
+        self.garm_3d_filename = f'garm_3d_{self.pattern_state.id}_{time.time()}.glb'
+        shutil.copy2(path / filename, self.local_path_3d / self.garm_3d_filename)
+        return True
 
     # Design buttons updates
     async def design_sample(self):

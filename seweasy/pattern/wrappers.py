@@ -104,17 +104,22 @@ class VisPattern(core.ParametrizedPattern):
         flipped_point[1] *= -1
         return flipped_point
 
-    def _draw_a_panel(self, panel_name, apply_transform=True, fill=True):
+    def _draw_a_panel(self, panel_name, apply_transform=True, fill=True,
+                      fill_color=None):
         """
         Adds a requested panel to the svg drawing with given offset and scaling
-        Assumes (!!) 
+        Assumes (!!)
             that edges are correctly oriented to form a closed loop
-        Returns 
+        Returns
             the lower-right vertex coordinate for the convenice of future offsetting.
         """
+        if fill:
+            fill_value = fill_color if fill_color else 'rgb(183,205,229)'   # washed denim
+        else:
+            fill_value = 'rgb(255,255,255)'
         attributes = {
-            'fill':  'rgb(183,205,229)' if fill else 'rgb(255,255,255)',    # washed denim / white
-            'stroke': 'rgb(51,51,51)', 
+            'fill':  fill_value,
+            'stroke': 'rgb(51,51,51)',
             'stroke-width': '0.2'
         }
 
@@ -188,8 +193,9 @@ class VisPattern(core.ParametrizedPattern):
                                  text_anchor='middle'))
 
     def get_svg(self, svg_filename,
-            with_text=True, view_ids=True, 
+            with_text=True, view_ids=True,
             flat=False, fill_panels=True,
+            panel_fill_color=None,
             margin=2) -> sw.Drawing:
         """Convert pattern to writable svg representation"""
 
@@ -211,9 +217,10 @@ class VisPattern(core.ParametrizedPattern):
         for panel in z_sorted_panels:
             if panel is not None:
                 path, attr, front = self._draw_a_panel(
-                    panel, 
-                    apply_transform=not flat, 
-                    fill=fill_panels
+                    panel,
+                    apply_transform=not flat,
+                    fill=fill_panels,
+                    fill_color=panel_fill_color
                 )
                 if flat:
                     path = path.translated(list_to_c([

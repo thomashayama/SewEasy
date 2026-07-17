@@ -1507,23 +1507,25 @@ class BoxMesh(wrappers.VisPattern):
         uv_config = {  # Defaults
             'seam_width': 0.5,
             'dpi': 600,
-            'fabric_grain_texture_path': None,  
+            'fabric_grain_texture_path': None,
             'fabric_grain_resolution': 1,
+            'panel_color': None,
         }
         # Update with incoming values, if any
         uv_config.update(in_uv_config)
 
         uvs = texture_mesh_islands(
             texture_coords=np.array(self.vertex_texture),
-            face_texture_coords=np.array([[tex_id0, tex_id1, tex_id2] for _, tex_id0, _, tex_id1, _, tex_id2, in self.faces_with_texture]), 
+            face_texture_coords=np.array([[tex_id0, tex_id1, tex_id2] for _, tex_id0, _, tex_id1, _, tex_id2, in self.faces_with_texture]),
             out_texture_image_path=self.paths.g_texture,
             out_fabric_tex_image_path=self.paths.g_texture_fabric,
             out_mtl_file_path=self.paths.g_mtl,
-            boundary_width=uv_config['seam_width'], 
-            dpi=uv_config['dpi'], 
+            boundary_width=uv_config['seam_width'],
+            dpi=uv_config['dpi'],
             background_img_path=uv_config['fabric_grain_texture_path'],
             background_resolution=uv_config['fabric_grain_resolution'],
-            mat_name=mat_name
+            mat_name=mat_name,
+            panel_color=uv_config['panel_color']
         )
         save_obj(
             self.paths.g_box_mesh, 

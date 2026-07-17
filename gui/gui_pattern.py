@@ -27,6 +27,9 @@ def _id_generator(size=10, chars=string.ascii_uppercase + string.digits):
         return ''.join(random.choices(chars, k=size))
 
 class GUIPattern:
+    # Default fabric color -- matches the classic "washed denim" panel fill
+    DEFAULT_FABRIC_COLOR = '#b7cde5'
+
     def __init__(self) -> None:
         # Unique id to distiguish tab sessions correctly
         self.id = _id_generator(20)
@@ -47,6 +50,7 @@ class GUIPattern:
 
         self.body_params = None
         self.design_params = {}
+        self.fabric_color = self.DEFAULT_FABRIC_COLOR
         self.design_sampler = pyg.DesignSampler()
         self.sew_pattern = None
 
@@ -140,6 +144,12 @@ class GUIPattern:
                 if key in s_from:
                     GUIPattern._nested_sync(s_from[key], s_to[key])
 
+    def set_fabric_color(self, color):
+        """Change the fabric color and refresh the 2D pattern display"""
+        self.fabric_color = color
+        if self.sew_pattern is not None:
+            self._view_serialize()
+
     def sync_left(self, with_check=False):
         """Synchronize left and right design parameters"""
         # Check if needed in the first place
@@ -162,10 +172,11 @@ class GUIPattern:
         self.clear_previous_svg()
         try:
             self.svg_filename = f'pattern_{time.time()}.svg'
-            dwg = pattern.get_svg(self.tmp_path / self.svg_filename, 
-                                  with_text=False, 
+            dwg = pattern.get_svg(self.tmp_path / self.svg_filename,
+                                  with_text=False,
                                   view_ids=False,
                                   flat=False,
+                                  panel_fill_color=self.fabric_color,
                                   margin=0
             )
             dwg.save()
@@ -243,19 +254,40 @@ class GUIPattern:
         )
 
         # Convert to displayable element
-        mesh = trimesh.load_mesh(paths.g_sim)
-
-        # enable double-sided material for nice viewing
-        pbr_material = mesh.visual.material.to_pbr()
-        pbr_material.doubleSided = True
-        mesh.visual.material = pbr_material
-        # export
-        mesh.export(paths.g_sim_glb)
+        self._export_display_glb(paths)
 
         self.paths_3d = paths
         self.is_in_3D = True
 
         return paths.out_el, paths.g_sim_glb.name
+
+    def _fabric_color_rgba(self):
+        """Current fabric color as an RGBA list (0-255) for trimesh materials"""
+        hex_color = self.fabric_color.lstrip('#')
+        return [int(hex_color[i:i + 2], 16) for i in (0, 2, 4)] + [255]
+
+    def _export_display_glb(self, paths):
+        """Export the simulated garment as a GLB for the 3D viewer,
+        tinted with the current fabric color"""
+        mesh = trimesh.load_mesh(paths.g_sim)
+
+        # enable double-sided material for nice viewing
+        pbr_material = mesh.visual.material.to_pbr()
+        pbr_material.doubleSided = True
+        # The baked UV texture uses neutral white panels (see gui_sim_props),
+        # so the base color factor acts as the fabric color
+        pbr_material.baseColorFactor = self._fabric_color_rgba()
+        mesh.visual.material = pbr_material
+        # export
+        mesh.export(paths.g_sim_glb)
+
+    def recolor_3d(self):
+        """Re-export the last draped garment with the current fabric color
+        (no re-simulation)"""
+        if self.paths_3d is None:
+            return None
+        self._export_display_glb(self.paths_3d)
+        return self.paths_3d.out_el, self.paths_3d.g_sim_glb.name
 
     # Current state
     def is_design_sectioned(self):

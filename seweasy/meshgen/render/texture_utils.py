@@ -11,12 +11,13 @@ def texture_mesh_islands(
         out_texture_image_path: Path, 
         out_fabric_tex_image_path: Path = None, 
         out_mtl_file_path: Path = None, 
-        boundary_width=0.3, 
-        dpi=1200, 
+        boundary_width=0.3,
+        dpi=1200,
         background_img_path=None,
         background_resolution=1.,
-        uv_padding=3, 
-        mat_name='islands_texture'
+        uv_padding=3,
+        mat_name='islands_texture',
+        panel_color=None
 ):
     """
         Returns updated uv coordinates (properly normalized and aligned with the created texture)
@@ -31,7 +32,8 @@ def texture_mesh_islands(
         texture_image_path=out_texture_image_path,
         boundary_width=boundary_width,
         dpi=dpi,
-        preserve_alpha=True
+        preserve_alpha=True,
+        panel_color=panel_color
     )
 
     # Create image with fabric background
@@ -41,9 +43,10 @@ def texture_mesh_islands(
             texture_image_path=out_fabric_tex_image_path,
             boundary_width=boundary_width,
             dpi=dpi,
-            background_img_path=background_img_path, 
+            background_img_path=background_img_path,
             background_resolution=background_resolution,
-            preserve_alpha=False  
+            preserve_alpha=False,
+            panel_color=panel_color
         )
     else:
         out_fabric_tex_image_path = None
@@ -145,17 +148,20 @@ def create_UV_island_texture(
         background_alpha=0.8,
         background_img_path=None,
         background_resolution=5,
-        preserve_alpha=True
+        preserve_alpha=True,
+        panel_color=None
     ):
-    """Create texture image from the set of UV boundary loops (e.g. sewing pattern panels). 
-        It renders the border of the loops and fills them in with color 
-        Params: 
-            * boundary_uv_to_draw -- 2D list -- sequence of 2D vertices on each of the boundaries. The order is IMPORTANT. The vertices will be connected 
+    """Create texture image from the set of UV boundary loops (e.g. sewing pattern panels).
+        It renders the border of the loops and fills them in with color
+        Params:
+            * boundary_uv_to_draw -- 2D list -- sequence of 2D vertices on each of the boundaries. The order is IMPORTANT. The vertices will be connected
                 by boundary edges sequentially
-            * width, height -- the dimentions of the UV map  
+            * width, height -- the dimentions of the UV map
             * texture_image_path -- filepath to same a texture image to
-            * boundary_width -- width of the boundary outline 
+            * boundary_width -- width of the boundary outline
             * dpi -- resolution of the output image
+            * panel_color -- a single matplotlib-compatible color for all panels;
+                if None, panels are colored individually from a colormap
     """
     n_components = len(boundary_uv_to_draw)
 
@@ -164,10 +170,13 @@ def create_UV_island_texture(
     fig.set_size_inches(width / 100, height / 100)  # width & height are usually given in cm
 
     # Colors
-    shift = 0.17
-    divisor = max(5, n_components)
-    cmap = matplotlib.colormaps['twilight']   # copper cool  spring winter twilight  # Using smooth Matplotlib colormaps
-    color_sample = [cmap((1 - shift) * id / divisor) for id in range(divisor)]
+    if panel_color is not None:
+        color_sample = [matplotlib.colors.to_rgba(panel_color)] * n_components
+    else:
+        shift = 0.17
+        divisor = max(5, n_components)
+        cmap = matplotlib.colormaps['twilight']   # copper cool  spring winter twilight  # Using smooth Matplotlib colormaps
+        color_sample = [cmap((1 - shift) * id / divisor) for id in range(divisor)]
 
     # Background -- garment style
     if background_img_path is not None:
