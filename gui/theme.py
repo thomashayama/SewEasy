@@ -141,6 +141,13 @@ body {
 .q-field--outlined .q-field__control {
     border-radius: 8px;
 }
+/* Parameter-section expansions in the side panel */
+.q-expansion-item .q-item__label {
+    font-family: 'Bricolage Grotesque', 'Public Sans', sans-serif;
+    font-weight: 600;
+    font-size: 0.88rem;
+    color: var(--se-navy);
+}
 .q-field__label {
     font-size: 0.85rem;
 }

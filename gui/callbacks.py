@@ -129,11 +129,14 @@ class GUIState:
         self.def_body_file_dialog()
 
         # Configurator GUI
-        with ui.row(wrap=False).classes(f'w-full h-[{self.h_params_content}dvh] px-3 py-0 m-0 gap-2'):
-            # Tabs
-            self.def_param_tabs_layout()
-            
-            # Pattern visual
+        # Collapsible configuration side panel
+        self.ui_side_panel = ui.left_drawer(value=True, elevated=False, bordered=True) \
+            .classes('px-3 py-2 bg-[#fcfcfa]').props('width=390 breakpoint=0')
+        with self.ui_side_panel:
+            self.def_side_panel()
+
+        # Pattern visual
+        with ui.column(wrap=False).classes(f'w-full h-[{self.h_params_content}dvh] px-3 py-0 m-0'):
             self.view_tabs_layout()
 
         # Overall wrapping
@@ -142,6 +145,8 @@ class GUIState:
             with ui.row(wrap=False).classes(f'w-full h-[{self.h_header}vh] items-center justify-between py-0 px-5 m-0'):
                 # Brand
                 with ui.row(wrap=False).classes('items-center gap-2.5'):
+                    ui.button(icon='menu', on_click=self.ui_side_panel.toggle) \
+                        .props('flat color=white dense round').tooltip('Configuration panel')
                     ui.icon('content_cut').classes('text-2xl rotate-[-90deg] opacity-90')
                     with ui.column().classes('gap-0.5'):
                         ui.label('SewEasy').classes('se-wordmark')
@@ -197,50 +202,21 @@ class GUIState:
                 .props('unelevated icon=download').classes('self-end mr-6')
 
     # !SECTION
-    # SECTION -- Parameter menu
-    def def_param_tabs_layout(self):
-        """Layout of tabs with parameters"""
-        with ui.column(wrap=False).classes(f'h-[{self.h_params_content}vh]'):
-            with ui.tabs() as tabs:
-                self.ui_design_tab = ui.tab('Design parameters')
-                self.ui_body_tab = ui.tab('Body parameters')
-            with ui.tab_panels(tabs, value=self.ui_design_tab, animated=True).classes('w-full h-full items-center'):  
-                with ui.tab_panel(self.ui_design_tab).classes('w-full h-full items-center p-0 m-0'):
-                    self.def_design_tab()
-                with ui.tab_panel(self.ui_body_tab).classes('w-full h-full items-center p-0 m-0'):
-                    self.def_body_tab()
-
-    def def_body_tab(self):
-    
-        # Set of buttons
-        with ui.row().classes('gap-2'):
-            ui.button('Upload', on_click=self.ui_body_dialog.open).props('outline size=sm icon=upload_file')
-            if self.user:
-                account_widgets.body_profiles_ui(self)
-        
+    # SECTION -- Configuration side panel
+    def def_side_panel(self):
+        """Collapsible configuration panel: body source + design parameters"""
+        # NOTE: kept for compatibility with the shared update flow —
+        # measurement editing lives on the account page now
         self.ui_active_body_refs = {}
         self.ui_passive_body_refs = {}
-        with ui.scroll_area().classes('w-full h-full p-0 m-0'): # NOTE: p-0 m-0 gap-0 dont' seem to have effect
-            body = self.pattern_state.body_params
-            for param in body:
-                param_name = param.replace('_', ' ').capitalize()
-                elem = ui.number(
-                        label=param_name,
-                        value=str(body[param]),
-                        format='%.2f',
-                        precision=2,
-                        step=0.5,
-                ).classes('text-[0.85rem] se-mono').props('outlined dense')
 
-                if param[0] == '_':  # Info elements for calculatable parameters
-                    elem.disable()
-                    self.ui_passive_body_refs[param] = elem
-                else:   # active elements accepting input
-                    # NOTE: e.sender == UI object, e.value == new value
-                    elem.on_value_change(lambda e, dic=body, param=param: self.update_pattern_ui_state(
-                        dic, param, e.value, body_param=True
-                    ))
-                    self.ui_active_body_refs[param] = elem
+        ui.label('Body').classes('se-section-label')
+        account_widgets.body_source_ui(self)
+
+        ui.separator().classes('my-2')
+
+        ui.label('Garment').classes('se-section-label')
+        self.def_design_block()
 
     def def_flat_design_subtab(self, ui_elems, design_params, use_collapsible=False):
         """Group of design parameters"""
@@ -302,46 +278,106 @@ class GUIState:
                         on_change=lambda e, dic=design_params, param=param: self.update_pattern_ui_state(dic, param, e.value)
                     ).classes('w-full').props('outlined dense')
                 
-    def def_design_tab(self):
-        # Set of buttons
-        with ui.row().classes('gap-2'):
+    # Which design sections a given bottom-garment choice reads
+    BASE_SECTIONS = {
+        'SkirtCircle': {'flare-skirt'},
+        'AsymmSkirtCircle': {'flare-skirt'},
+        'SkirtManyPanels': {'flare-skirt'},
+        'PencilSkirt': {'pencil-skirt'},
+        'Skirt2': {'skirt'},
+        'Pants': {'pants'},
+    }
+    SECTION_LABELS = {
+        'waistband': 'Waistband', 'shirt': 'Shirt', 'collar': 'Collar',
+        'sleeve': 'Sleeves', 'left': 'Asymmetry (left/right)',
+        'skirt': 'Skirt', 'flare-skirt': 'Circle skirt',
+        'godet-skirt': 'Godet skirt', 'pencil-skirt': 'Pencil skirt',
+        'levels-skirt': 'Levels skirt', 'pants': 'Pants',
+    }
+    META_LABELS = {'upper': 'Top', 'wb': 'Waistband', 'bottom': 'Bottom'}
+
+    def def_design_block(self):
+        """Garment composition first, then only the relevant parameter
+        sections as expansions"""
+        design_params = self.pattern_state.design_params
+        self.ui_design_refs = {}
+        self.ui_design_sections = {}
+
+        if not self.pattern_state.is_design_sectioned():
+            # Simplified display of un-sectioned design files
+            self.def_flat_design_subtab(
+                self.ui_design_refs, design_params, use_collapsible=True)
+            return
+
+        # The core design choice: what garments make up the outfit
+        self.ui_design_refs['meta'] = {}
+        meta = design_params['meta']
+        for param in meta:
+            values = meta[param]['range']
+            if 'null' in meta[param]['type'] and None not in values:
+                values.append(None)  # NOTE: Displayable value
+            ui.label(self.META_LABELS.get(param, param.capitalize())) \
+                .classes('p-0 m-0 mt-1 se-param-label')
+            self.ui_design_refs['meta'][param] = ui.select(
+                values, value=meta[param]['v'],
+                on_change=lambda e, dic=meta, param=param: self.update_pattern_ui_state(dic, param, e.value)
+            ).classes('w-full').props('outlined dense options-dense')
+
+        # Design-level actions
+        with ui.row().classes('gap-2 mt-2'):
             ui.button('Random', on_click=self.random).props('outline size=sm icon=shuffle')
             ui.button('Default', on_click=self.default).props('outline size=sm icon=restart_alt')
             ui.button('Upload', on_click=self.ui_design_dialog.open).props('outline size=sm icon=upload_file')
             if self.user:
                 account_widgets.designs_ui(self)
-    
-        # Design parameters
-        design_params = self.pattern_state.design_params
-        self.ui_design_refs = {}
-        if self.pattern_state.is_design_sectioned():
-            # Use tabs to represent top-level sections
-            with ui.splitter(value=self.w_splitter_design).classes('w-full h-full p-0 m-0') as splitter:
-                with splitter.before:
-                    with ui.tabs().props('vertical').classes('w-full h-full') as tabs:
-                        for param in design_params:
-                            # Tab
-                            self.ui_design_subtabs[param] = ui.tab(param)
-                            self.ui_design_refs[param] = {}
 
-                with splitter.after:
-                    with ui.tab_panels(tabs, value=self.ui_design_subtabs['meta']).props('vertical').classes('w-full h-full p-0 m-0'):
-                        for param, tab_elem in self.ui_design_subtabs.items():
-                            with ui.tab_panel(tab_elem).classes('w-full h-full p-0 m-0').style('gap: 0px'): 
-                                with ui.scroll_area().classes('w-full h-full p-0 m-0').style('gap: 0px'):
-                                    self.def_flat_design_subtab(
-                                        self.ui_design_refs[param],
-                                        design_params[param],
-                                        use_collapsible=(param == 'left')
-                                    )
-        else:
-            # Simplified display of designs
-            with ui.scroll_area().classes('w-full h-full p-0 m-0'):
-                self.def_flat_design_subtab(
-                    self.ui_design_refs,
-                    design_params,
-                    use_collapsible=True
-                )
+        # Parameter sections -- only those the current composition reads
+        # are visible (see _refresh_section_relevance)
+        with ui.column().classes('w-full gap-2 mt-3'):
+            for section in design_params:
+                if section == 'meta':
+                    continue
+                expansion = ui.expansion(
+                    self.SECTION_LABELS.get(section, section)
+                ).classes('w-full se-stitch-card')
+                with expansion:
+                    self.ui_design_refs[section] = {}
+                    self.def_flat_design_subtab(
+                        self.ui_design_refs[section],
+                        design_params[section],
+                        use_collapsible=(section == 'left')
+                    )
+                self.ui_design_sections[section] = expansion
+        self._refresh_section_relevance()
+
+    def _relevant_sections(self):
+        """Design sections that the currently chosen garments actually use"""
+        design = self.pattern_state.design_params
+        upper = design['meta']['upper']['v']
+        wb = design['meta']['wb']['v']
+        bottom = design['meta']['bottom']['v']
+
+        relevant = set()
+        if upper:
+            relevant |= {'shirt', 'collar', 'sleeve', 'left'}
+        if wb:
+            relevant.add('waistband')
+        relevant |= self.BASE_SECTIONS.get(bottom, set())
+        if bottom == 'GodetSkirt':
+            relevant.add('godet-skirt')
+            relevant |= self.BASE_SECTIONS.get(design['godet-skirt']['base']['v'], set())
+        if bottom == 'SkirtLevels':
+            relevant.add('levels-skirt')
+            relevant |= self.BASE_SECTIONS.get(design['levels-skirt']['base']['v'], set())
+        return relevant
+
+    def _refresh_section_relevance(self):
+        """Show only the parameter sections relevant to the current garments"""
+        if not getattr(self, 'ui_design_sections', None):
+            return
+        relevant = self._relevant_sections()
+        for section, expansion in self.ui_design_sections.items():
+            expansion.set_visibility(section in relevant)
                             
     # !SECTION
     # SECTION -- Pattern visuals
@@ -535,7 +571,10 @@ class GUIState:
             else:
                 param_dict[param]['v'] = new_value
                 self.pattern_state.is_in_3D = False   # Design param changes -> 3D model is not synced with the param
- 
+
+        # Keep the visible parameter sections in sync with the composition
+        self._refresh_section_relevance()
+
         try:
             if not self.pattern_state.is_slow_design(): 
                 # Quick update

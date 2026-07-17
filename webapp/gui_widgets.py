@@ -101,33 +101,73 @@ def _library_ui(email, *, noun, noun_plural, save_label, load_label,
         .props(f'outline size=sm icon={load_icon}')
 
 
-def body_profiles_ui(state):
-    """Save/load body measurements; call inside a ui.row in the body tab.
-    `state` is the GUIState; requires state.user to be set."""
+def body_source_ui(state):
+    """Measurement source selector for the side panel: default body,
+    saved profiles (signed in), or file upload. Editing happens on the
+    account page. `state` is the GUIState."""
+    email = state.user['email'] if state.user else None
+    DEFAULT = '__default__'
 
-    async def apply_item(data):
-        # Same flow as the body-file upload dialog in gui/callbacks.py
-        state.toggle_param_update_events(state.ui_active_body_refs)
-        state.pattern_state.set_new_body_params(data['measurements'])
-        state.update_body_params_ui_state(state.ui_active_body_refs)
+    async def apply_measurements(measurements):
+        state.pattern_state.set_new_body_params(measurements)
         await state.update_pattern_ui_state()
-        state.toggle_param_update_events(state.ui_active_body_refs)
 
-    _library_ui(
-        state.user['email'],
-        noun='measurements',
-        noun_plural='measurements',
-        save_label='Save to account',
-        load_label='My measurements',
-        load_icon='straighten',
-        snapshot=lambda: profiles.measurements_from_body(
-            state.pattern_state.body_params),
-        apply_item=apply_item,
-        list_items=profiles.list_profiles,
-        save_item=profiles.save_profile,
-        get_item=profiles.get_profile,
-        delete_item=profiles.delete_profile,
-    )
+    async def on_select(e):
+        if e.value == DEFAULT:
+            base = {k: v for k, v in
+                    state.pattern_state.default_body_params.params.items()
+                    if not k.startswith('_')}
+            await apply_measurements(base)
+        elif isinstance(e.value, int) and email:
+            data = profiles.get_profile(email, e.value)
+            if data is None:
+                ui.notify('Saved measurements not found', type='negative')
+                return
+            await apply_measurements(data['measurements'])
+
+    def options():
+        opts = {DEFAULT: 'Default body'}
+        if email:
+            for row in profiles.list_profiles(email):
+                opts[row['id']] = row['name']
+        return opts
+
+    with ui.row(wrap=False).classes('w-full items-center gap-1'):
+        select = ui.select(options(), value=DEFAULT, label='Measurements',
+                           on_change=on_select) \
+            .classes('grow').props('outlined dense options-dense')
+        ui.button(icon='upload_file', on_click=state.ui_body_dialog.open) \
+            .props('flat dense').tooltip('Upload a measurements file')
+
+        if email:
+            def save_current():
+                name = (save_name.value or '').strip()
+                if not name:
+                    ui.notify('Give the measurements a name', type='warning')
+                    return
+                profiles.save_profile(
+                    email, name,
+                    profiles.measurements_from_body(state.pattern_state.body_params))
+                select.set_options(options())
+                save_dialog.close()
+                ui.notify(f'Saved "{name}"', type='positive')
+
+            with ui.dialog() as save_dialog, ui.card().classes('items-center'):
+                ui.label('Save current measurements to your account')
+                save_name = ui.input(label='Name', placeholder='e.g. My measurements') \
+                    .classes('w-64').props('outlined dense')
+                with ui.row():
+                    ui.button('Save', on_click=save_current)
+                    ui.button('Cancel', on_click=save_dialog.close).props('flat')
+
+            ui.button(icon='save', on_click=save_dialog.open) \
+                .props('flat dense').tooltip('Save current measurements to your account')
+
+    if email:
+        ui.button('Manage measurements', on_click=lambda: ui.navigate.to('/account')) \
+            .props('flat dense no-caps size=sm icon=straighten')
+    else:
+        ui.label('Sign in to save measurement profiles').classes('se-param-label')
 
 
 def designs_ui(state):
