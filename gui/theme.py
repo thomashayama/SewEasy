@@ -165,6 +165,16 @@ body {
     box-shadow: 0 1px 5px rgba(29, 43, 66, 0.14);
 }
 
+/* Mannequin skin-tone slider: the track shows the tone ramp.
+   NOTE: gradient stops must match SKIN_TONES in gui/callbacks.py */
+.se-skin-slider .q-slider__track {
+    background: linear-gradient(90deg,
+        #f7e3d4, #eec9ab, #dfa886, #c68863, #a06544, #78462c, #4a2c1a) !important;
+}
+.se-skin-slider .q-slider__selection {
+    background: transparent !important;
+}
+
 /* Quiet, thin scrollbars */
 .q-scrollarea__thumb {
     background: var(--se-chalkline);

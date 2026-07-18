@@ -45,6 +45,22 @@ BODY_GLB = './assets/bodies/mean_all_display.glb'
 # The muslin tone baked into the display body GLB (its baseColorFactor)
 DEFAULT_BODY_COLOR = '#70695c'
 
+# Light-to-deep skin tone ramp for the mannequin slider.
+# NOTE: must match the .se-skin-slider track gradient in gui/theme.py
+SKIN_TONES = ['#f7e3d4', '#eec9ab', '#dfa886', '#c68863',
+              '#a06544', '#78462c', '#4a2c1a']
+
+
+def skin_tone_hex(t) -> str:
+    """Interpolate the skin-tone ramp at position t in [0, 1]"""
+    t = min(max(float(t), 0.), 1.)
+    pos = t * (len(SKIN_TONES) - 1)
+    i = min(int(pos), len(SKIN_TONES) - 2)
+    frac = pos - i
+    c0, c1 = hex_to_rgba(SKIN_TONES[i]), hex_to_rgba(SKIN_TONES[i + 1])
+    rgb = [round(a + (b - a) * frac) for a, b in zip(c0[:3], c1[:3])]
+    return '#{:02x}{:02x}{:02x}'.format(*rgb)
+
 
 # State of GUI
 class GUIState:
@@ -213,11 +229,6 @@ class GUIState:
             self.ui_fabric_color_picker.set_color(self.pattern_state.fabric_color)
             self.ui_fabric_color_btn.style(
                 f'background-color: {self.pattern_state.fabric_color} !important')
-
-        # Floating primary action
-        ui.button('Download pattern', on_click=lambda: self.state_download()) \
-            .props('unelevated icon=download') \
-            .classes('absolute bottom-5 right-6 z-50 shadow-lg')
 
         # Floating attribution
         with ui.row(wrap=False).classes(
@@ -435,7 +446,9 @@ class GUIState:
                     ).classes('bg-transparent p-0 m-0')
 
             # Floating controls over the workspace
-            with ui.row(wrap=False).classes('absolute top-3 left-4 z-40 items-center gap-2'):
+            # NOTE: stacked vertically so they never collide with the
+            # centered view switcher on narrow windows
+            with ui.column().classes('absolute top-3 left-4 z-40 items-start gap-2'):
                 ui.switch(
                     'Body Silhouette', value=True,
                 ).props('dense left-label').classes('se-overlay-chip text-stone-800 pl-2.5 pr-1.5 py-0.5') \
@@ -444,6 +457,11 @@ class GUIState:
                     'Garment panels are self-intersecting'
                 ).classes('se-warning-chip') \
                     .bind_visibility(self.pattern_state, 'is_self_intersecting')
+
+            # Floating primary action
+            ui.button('Download pattern', on_click=lambda: self.state_download()) \
+                .props('unelevated icon=download') \
+                .classes('absolute bottom-5 right-6 z-50 shadow-lg')
 
     # !SECTION
     # SECTION 3D view
@@ -512,7 +530,9 @@ class GUIState:
                 ).rotate(np.pi / 2, 0., 0.)
 
         # Floating controls over the 3D stage
-        with ui.row(wrap=False).classes('absolute top-3 left-4 z-40 items-center gap-2'):
+        # NOTE: stacked vertically so they never collide with the
+        # centered view switcher on narrow windows
+        with ui.column().classes('absolute top-3 left-4 z-40 items-start gap-2'):
             self.ui_body_3d_switch = ui.switch(
                 'Body Silhouette',
                 value=True,
@@ -520,19 +540,19 @@ class GUIState:
             ).props('dense left-label').classes('se-overlay-chip text-stone-800 pl-2.5 pr-1.5 py-0.5')
 
             # Mannequin skin tone
-            with ui.button(icon='accessibility_new') \
-                    .props('round unelevated size=sm') \
-                    .classes('shadow-lg') \
-                    .tooltip('Mannequin color') as self.ui_body_color_btn:
-                self.ui_body_color_picker = ui.color_picker(
-                    on_pick=lambda e: self.update_body_color(e.color))
-            self.ui_body_color_picker.set_color(self.body_color)
-            self.ui_body_color_btn.style(
-                f'background-color: {self.body_color} !important')
-        with ui.row(wrap=False).classes('absolute top-3 right-6 z-40 items-center gap-2'):
-            ui.label('takes a few minutes').classes('se-hint-chip se-overlay-chip')
-            ui.button('Drape current design', on_click=lambda: self.update_3d_scene()) \
-                .props('unelevated icon=checkroom').classes('shadow-lg')
+            with ui.element('div').classes('se-overlay-chip w-44 px-4 pt-0.5'):
+                self.ui_skin_slider = ui.slider(
+                    value=0.3, min=0., max=1., step=0.01,
+                ).props('color=brown-7 dense').classes('se-skin-slider w-full') \
+                    .on('update:model-value',
+                        lambda e: self.update_body_color(skin_tone_hex(e.args)),
+                        throttle=0.5, leading_events=False) \
+                    .tooltip('Mannequin skin tone')
+
+        # Floating primary action
+        ui.button('Drape current design', on_click=lambda: self.update_3d_scene()) \
+            .props('unelevated icon=checkroom').classes('absolute bottom-5 right-6 z-50 shadow-lg') \
+            .tooltip('The first drape can take a couple of minutes')
 
     # !SECTION
     # SECTION -- Other UI details
@@ -879,7 +899,6 @@ class GUIState:
 
         print('INFO::Updating mannequin color...')
         self.body_color = color
-        self.ui_body_color_btn.style(f'background-color: {color} !important')
 
         try:
             self.loop = asyncio.get_event_loop()
