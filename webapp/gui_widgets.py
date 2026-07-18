@@ -11,6 +11,20 @@ from nicegui import ui
 from webapp import config, designs, profiles
 
 
+async def confirm_delete(message: str) -> bool:
+    """Two-step deletion: a confirmation dialog; True when confirmed"""
+    with ui.dialog() as dialog, ui.card().classes('items-center'):
+        ui.label(message).classes('max-w-xs')
+        with ui.row():
+            ui.button('Delete', on_click=lambda: dialog.submit(True)) \
+                .props('unelevated color=negative icon=delete')
+            ui.button('Cancel', on_click=lambda: dialog.submit(False)) \
+                .props('flat')
+    result = await dialog
+    dialog.delete()
+    return result is True
+
+
 def preview_data_uri(svg_text):
     """Pattern-SVG preview -> data URI for ui.image (None-safe)"""
     if not svg_text:
@@ -245,7 +259,9 @@ def designs_ui(state):
                 type='positive')
         load_dialog.close()
 
-    def remove_item(item_id: int):
+    async def remove_item(item_id: int, name: str):
+        if not await confirm_delete(f'Delete "{name}" from your library?'):
+            return
         designs.delete_design(email, item_id)
         refresh_list()
 
@@ -275,7 +291,8 @@ def designs_ui(state):
                             on_click=lambda _, iid=row['id']: load_and_apply(iid))
                         ui.button(
                             icon='delete',
-                            on_click=lambda _, iid=row['id']: remove_item(iid)
+                            on_click=lambda _, iid=row['id'], n=row['name']:
+                                remove_item(iid, n)
                         ).props('flat color=negative')
 
     with ui.dialog() as load_dialog, ui.card().classes('items-center w-96'):

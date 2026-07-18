@@ -21,7 +21,7 @@ from gui import theme
 from gui.gui_pattern import display_to_base_rgba
 from webapp import auth, designs, profiles
 from webapp import measurement_guide as guide
-from webapp.gui_widgets import preview_data_uri
+from webapp.gui_widgets import confirm_delete, preview_data_uri
 
 BODY_DEFAULT_FILE = './assets/bodies/mean_all.yaml'
 BODY_GLB_FILE = './assets/bodies/mean_all_display.glb'
@@ -168,20 +168,31 @@ async def account_page(request: Request):
 
     def build_measurements():
         with ui.card().classes('se-stitch-card w-full'):
+            NEW_PROFILE = '__new__'
+
             with ui.row(wrap=False).classes('items-center w-full justify-between'):
                 ui.label('Body measurements').classes('se-section-label text-lg')
-                with ui.row().classes('gap-2'):
-                    ui.button('New profile', on_click=lambda: new_dialog.open()) \
-                        .props('outline size=sm icon=add')
-                    delete_btn = ui.button('Delete', on_click=lambda: delete_current()) \
-                        .props('outline size=sm icon=delete color=negative')
+                delete_btn = ui.button('Delete', on_click=lambda: delete_current()) \
+                    .props('outline size=sm icon=delete color=negative')
+
+            last_selected = {'id': None}
+
+            def on_profile_change():
+                if profile_select.value == NEW_PROFILE:
+                    # Creating happens in the dialog; restore the selection
+                    profile_select.value = last_selected['id']
+                    new_dialog.open()
+                    return
+                last_selected['id'] = profile_select.value
+                load_editor()
 
             profile_select = ui.select(
                 {}, label='Profile',
-                on_change=lambda: load_editor(),
+                on_change=lambda: on_profile_change(),
             ).classes('w-64').props('outlined dense')
 
-            hint = ui.label('No saved measurements yet — create a profile to start') \
+            hint = ui.label('No saved measurements yet — choose '
+                            '"＋ New profile…" above to start') \
                 .classes('text-gray-500')
 
             # --- How-to-measure guide ---
@@ -378,21 +389,30 @@ async def account_page(request: Request):
             def refresh_profiles(select_id=None):
                 rows = profiles.list_profiles(email)
                 options = {r['id']: r['name'] for r in rows}
-                profile_select.set_options(options)
                 has_rows = bool(options)
+                options[NEW_PROFILE] = '＋ New profile…'
+                profile_select.set_options(options)
                 hint.set_visibility(not has_rows)
-                profile_select.set_visibility(has_rows)
                 delete_btn.set_visibility(has_rows)
                 if has_rows:
-                    profile_select.value = select_id if select_id in options \
+                    chosen = select_id if select_id in options \
                         else next(iter(options))
+                    last_selected['id'] = chosen
+                    profile_select.value = chosen
                 else:
+                    last_selected['id'] = None
                     profile_select.value = None
                     editor.clear()
                     fields.clear()
 
-            def delete_current():
-                if profile_select.value is None:
+            async def delete_current():
+                if profile_select.value in (None, NEW_PROFILE):
+                    return
+                data = profiles.get_profile(email, profile_select.value)
+                name = data['name'] if data else 'this profile'
+                if not await confirm_delete(
+                        f'Delete the measurement profile "{name}"? '
+                        'Its measurements and skin tone will be lost.'):
                     return
                 profiles.delete_profile(email, profile_select.value)
                 ui.notify('Profile deleted')
@@ -461,7 +481,10 @@ async def account_page(request: Request):
                 rename_input.value = current_name
                 rename_dialog.open()
 
-            def remove(item_id):
+            async def remove(item_id, name):
+                if not await confirm_delete(
+                        f'Delete "{name}" from your library?'):
+                    return
                 designs.delete_design(email, item_id)
                 refresh()
 
@@ -505,8 +528,8 @@ async def account_page(request: Request):
                                                 'color=grey-7').tooltip('Rename')
                                         ui.button(
                                             icon='delete',
-                                            on_click=lambda _, iid=row['id']:
-                                                remove(iid)
+                                            on_click=lambda _, iid=row['id'],
+                                                n=row['name']: remove(iid, n)
                                         ).props('flat dense round size=sm '
                                                 'color=negative').tooltip('Delete')
                                 ui.label(row['updated_at'].strftime('%b %d, %Y')) \
