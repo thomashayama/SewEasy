@@ -26,6 +26,8 @@ because the image is large (the Warp build) and cold starts are slow.
 | `GOOGLE_REDIRECT_URI` | `https://seweasy.thomashayama.com/auth/callback` |
 | `APP_URL` | `https://seweasy.thomashayama.com` (controls Secure cookies) |
 | `PORT` | Set by Railway automatically |
+| `MODAL_DRAPE` | Optional: `1` to drape on Modal GPUs instead of local CPU (see [Running_seweasy.md](Running_seweasy.md#gpu-draping-with-modal-optional)) |
+| `MODAL_TOKEN_ID` / `MODAL_TOKEN_SECRET` | Required if `MODAL_DRAPE=1`; from `~/.modal.toml` after `modal token new` |
 
 ## Custom domain (seweasy.thomashayama.com)
 

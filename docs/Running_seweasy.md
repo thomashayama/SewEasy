@@ -20,6 +20,43 @@ Design files should be compatible with `MetaGarment` object (all examples provid
 * All the 3D drapes are currently fitted to a neutral body model with the current design parameters. 
 * [assets/design_params/default.yaml](../assets/design_params/default.yaml)  is the setup used by GUI on load. Changing this file results in changes in the GUI initial state =)
 
+### GPU draping with Modal (optional)
+
+By default the "Drape current design" simulation runs locally — on CPU inside
+the Docker image, which takes a few minutes per drape. The GUI can instead
+offload the simulation to a [Modal](https://modal.com) GPU container, where a
+warm drape takes ~15–20 seconds end-to-end.
+
+One-time setup:
+
+1. `pip install modal` (already included in the project dependencies) and
+   authenticate: `modal token new` (opens a browser; writes `~/.modal.toml`).
+2. Deploy the draping service: `modal deploy modal_drape.py`.
+   The first build compiles the patched NVIDIA Warp with CUDA and takes
+   several minutes. On Windows, run the `modal` CLI with `PYTHONUTF8=1` set,
+   otherwise it can crash printing build logs (`'charmap' codec` error).
+   If the build fails with "terminated due to external shut-down", just
+   retry — completed layers are cached.
+3. Enable it via environment variables (see `.env.example`):
+   `MODAL_DRAPE=1`, plus `MODAL_TOKEN_ID` / `MODAL_TOKEN_SECRET` (copy from
+   `~/.modal.toml`) when running in Docker, where the token file isn't
+   available.
+
+Notes:
+
+* The deployed app (`seweasy-drape`) snapshots the repo code — re-run
+  `modal deploy modal_drape.py` after changing anything under
+  `seweasy/meshgen/` or the sim configs.
+* The first drape after an idle period cold-starts a GPU worker
+  (~2 minutes: image pull + Warp kernel JIT); subsequent drapes take
+  seconds. Keeping a worker always warm is possible (`min_containers=1` on
+  the function) but bills for idle GPU time.
+* The GPU type is chosen at deploy time via `MODAL_DRAPE_GPU`
+  (default `T4`).
+* Any remote failure (missing tokens, network, sim crash) automatically
+  falls back to the local CPU simulation — the GUI keeps working without
+  Modal, just slower.
+
 ## How to run SewEasy (command line)
 
 Alternatively, one can use command line script to create sewing patterns from design and body parameters. From the root directory run
