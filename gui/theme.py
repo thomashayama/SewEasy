@@ -165,14 +165,20 @@ body {
     box-shadow: 0 1px 5px rgba(29, 43, 66, 0.14);
 }
 
-/* Mannequin skin-tone slider: the track shows the tone ramp.
-   NOTE: gradient stops must match SKIN_TONES in gui/callbacks.py */
+/* Mannequin skin-tone slider: the track shows the Monk Skin Tone scale
+   (CC BY 4.0, https://skintone.google). NOTE: gradient stops must match
+   SKIN_TONES in webapp/measurement_guide.py */
 .se-skin-slider .q-slider__track {
     background: linear-gradient(90deg,
-        #f7e3d4, #eec9ab, #dfa886, #c68863, #a06544, #78462c, #4a2c1a) !important;
+        #f6ede4, #f3e7db, #f7ead0, #eadaba, #d7bd96,
+        #a07e56, #825c43, #604134, #3a312a, #292420) !important;
 }
 .se-skin-slider .q-slider__selection {
     background: transparent !important;
+}
+/* The thumb shows the picked tone (inline color style set from code) */
+.se-skin-slider .q-slider__thumb {
+    filter: drop-shadow(0 0 1px rgba(0, 0, 0, 0.45));
 }
 
 /* Quiet, thin scrollbars */

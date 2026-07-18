@@ -191,6 +191,7 @@ async def account_page(request: Request):
 
             editor = ui.column().classes('w-full')
             fields = {}
+            skin_ctl = {'slider': None, 'touched': False, 'stored': None}
 
             def save_changes():
                 data = profiles.get_profile(email, profile_select.value)
@@ -222,8 +223,14 @@ async def account_page(request: Request):
                               close_button=True)
                     return
 
+                # Skin tone: the slider hex when the user has set one,
+                # otherwise whatever the profile already had
+                if skin_ctl['touched'] and skin_ctl['slider'] is not None:
+                    skin_color = guide.skin_tone_hex(skin_ctl['slider'].value)
+                else:
+                    skin_color = data.get('skin_color')
                 profiles.save_profile(email, data['name'], values,
-                                      skin_color=data.get('skin_color'))
+                                      skin_color=skin_color)
                 message = f'Updated "{data["name"]}"'
                 if scaled:
                     message += (f' — adjusted {len(scaled)} related '
@@ -248,6 +255,31 @@ async def account_page(request: Request):
                 if mode.value == 'essential':
                     keys = [k for k in keys if guide.is_essential(k)]
                 with editor:
+                    # Skin tone: shown on the 3D mannequin when this
+                    # profile is selected in the studio
+                    stored_tone = data.get('skin_color')
+                    skin_ctl.update(touched=False, stored=stored_tone)
+                    with ui.row(wrap=False).classes('items-center gap-3 mt-2 w-full'):
+                        ui.label('Skin tone').classes('se-param-label w-24')
+
+                        def _touch_tone(e):
+                            skin_ctl['touched'] = True
+                            skin_ctl['slider'].style(
+                                f'color: {guide.skin_tone_hex(e.args)}')
+
+                        skin_ctl['slider'] = ui.slider(
+                            value=guide.skin_tone_t(stored_tone)
+                                if stored_tone else 0.3,
+                            min=0., max=1., step=0.01,
+                        ).props('dense').classes('se-skin-slider w-64') \
+                            .style('color: {}'.format(
+                                stored_tone or '#b9b2a6')) \
+                            .on('update:model-value', _touch_tone,
+                                throttle=0.2, leading_events=False)
+                        if not stored_tone:
+                            ui.label('not set — mannequin uses muslin') \
+                                .classes('se-param-label')
+
                     with ui.grid(columns=3).classes('w-full gap-x-4 gap-y-1 mt-2'):
                         for key in keys:
                             with ui.row(wrap=False).classes('items-center gap-0 w-full'):

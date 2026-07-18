@@ -28,6 +28,41 @@ GENERAL_TIPS = (
     'helper makes this much easier.'
 )
 
+# --- Skin tones ---
+# The Monk Skin Tone (MST) scale: a 10-tone scale of human skin colors by
+# Dr. Ellis Monk and Google LLC, CC BY 4.0 — https://skintone.google
+# (see the Attribution section in ReadMe.md). The mannequin slider
+# interpolates linearly between adjacent tones.
+SKIN_TONES = ['#f6ede4', '#f3e7db', '#f7ead0', '#eadaba', '#d7bd96',
+              '#a07e56', '#825c43', '#604134', '#3a312a', '#292420']
+
+
+def _hex_rgb(hex_color):
+    hex_color = hex_color.lstrip('#')
+    return [int(hex_color[i:i + 2], 16) for i in (0, 2, 4)]
+
+
+def skin_tone_hex(t) -> str:
+    """Interpolate the skin-tone ramp at position t in [0, 1]"""
+    t = min(max(float(t), 0.), 1.)
+    pos = t * (len(SKIN_TONES) - 1)
+    i = min(int(pos), len(SKIN_TONES) - 2)
+    frac = pos - i
+    c0, c1 = _hex_rgb(SKIN_TONES[i]), _hex_rgb(SKIN_TONES[i + 1])
+    rgb = [round(a + (b - a) * frac) for a, b in zip(c0, c1)]
+    return '#{:02x}{:02x}{:02x}'.format(*rgb)
+
+
+def skin_tone_t(hex_color) -> float:
+    """Closest slider position on the skin-tone ramp for a stored color"""
+    target = _hex_rgb(hex_color)
+    return min(
+        (i / 100 for i in range(101)),
+        key=lambda t: sum((a - b) ** 2
+                          for a, b in zip(_hex_rgb(skin_tone_hex(t)), target))
+    )
+
+
 # --- Display units (storage is always centimeters) ---
 CM_PER_IN = 2.54
 ANGLE_KEYS = {'hip_inclination', 'shoulder_incl', 'arm_pose_angle'}

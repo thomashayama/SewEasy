@@ -47,32 +47,8 @@ BODY_GLB = './assets/bodies/mean_all_display.glb'
 # them to material factors at export time)
 DEFAULT_BODY_COLOR = '#f9f2e4'
 
-# Light-to-deep skin tone ramp for the mannequin slider.
-# NOTE: must match the .se-skin-slider track gradient in gui/theme.py
-SKIN_TONES = ['#f7e3d4', '#eec9ab', '#dfa886', '#c68863',
-              '#a06544', '#78462c', '#4a2c1a']
-
-
-def skin_tone_hex(t) -> str:
-    """Interpolate the skin-tone ramp at position t in [0, 1]"""
-    t = min(max(float(t), 0.), 1.)
-    pos = t * (len(SKIN_TONES) - 1)
-    i = min(int(pos), len(SKIN_TONES) - 2)
-    frac = pos - i
-    c0, c1 = hex_to_rgba(SKIN_TONES[i]), hex_to_rgba(SKIN_TONES[i + 1])
-    rgb = [round(a + (b - a) * frac) for a, b in zip(c0[:3], c1[:3])]
-    return '#{:02x}{:02x}{:02x}'.format(*rgb)
-
-
-def skin_tone_t(hex_color) -> float:
-    """Closest slider position on the skin-tone ramp for a stored color"""
-    target = hex_to_rgba(hex_color)[:3]
-    return min(
-        (i / 100 for i in range(101)),
-        key=lambda t: sum(
-            (a - b) ** 2
-            for a, b in zip(hex_to_rgba(skin_tone_hex(t))[:3], target))
-    )
+# Skin tone ramp + helpers live with the rest of the body knowledge
+from webapp.measurement_guide import skin_tone_hex, skin_tone_t
 
 
 # State of GUI
@@ -556,7 +532,8 @@ class GUIState:
             with ui.element('div').classes('se-overlay-chip w-44 px-4 pt-0.5'):
                 self.ui_skin_slider = ui.slider(
                     value=0.3, min=0., max=1., step=0.01,
-                ).props('color=brown-7 dense').classes('se-skin-slider w-full') \
+                ).props('dense').classes('se-skin-slider w-full') \
+                    .style(f'color: {self.body_color}') \
                     .on('update:model-value',
                         lambda e: self.update_body_color(skin_tone_hex(e.args)),
                         throttle=0.5, leading_events=False) \
@@ -923,6 +900,7 @@ class GUIState:
 
         print('INFO::Updating mannequin color...')
         self.body_color = color
+        self.ui_skin_slider.style(f'color: {color}')   # thumb shows the tone
 
         try:
             self.loop = asyncio.get_event_loop()
@@ -951,9 +929,10 @@ class GUIState:
 
     async def apply_skin_color(self, color):
         """Apply a stored skin tone (None -> default muslin) and sync the
-        slider position to it"""
+        slider position + thumb color to it"""
         color = color or DEFAULT_BODY_COLOR
         self.ui_skin_slider.set_value(skin_tone_t(color))
+        self.ui_skin_slider.style(f'color: {color}')
         await self.update_body_color(color)
 
     def _sync_recolor_body(self):
