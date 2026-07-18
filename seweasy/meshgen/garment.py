@@ -482,8 +482,11 @@ class Cloth:
 
     def calc_vertex_norms(self):
         vertex_normals = np.zeros((len(self.v_cloth_init), 4))
+        # One conversion up front: rebuilding this array inside the face
+        # loop is O(faces * vertices), per saved frame
+        current_verts_arr = np.asarray(self.current_verts)
         for face in self.f_cloth:
-            v0, v1, v2 = np.array(self.current_verts)[face]
+            v0, v1, v2 = current_verts_arr[face]
             face_norm = list(self.calc_norm(v0, v1, v2))
             temp_update = face_norm + [1]
             vertex_normals[face] += temp_update

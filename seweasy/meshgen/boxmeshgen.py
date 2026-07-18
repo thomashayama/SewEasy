@@ -251,25 +251,38 @@ class Panel:
         Output:
             * (int): Index of find_list (start or end vertex) in panel.panel_vertices
         """
-        pvertices = np.array(self.panel_vertices)
+        # Exact-value index over panel_vertices: the previous linear numpy
+        # scan rebuilt the full array per lookup — O(edges * vertices)
+        # per panel during mesh generation
+        index = self._vert_index()
+        found = index.get(self._vert_key(find_list), ())
 
-        len_pvertices = len(pvertices)
-        if len_pvertices == 0:
-            self.panel_vertices.append(find_list)
-            return 0
+        if len(found) == 1:  # get index
+            return found[0]
+        elif len(found) == 0:
+            self._append_panel_vertex(find_list)
+            return len(self.panel_vertices) - 1
+        else:  # > 1
+            raise PatternLoadingError(
+                f'{self.__class__.__name__}::{self.name}::Corner stitch vertex has been added more than once to panel vertices!')
 
-        else:
-            index = np.where(np.all(pvertices == find_list, axis=1))
-            n_found_indices = len(index[0])
+    @staticmethod
+    def _vert_key(v):
+        return tuple(np.asarray(v, dtype=float).tolist())
 
-            if n_found_indices == 1:  # get index
-                return index[0][0]
-            elif n_found_indices == 0:
-                self.panel_vertices.append(find_list)
-                return len(self.panel_vertices) - 1
-            else: #n_found_indices > 1
-                raise PatternLoadingError(
-                    f'{self.__class__.__name__}::{self.name}::Corner stitch vertex has been added more than once to panel vertices!')
+    def _vert_index(self):
+        m = getattr(self, '_vert_idx_map', None)
+        if m is None:
+            m = self._vert_idx_map = {}
+        return m
+
+    def _append_panel_vertex(self, v):
+        """Append keeping the exact-value index in sync (every appended
+        vertex is indexed, matching the semantics of the full-array scan
+        this replaced)"""
+        self._vert_index().setdefault(self._vert_key(v), []).append(
+            len(self.panel_vertices))
+        self.panel_vertices.append(v)
 
 
     def store_edge_verts(self, edge, edge_in_vertices):
@@ -288,7 +301,7 @@ class Panel:
         end_in = begin_in + len(edge_in_vertices)  # exclusive
 
         for v in edge_in_vertices:
-            self.panel_vertices.append(v)
+            self._append_panel_vertex(v)
 
         end_index = self._get_exist_idx(end)
 
@@ -452,6 +465,9 @@ class Edge:
         res = mesh_resolution
         n_edge_verts = math.ceil(edgelength / res) + 1
 
+        # Curve geometry is fixed after init: store the (numerically
+        # integrated) length instead of recomputing it per use
+        self.edge_length = edgelength
         self.n_edge_verts = n_edge_verts
 
         if n_edge_verts == 2 and res > 1.0:
@@ -659,7 +675,7 @@ class BoxMesh(wrappers.VisPattern):
 
                 n_0, n_1 = edge0.n_edge_verts, edge1.n_edge_verts
                 # Assign n of longer edge
-                n = n_0 if edge0.curve.length() > edge1.curve.length() else n_1
+                n = n_0 if edge0.edge_length > edge1.edge_length else n_1
                 edge0.n_edge_verts = n
                 edge1.n_edge_verts = n
                 stitch.n_verts = n
@@ -705,7 +721,7 @@ class BoxMesh(wrappers.VisPattern):
 
         if isinstance(edge.curve, svgpath.QuadraticBezier) or isinstance(edge.curve, svgpath.CubicBezier):
              # to achieve equal spread along bezier curve
-            curve_lengths = np.linspace(0,1,n) * edge.curve.length()
+            curve_lengths = np.linspace(0,1,n) * edge.edge_length
             t_vals = [edge.curve.ilength(c_len) for c_len in curve_lengths]
 
         ts = t_vals[1:(n - 1)]  # remove start and end from "inside vertices"
@@ -1456,6 +1472,9 @@ class BoxMesh(wrappers.VisPattern):
     # SECTION -- Serialization routines
     def eval_vertex_normals(self):
         vertex_normals = np.zeros((len(self.vertices), 4))
+        # One conversion up front: rebuilding this array inside the face
+        # loop is O(faces * vertices)
+        vertices_arr = np.asarray(self.vertices)
         for panelname in self.panelNames:
             panel = self.panels[panelname]
             n_stitches_panel = panel.n_stitches
@@ -1464,7 +1483,7 @@ class BoxMesh(wrappers.VisPattern):
                 f_glob_ids = self._get_glob_ids(panel, face)
                 loc_stitch_ids = [loc_id for loc_id in face if loc_id < n_stitches_panel]
                 if loc_stitch_ids:
-                    v0, v1, v2 = np.array(self.vertices)[f_glob_ids]
+                    v0, v1, v2 = vertices_arr[f_glob_ids]
                     face_norm = list(self.calc_norm(v0, v1, v2))
                 else:
                     face_norm = panel.norm
