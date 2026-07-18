@@ -1,7 +1,8 @@
 from pathlib import Path
 import time
+import traceback
 import yaml
-import shutil 
+import shutil
 import string
 import random
 import trimesh
@@ -236,22 +237,24 @@ class GUIPattern:
             add_timestamp=False
         )
 
-        # Generate and save garment box mesh (if not existent)
-        garment_box_mesh = BoxMesh(paths.in_g_spec, props['sim']['config']['resolution_scale'])
-        garment_box_mesh.load()
-        garment_box_mesh.serialize(
-            paths, store_panels=False, uv_config=props['render']['config']['uv_texture'])
+        if not self._drape_remote(pattern_folder, paths):
+            # Local (CPU on most setups) simulation
+            # Generate and save garment box mesh (if not existent)
+            garment_box_mesh = BoxMesh(paths.in_g_spec, props['sim']['config']['resolution_scale'])
+            garment_box_mesh.load()
+            garment_box_mesh.serialize(
+                paths, store_panels=False, uv_config=props['render']['config']['uv_texture'])
 
-        # TODOLOW Don't print progress to console with so many lines
-        run_sim(
-            garment_box_mesh.name, 
-            props, 
-            paths,
-            save_v_norms=False,
-            store_usd=False,  # NOTE: False for fast simulation!, 
-            optimize_storage=False,
-            verbose=False
-        )
+            # TODOLOW Don't print progress to console with so many lines
+            run_sim(
+                garment_box_mesh.name,
+                props,
+                paths,
+                save_v_norms=False,
+                store_usd=False,  # NOTE: False for fast simulation!,
+                optimize_storage=False,
+                verbose=False
+            )
 
         # Convert to displayable element
         self._export_display_glb(paths)
@@ -260,6 +263,28 @@ class GUIPattern:
         self.is_in_3D = True
 
         return paths.out_el, paths.g_sim_glb.name
+
+    @staticmethod
+    def _drape_remote(pattern_folder, paths) -> bool:
+        """Try draping on the Modal GPU service (see modal_drape.py).
+        Returns True if the sim outputs were produced remotely"""
+        try:
+            import modal_drape
+        except ImportError:
+            return False
+        if not modal_drape.is_enabled():
+            return False
+
+        try:
+            print('INFO::Draping on Modal GPU...')
+            modal_drape.remote_drape(pattern_folder, paths)
+            return True
+        except KeyboardInterrupt as e:
+            raise e
+        except BaseException:
+            traceback.print_exc()
+            print('WARNING::Modal drape failed, falling back to local simulation')
+            return False
 
     def _fabric_color_rgba(self):
         """Current fabric color as an RGBA list (0-255) for trimesh materials"""
