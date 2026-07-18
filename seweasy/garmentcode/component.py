@@ -101,8 +101,9 @@ class Component(BaseComponent):
             sub_raw = sub.assembly().pattern
 
             # simple merge of panels
-            spattern.pattern['panels'] = {**spattern.pattern['panels'],
-                                          **sub_raw['panels']}
+            # (in-place update: rebuilding the dict per sub is quadratic
+            # in the total panel count)
+            spattern.pattern['panels'].update(sub_raw['panels'])
 
             # of stitches
             spattern.pattern['stitches'] += sub_raw['stitches']
@@ -136,12 +137,19 @@ class Component(BaseComponent):
     # Subcomponents
     def _get_subcomponents(self):
         """Unique set of subcomponents defined in the `self.subs` list or as
-        attributes of the object"""
+        attributes of the object
 
-        all_attrs = [getattr(self, name)
-                     for name in dir(self)
-                     if name[:2] != '__' and name[-2:] != '__']
-        return list(set([att
-                         for att in all_attrs
-                         if isinstance(att, BaseComponent)] + self.subs))
+        NOTE: scans instance attributes (vars) rather than dir(): dir()
+        sorts every attribute name and getattr()s methods and properties
+        too, which is pure overhead on this very hot call (every
+        translate/rotate/assembly of every component re-walks the tree).
+        Deduplicated by identity, preserving a stable discovery order.
+        """
+        subs = {}
+        for att in vars(self).values():
+            if isinstance(att, BaseComponent):
+                subs[id(att)] = att
+        for att in self.subs:
+            subs[id(att)] = att
+        return list(subs.values())
 

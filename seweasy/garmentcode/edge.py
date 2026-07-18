@@ -72,7 +72,10 @@ class Edge:
             return False
 
         # Base length is the same
-        if close_enough(self.length(), __o.length(), tol=tol):
+        # NOTE: the condition was inverted historically (equal lengths
+        # reported as not-equal); nothing relies on the old behavior --
+        # containment checks in EdgeSequence compare by identity
+        if not close_enough(self.length(), __o.length(), tol=tol):
             return False
 
         return True
@@ -491,11 +494,44 @@ class CurveEdge(Edge):
             self.control_points = [abs_to_rel_2d(self.start, self.end, c).tolist()
                                    for c in self.control_points]
 
+    def _rel_cache(self):
+        """Memo for evaluations done in the relative coordinate frame.
+
+        rel_to_abs_2d is a similarity transform ([0,0]->start, [1,0]->end,
+        uniform scale), so quantities computed on the relative curve —
+        arc length (up to the straight-length factor), ilength parameter
+        values, linearization points — are exact for the absolute curve.
+        They depend ONLY on the control points, which lets them survive
+        every translate/pivot/vertex move that plagues the hot path
+        (autonorm -> bbox -> linearize on each panel placement).
+
+        Keyed on the current control-point values: any in-place mutation
+        (reverse, reflect) recomputes the key and drops stale entries.
+        """
+        key = tuple(tuple(p) for p in self.control_points)
+        cache = getattr(self, '_rel_memo', None)
+        if cache is None or cache['key'] != key:
+            cache = {'key': key, 'curve': self.as_curve(absolute=False)}
+            self._rel_memo = cache
+        return cache
+
     def length(self):
-        """Length of Bezier curve edge"""
-        curve = self.as_curve()
-        
-        return curve.length()
+        """Length of Bezier curve edge
+
+        Memoized on the current (start, end, control) values: the arc-length
+        integration is expensive and stitch matching evaluates it many times
+        between geometry changes.
+        NOTE: deliberately integrates the absolute curve (rather than
+        scaling a cached relative length) to stay bit-identical with the
+        original evaluation — downstream curve-fitting optimizations are
+        sensitive to even 1e-9 input changes.
+        """
+        cache = self._rel_cache()
+        key = (tuple(self.start), tuple(self.end))
+        if cache.get('abs_len_key') != key:
+            cache['abs_len_key'] = key
+            cache['abs_len'] = self.as_curve().length()
+        return cache['abs_len']
 
     def __str__(self) -> str:
 
@@ -508,10 +544,12 @@ class CurveEdge(Edge):
     
     def midpoint(self):
         """Center of the edge"""
-        curve = self.as_curve()
-
-        t_mid = curve.ilength(curve.length()/2, s_tol=ILENGTH_S_TOL)
-        return c_to_list(curve.point(t_mid))
+        cache = self._rel_cache()
+        if 'mid_point' not in cache:
+            curve = cache['curve']
+            t_mid = curve.ilength(curve.length() / 2, s_tol=ILENGTH_S_TOL)
+            cache['mid_point'] = c_to_list(curve.point(t_mid))
+        return rel_to_abs_2d(self.start, self.end, cache['mid_point']).tolist()
     
     def _subdivide(self, fractions: list, by_length=False):
         """Add intermediate vertices to an edge, 
@@ -591,15 +629,24 @@ class CurveEdge(Edge):
            NOTE: n_verts_inside = number of vertices (excluding the start
            and end vertices) used to create a linearization of the edge
 
-        """        
-        n = n_verts_inside + 1
-        tvals_init = np.linspace(0, 1, n, endpoint=False)[1:]
+        """
+        # The ilength() root solves dominate this routine's cost; their
+        # results only depend on the control points, so they are memoized
+        # in the relative frame and re-mapped to the current vertices
+        cache = self._rel_cache()
+        memo_key = ('lin_points', n_verts_inside)
+        if memo_key not in cache:
+            n = n_verts_inside + 1
+            tvals_init = np.linspace(0, 1, n, endpoint=False)[1:]
 
-        curve = self.as_curve(absolute=False)
-        curve_lengths = tvals_init * curve.length()
-        tvals = [curve.ilength(c_len, s_tol=ILENGTH_S_TOL) for c_len in curve_lengths]
+            curve = cache['curve']
+            if 'rel_length' not in cache:
+                cache['rel_length'] = curve.length()
+            curve_lengths = tvals_init * cache['rel_length']
+            tvals = [curve.ilength(c_len, s_tol=ILENGTH_S_TOL) for c_len in curve_lengths]
+            cache[memo_key] = [c_to_list(curve.point(t)) for t in tvals]
 
-        edge_verts = [rel_to_abs_2d(self.start, self.end, c_to_list(curve.point(t))) for t in tvals]
+        edge_verts = [rel_to_abs_2d(self.start, self.end, p) for p in cache[memo_key]]
         seq = self.to_edge_sequence(edge_verts)
 
         return seq
@@ -700,12 +747,13 @@ class EdgeSequence:
         return True
 
     def fractions(self) -> list:
-        """Fractions of the lengths of each edge in sequence w.r.t. 
+        """Fractions of the lengths of each edge in sequence w.r.t.
             the whole sequence
         """
-        total_len = sum([e.length() for e in self.edges])
+        lengths = [e.length() for e in self.edges]
+        total_len = sum(lengths)
 
-        return [e.length() / total_len for e in self.edges]
+        return [elen / total_len for elen in lengths]
 
     def lengths(self) -> list:
         """Lengths of individual edges in the sequence"""
