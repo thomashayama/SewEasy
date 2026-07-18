@@ -887,8 +887,8 @@ class GUIState:
         self.update_pattern_display()
 
         # 3D: re-tint the existing drape -- material re-export only,
-        # no re-simulation needed
-        if self.ui_garment_3d is None or self.pattern_state.paths_3d is None:
+        # no re-simulation needed (covers fresh sims and adopted drapes)
+        if self.ui_garment_3d is None:
             return
         try:
             self.spin_dialog.open()
@@ -984,6 +984,32 @@ class GUIState:
         self.garm_3d_filename = f'garm_3d_{self.pattern_state.id}_{time.time()}.glb'
         shutil.copy2(path / filename, self.local_path_3d / self.garm_3d_filename)
         return True
+
+    def apply_fabric_color_visuals(self, color):
+        """Set the fabric color state + 2D display (no 3D export) —
+        used when a saved outfit restores its color"""
+        if not color or color == self.pattern_state.fabric_color:
+            return
+        self.pattern_state.fabric_color = color
+        self.ui_fabric_color_btn.style(f'background-color: {color} !important')
+        self.ui_fabric_color_picker.set_color(color)
+
+    def adopt_drape(self, glb_bytes):
+        """Show a stored drape in the 3D scene without re-simulating"""
+        self.pattern_state.adopt_drape_glb(glb_bytes)
+
+        # Delete previous file
+        (self.local_path_3d / self.garm_3d_filename).unlink(missing_ok=True)
+        # Put the new one for display
+        self.garm_3d_filename = f'garm_3d_{self.pattern_state.id}_{time.time()}.glb'
+        (self.local_path_3d / self.garm_3d_filename).write_bytes(glb_bytes)
+
+        if self.ui_garment_3d is not None:
+            self.ui_garment_3d.delete()
+        with self.ui_3d_scene:
+            self.ui_garment_3d = self.ui_3d_scene.gltf(
+                        f'geo/{self.garm_3d_filename}',
+                    ).scale(0.01).rotate(np.pi / 2, 0., 0.)
 
     # Design buttons updates
     async def design_sample(self):

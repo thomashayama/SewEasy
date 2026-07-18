@@ -6,9 +6,9 @@ mirroring the pattern proven out in Rivulet_Server.
 
 from datetime import datetime
 
-from sqlalchemy import (JSON, Column, DateTime, ForeignKey, Integer, String,
-                        Text, UniqueConstraint)
-from sqlalchemy.orm import relationship
+from sqlalchemy import (JSON, Column, DateTime, ForeignKey, Integer,
+                        LargeBinary, String, Text, UniqueConstraint)
+from sqlalchemy.orm import deferred, relationship
 
 from webapp.db import Base
 
@@ -97,5 +97,11 @@ class Design(TimestampMixin, Base):
                   server_default='outfit')
     # Pattern-SVG thumbnail captured at save time (NULL for older rows)
     preview = Column(Text)
+    # Draped-garment GLB captured when an outfit is saved with a current
+    # 3D result; loading the outfit shows it without re-simulating.
+    # deferred: listing queries must not drag multi-MB blobs along.
+    drape_glb = deferred(Column(LargeBinary))
+    # Fabric color the outfit was saved with ('#rrggbb', display space)
+    fabric_color = Column(String)
 
     owner = relationship('User', back_populates='designs')

@@ -39,11 +39,14 @@ def _migrate():
     so columns added to models after a table shipped are added here."""
     from sqlalchemy import inspect, text
 
+    blob_type = 'BYTEA' if engine.dialect.name == 'postgresql' else 'BLOB'
     added = {
         'body_profiles': {'skin_color': 'VARCHAR'},
         # DEFAULT backfills existing rows: pre-existing designs are outfits
         'designs': {'kind': "VARCHAR DEFAULT 'outfit' NOT NULL",
-                    'preview': 'TEXT'},
+                    'preview': 'TEXT',
+                    'drape_glb': blob_type,
+                    'fabric_color': 'VARCHAR'},
         'users': {'units': "VARCHAR DEFAULT 'in' NOT NULL"},
     }
     inspector = inspect(engine)

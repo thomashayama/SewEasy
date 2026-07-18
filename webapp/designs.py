@@ -66,9 +66,19 @@ def list_designs(email: str) -> list:
                 for r in rows]
 
 
+# Don't let a pathological drape blob bloat the database
+MAX_DRAPE_BYTES = 32 * 1024 * 1024
+
+
 def save_design(email: str, name: str, params: dict,
-                kind: str = 'outfit', preview: Optional[str] = None) -> bool:
+                kind: str = 'outfit', preview: Optional[str] = None,
+                drape_glb: Optional[bytes] = None,
+                fabric_color: Optional[str] = None) -> bool:
     """Create or update the design with this name. Returns True if created"""
+    if drape_glb is not None and len(drape_glb) > MAX_DRAPE_BYTES:
+        print(f'designs::WARNING::drape of "{name}" is '
+              f'{len(drape_glb) / 1e6:.0f} MB — not stored')
+        drape_glb = None
     with SessionLocal() as db:
         row = (db.query(Design)
                .filter(Design.owner_email == email, Design.name == name)
@@ -76,11 +86,14 @@ def save_design(email: str, name: str, params: dict,
         created = row is None
         if created:
             db.add(Design(owner_email=email, name=name, params=params,
-                          kind=kind, preview=preview))
+                          kind=kind, preview=preview, drape_glb=drape_glb,
+                          fabric_color=fabric_color))
         else:
             row.params = params
             row.kind = kind
             row.preview = preview
+            row.drape_glb = drape_glb
+            row.fabric_color = fabric_color
         db.commit()
         return created
 
@@ -91,7 +104,9 @@ def get_design(email: str, design_id: int) -> Optional[dict]:
         if row is None or row.owner_email != email:
             return None
         return {'id': row.id, 'name': row.name, 'params': row.params,
-                'kind': row.kind or 'outfit'}
+                'kind': row.kind or 'outfit',
+                'drape_glb': row.drape_glb,
+                'fabric_color': row.fabric_color}
 
 
 def rename_design(email: str, design_id: int, new_name: str) -> bool:

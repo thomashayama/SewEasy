@@ -190,10 +190,19 @@ def designs_ui(state):
         else:
             params = designs.snapshot_design_params(design_params)
             preview = outfit_preview_svg(state.pattern_state)
+        # Outfits carry their look along: fabric color, and the draped 3D
+        # result when one is in sync -- loading skips the simulation
+        drape_glb = fabric_color = None
+        if kind == 'outfit':
+            fabric_color = state.pattern_state.fabric_color
+            drape_glb = state.pattern_state.current_drape_bytes()
         created = designs.save_design(email, name, params, kind=kind,
-                                      preview=preview)
-        ui.notify(f'{"Saved" if created else "Updated"} "{name}"',
-                  type='positive')
+                                      preview=preview, drape_glb=drape_glb,
+                                      fabric_color=fabric_color)
+        message = f'{"Saved" if created else "Updated"} "{name}"'
+        if drape_glb:
+            message += ' (with its 3D drape)'
+        ui.notify(message, type='positive')
         save_dialog.close()
 
     with ui.dialog() as save_dialog, ui.card().classes('items-center'):
@@ -216,8 +225,18 @@ def designs_ui(state):
         if data is None:
             ui.notify('Saved design not found', type='negative')
             return
+        if data['kind'] == 'outfit':
+            # Restore the saved look before drafting: the 2D pattern
+            # serializes in the outfit's fabric color right away
+            state.apply_fabric_color_visuals(data.get('fabric_color'))
         await apply_params(data['params'])
         if data['kind'] == 'outfit':
+            if data.get('drape_glb'):
+                state.adopt_drape(data['drape_glb'])
+                ui.notify(f'Applied outfit "{data["name"]}" — 3D drape '
+                          'restored from your library', type='positive')
+                load_dialog.close()
+                return
             ui.notify(f'Applied outfit "{data["name"]}"', type='positive')
         else:
             ui.notify(

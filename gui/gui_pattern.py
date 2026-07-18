@@ -86,6 +86,9 @@ class GUIPattern:
         # Status
         self.is_self_intersecting = False
         self.is_in_3D = False
+        # A stored drape adopted from a saved outfit (GLB path); used as
+        # the 3D result when no fresh simulation output exists
+        self.loaded_drape_glb = None
 
         self.reload_garment()
 
@@ -278,9 +281,30 @@ class GUIPattern:
         self._export_display_glb(paths)
 
         self.paths_3d = paths
+        self.loaded_drape_glb = None   # fresh sim supersedes any adopted drape
         self.is_in_3D = True
 
         return paths.out_el, paths.g_sim_glb.name
+
+    def current_drape_bytes(self):
+        """GLB bytes of the current, in-sync 3D result (None if there is
+        no drape or the design changed since it was made)"""
+        if not self.is_in_3D:
+            return None
+        for path in (self.paths_3d.g_sim_glb if self.paths_3d else None,
+                     self.loaded_drape_glb):
+            if path is not None and path.exists():
+                return path.read_bytes()
+        return None
+
+    def adopt_drape_glb(self, glb_bytes):
+        """Adopt a stored drape (from a saved outfit) as the 3D result"""
+        self.clear_3d()   # previous sim output belongs to another design
+        path = self.save_path / 'adopted_drape.glb'
+        path.write_bytes(glb_bytes)
+        self.loaded_drape_glb = path
+        self.is_in_3D = True
+        return self.save_path, path.name
 
     @staticmethod
     def _drape_remote(pattern_folder, paths) -> bool:
@@ -322,10 +346,23 @@ class GUIPattern:
     def recolor_3d(self):
         """Re-export the last draped garment with the current fabric color
         (no re-simulation)"""
-        if self.paths_3d is None:
-            return None
-        self._export_display_glb(self.paths_3d)
-        return self.paths_3d.out_el, self.paths_3d.g_sim_glb.name
+        if self.paths_3d is not None:
+            self._export_display_glb(self.paths_3d)
+            return self.paths_3d.out_el, self.paths_3d.g_sim_glb.name
+
+        if self.loaded_drape_glb is not None and self.loaded_drape_glb.exists():
+            # Adopted drape: re-tint the GLB in place (its texture is
+            # neutral, the base color factor is the fabric color)
+            garment = trimesh.load(self.loaded_drape_glb)
+            geometries = garment.geometry.values() \
+                if hasattr(garment, 'geometry') else [garment]
+            for geom in geometries:
+                geom.visual.material.baseColorFactor = \
+                    display_to_base_rgba(self.fabric_color)
+            garment.export(self.loaded_drape_glb)
+            return self.save_path, self.loaded_drape_glb.name
+
+        return None
 
     # Current state
     def is_design_sectioned(self):
