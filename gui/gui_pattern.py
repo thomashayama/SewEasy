@@ -21,6 +21,11 @@ from seweasy.pattern.print_export import save_print_pdf
 
 verbose = False
 
+def hex_to_rgba(hex_color):
+    """'#rrggbb' -> RGBA list (0-255) for trimesh materials"""
+    hex_color = hex_color.lstrip('#')
+    return [int(hex_color[i:i + 2], 16) for i in (0, 2, 4)] + [255]
+
 def _id_generator(size=10, chars=string.ascii_uppercase + string.digits):
         """Generate a random string of a given size, see
         https://stackoverflow.com/questions/2257441/random-string-generation-with-upper-case-letters-and-digits
@@ -288,8 +293,7 @@ class GUIPattern:
 
     def _fabric_color_rgba(self):
         """Current fabric color as an RGBA list (0-255) for trimesh materials"""
-        hex_color = self.fabric_color.lstrip('#')
-        return [int(hex_color[i:i + 2], 16) for i in (0, 2, 4)] + [255]
+        return hex_to_rgba(self.fabric_color)
 
     def _export_display_glb(self, paths):
         """Export the simulated garment as a GLB for the 3D viewer,

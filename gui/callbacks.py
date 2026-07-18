@@ -8,6 +8,7 @@ from datetime import datetime
 from argparse import Namespace
 import numpy as np
 import shutil
+import trimesh
 from pathlib import Path
 import time
 
@@ -19,7 +20,7 @@ import asyncio
 
 # Custom
 import seweasy as pyg
-from .gui_pattern import GUIPattern
+from .gui_pattern import GUIPattern, hex_to_rgba
 from . import theme
 from webapp import gui_widgets as account_widgets
 
@@ -39,6 +40,11 @@ icon_github = """
 icon_arxiv = """<svg id="primary_logo_-_single_color_-_white" data-name="primary logo - single color - white" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 246.978 110.119"><path d="M492.976,269.5l24.36-29.89c1.492-1.989,2.2-3.03,1.492-4.723a5.142,5.142,0,0,0-4.481-3.161h0a4.024,4.024,0,0,0-3.008,1.108L485.2,261.094Z" transform="translate(-358.165 -223.27)" fill="#fff"/><path d="M526.273,325.341,493.91,287.058l-.972,1.033-7.789-9.214-7.743-9.357-4.695,5.076a4.769,4.769,0,0,0,.015,6.53L520.512,332.2a3.913,3.913,0,0,0,3.137,1.192,4.394,4.394,0,0,0,4.027-2.818C528.4,328.844,527.6,327.133,526.273,325.341Z" transform="translate(-358.165 -223.27)" fill="#fff"/><path d="M479.215,288.087l6.052,6.485L458.714,322.7a2.98,2.98,0,0,1-2.275,1.194,3.449,3.449,0,0,1-3.241-2.144c-.513-1.231.166-3.15,1.122-4.168l.023-.024.021-.026,24.851-29.448m-.047-1.882-25.76,30.524c-1.286,1.372-2.084,3.777-1.365,5.5a4.705,4.705,0,0,0,4.4,2.914,4.191,4.191,0,0,0,3.161-1.563l27.382-29.007-7.814-8.372Z" transform="translate(-358.165 -223.27)" fill="#fff"/><path d="M427.571,255.154c1.859,0,3.1,1.24,3.985,3.453,1.062-2.213,2.568-3.453,4.694-3.453h14.878a4.062,4.062,0,0,1,4.074,4.074v7.828c0,2.656-1.327,4.074-4.074,4.074-2.656,0-4.074-1.418-4.074-4.074V263.3H436.515a2.411,2.411,0,0,0-2.656,2.745v27.188h10.007c2.658,0,4.074,1.329,4.074,4.074s-1.416,4.074-4.074,4.074h-26.39c-2.659,0-3.986-1.328-3.986-4.074s1.327-4.074,3.986-4.074h8.236V263.3h-7.263c-2.656,0-3.985-1.329-3.985-4.074,0-2.658,1.329-4.074,3.985-4.074Z" transform="translate(-358.165 -223.27)" fill="#fff"/><path d="M539.233,255.154c2.656,0,4.074,1.416,4.074,4.074v34.007h10.1c2.746,0,4.074,1.329,4.074,4.074s-1.328,4.074-4.074,4.074H524.8c-2.656,0-4.074-1.328-4.074-4.074s1.418-4.074,4.074-4.074h10.362V263.3h-8.533c-2.744,0-4.073-1.329-4.073-4.074,0-2.658,1.329-4.074,4.073-4.074Zm4.22-17.615a5.859,5.859,0,1,1-5.819-5.819A5.9,5.9,0,0,1,543.453,237.539Z" transform="translate(-358.165 -223.27)" fill="#fff"/><path d="M605.143,259.228a4.589,4.589,0,0,1-.267,1.594L590,298.9a3.722,3.722,0,0,1-3.721,2.48h-5.933a3.689,3.689,0,0,1-3.808-2.48l-15.055-38.081a3.23,3.23,0,0,1-.355-1.594,4.084,4.084,0,0,1,4.164-4.074,3.8,3.8,0,0,1,3.718,2.656l14.348,36.134,13.9-36.134a3.8,3.8,0,0,1,3.72-2.656A4.084,4.084,0,0,1,605.143,259.228Z" transform="translate(-358.165 -223.27)" fill="#fff"/><path d="M390.61,255.154c5.018,0,8.206,3.312,8.206,8.4v37.831H363.308a4.813,4.813,0,0,1-5.143-4.929V283.427a8.256,8.256,0,0,1,7-8.148l25.507-3.572v-8.4H362.306a4.014,4.014,0,0,1-4.141-4.074c0-2.87,2.143-4.074,4.355-4.074Zm.059,38.081V279.942l-24.354,3.4v9.9Z" transform="translate(-358.165 -223.27)" fill="#fff"/><path d="M448.538,224.52h.077c1,.024,2.236,1.245,2.589,1.669l.023.028.024.026,46.664,50.433a3.173,3.173,0,0,1-.034,4.336l-4.893,5.2-6.876-8.134L446.652,230.4c-1.508-2.166-1.617-2.836-1.191-3.858a3.353,3.353,0,0,1,3.077-2.02m0-1.25a4.606,4.606,0,0,0-4.231,2.789c-.705,1.692-.2,2.88,1.349,5.1l39.493,47.722,7.789,9.214,5.853-6.221a4.417,4.417,0,0,0,.042-6.042L452.169,225.4s-1.713-2.08-3.524-2.124Z" transform="translate(-358.165 -223.27)" fill="#fff"/></svg>"""
 
 theme_colors = theme.colors
+
+BODY_GLB = './assets/bodies/mean_all_display.glb'
+# The muslin tone baked into the display body GLB (its baseColorFactor)
+DEFAULT_BODY_COLOR = '#70695c'
+
 
 # State of GUI
 class GUIState:
@@ -73,6 +79,8 @@ class GUIState:
         # 3D updates
         self.path_static_3d = '/geo'
         self.garm_3d_filename = f'garm_3d_{self.pattern_state.id}.glb'
+        self.body_color = DEFAULT_BODY_COLOR
+        self.body_3d_filename = ''   # Set when the mannequin is re-tinted
         self.local_path_3d = Path('./tmp_gui/garm_3d')
         self.local_path_3d.mkdir(parents=True, exist_ok=True)
         app.add_static_files(self.path_static_3d, self.local_path_3d)
@@ -92,6 +100,8 @@ class GUIState:
         """Clean-up after the sesssion"""
         self.pattern_state.release()
         (self.local_path_3d / self.garm_3d_filename).unlink(missing_ok=True)
+        if self.body_3d_filename:
+            (self.local_path_3d / self.body_3d_filename).unlink(missing_ok=True)
 
     # Initial definitions
     def stylings(self):
@@ -502,12 +512,23 @@ class GUIState:
                 ).rotate(np.pi / 2, 0., 0.)
 
         # Floating controls over the 3D stage
-        with ui.row(wrap=False).classes('absolute top-3 left-4 z-40 items-center'):
+        with ui.row(wrap=False).classes('absolute top-3 left-4 z-40 items-center gap-2'):
             self.ui_body_3d_switch = ui.switch(
                 'Body Silhouette',
                 value=True,
                 on_change=lambda e: body_visibility(e.value)
             ).props('dense left-label').classes('se-overlay-chip text-stone-800 pl-2.5 pr-1.5 py-0.5')
+
+            # Mannequin skin tone
+            with ui.button(icon='accessibility_new') \
+                    .props('round unelevated size=sm') \
+                    .classes('shadow-lg') \
+                    .tooltip('Mannequin color') as self.ui_body_color_btn:
+                self.ui_body_color_picker = ui.color_picker(
+                    on_pick=lambda e: self.update_body_color(e.color))
+            self.ui_body_color_picker.set_color(self.body_color)
+            self.ui_body_color_btn.style(
+                f'background-color: {self.body_color} !important')
         with ui.row(wrap=False).classes('absolute top-3 right-6 z-40 items-center gap-2'):
             ui.label('takes a few minutes').classes('se-hint-chip se-overlay-chip')
             ui.button('Drape current design', on_click=lambda: self.update_3d_scene()) \
@@ -850,6 +871,54 @@ class GUIState:
                 close_button=True,
                 position='center'
             )
+
+    async def update_body_color(self, color):
+        """Re-tint the 3D mannequin with the chosen skin tone"""
+        if not color or color == self.body_color:
+            return
+
+        print('INFO::Updating mannequin color...')
+        self.body_color = color
+        self.ui_body_color_btn.style(f'background-color: {color} !important')
+
+        try:
+            self.loop = asyncio.get_event_loop()
+            await self.loop.run_in_executor(
+                self._async_executor, self._sync_recolor_body)
+
+            # Swap the body model in the scene, preserving visibility
+            visible = self.ui_body_3d_switch.value
+            self.ui_body_3d.delete()
+            with self.ui_3d_scene:
+                self.ui_body_3d = self.ui_3d_scene.gltf(
+                        f'geo/{self.body_3d_filename}'
+                    ).rotate(np.pi / 2, 0., 0.)
+            self.ui_body_3d.visible(visible)
+        except KeyboardInterrupt as e:
+            raise e
+        except BaseException as e:
+            traceback.print_exc()
+            print(e)
+            ui.notify(
+                'Failed to apply the mannequin color',
+                type='negative',
+                close_button=True,
+                position='center'
+            )
+
+    def _sync_recolor_body(self):
+        """Export a copy of the display body GLB tinted with the current
+        body color (the mesh carries a plain PBR color, no texture)"""
+        body = trimesh.load(BODY_GLB)
+        for geom in body.geometry.values():
+            geom.visual.material.baseColorFactor = hex_to_rgba(self.body_color)
+
+        # Delete previous file
+        if self.body_3d_filename:
+            (self.local_path_3d / self.body_3d_filename).unlink(missing_ok=True)
+        # Put the new one for display
+        self.body_3d_filename = f'body_3d_{self.pattern_state.id}_{time.time()}.glb'
+        body.export(self.local_path_3d / self.body_3d_filename)
 
     def _sync_recolor_3d(self):
         """Re-export the draped garment GLB in the current fabric color"""
