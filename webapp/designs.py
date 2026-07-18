@@ -62,12 +62,12 @@ def list_designs(email: str) -> list:
                 .order_by(Design.updated_at.desc())
                 .all())
         return [{'id': r.id, 'name': r.name, 'kind': r.kind or 'outfit',
-                 'updated_at': r.updated_at}
+                 'updated_at': r.updated_at, 'preview': r.preview}
                 for r in rows]
 
 
 def save_design(email: str, name: str, params: dict,
-                kind: str = 'outfit') -> bool:
+                kind: str = 'outfit', preview: Optional[str] = None) -> bool:
     """Create or update the design with this name. Returns True if created"""
     with SessionLocal() as db:
         row = (db.query(Design)
@@ -76,10 +76,11 @@ def save_design(email: str, name: str, params: dict,
         created = row is None
         if created:
             db.add(Design(owner_email=email, name=name, params=params,
-                          kind=kind))
+                          kind=kind, preview=preview))
         else:
             row.params = params
             row.kind = kind
+            row.preview = preview
         db.commit()
         return created
 

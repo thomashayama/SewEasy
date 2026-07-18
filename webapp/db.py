@@ -42,7 +42,8 @@ def _migrate():
     added = {
         'body_profiles': {'skin_color': 'VARCHAR'},
         # DEFAULT backfills existing rows: pre-existing designs are outfits
-        'designs': {'kind': "VARCHAR DEFAULT 'outfit' NOT NULL"},
+        'designs': {'kind': "VARCHAR DEFAULT 'outfit' NOT NULL",
+                    'preview': 'TEXT'},
         'users': {'units': "VARCHAR DEFAULT 'in' NOT NULL"},
     }
     inspector = inspect(engine)

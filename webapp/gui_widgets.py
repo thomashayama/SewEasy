@@ -1,9 +1,59 @@
 """NiceGUI widgets for account features, kept out of gui/callbacks.py to
 minimize the diff against upstream GarmentCode."""
 
+import asyncio
+import base64
+import traceback
+from copy import deepcopy
+
 from nicegui import ui
 
 from webapp import config, designs, profiles
+
+
+def preview_data_uri(svg_text):
+    """Pattern-SVG preview -> data URI for ui.image (None-safe)"""
+    if not svg_text:
+        return None
+    encoded = base64.b64encode(svg_text.encode('utf-8')).decode()
+    return f'data:image/svg+xml;base64,{encoded}'
+
+
+def piece_preview_svg(pattern_state, kind):
+    """Draft only the given piece of the current design and return its
+    pattern SVG text (None when the piece can't be drafted)."""
+    try:
+        from assets.garment_programs.meta_garment import MetaGarment
+        params = deepcopy(pattern_state.design_params)
+        keep = designs.GARMENT_SECTIONS[kind]['meta']
+        for meta_key in params['meta']:
+            if meta_key not in keep:
+                params['meta'][meta_key]['v'] = None
+        piece = MetaGarment('Preview', pattern_state.body_params, params)
+        pattern = piece.assembly()
+        dwg = pattern.get_svg(
+            'preview.svg',  # not written: get_svg returns the drawing
+            with_text=False, view_ids=False,
+            panel_fill_color=pattern_state.fabric_color,
+            margin=0)
+        return dwg.tostring()
+    except KeyboardInterrupt:
+        raise
+    except BaseException as e:
+        import seweasy as pyg
+        if not isinstance(e, pyg.EmptyPatternError):  # empty piece: expected
+            traceback.print_exc()
+        return None
+
+
+def outfit_preview_svg(pattern_state):
+    """The studio's current (already drafted) pattern SVG, or None"""
+    try:
+        if pattern_state.svg_filename:
+            return pattern_state.svg_path().read_text(encoding='utf-8')
+    except OSError:
+        pass
+    return None
 
 
 def auth_header_ui(user):
@@ -115,7 +165,7 @@ def designs_ui(state):
         state.toggle_param_update_events(state.ui_design_refs)
 
     # --- Save dialog: whole outfit or one piece ---
-    def save_current():
+    async def save_current():
         name = (name_input.value or '').strip()
         kind = kind_select.value
         if not name:
@@ -130,9 +180,18 @@ def designs_ui(state):
                     type='warning')
                 return
             params = designs.snapshot_garment(design_params, kind)
+            # Draft the piece alone for its thumbnail (may take a moment)
+            state.spin_dialog.open()
+            loop = asyncio.get_event_loop()
+            preview = await loop.run_in_executor(
+                state._async_executor, piece_preview_svg,
+                state.pattern_state, kind)
+            state.spin_dialog.close()
         else:
             params = designs.snapshot_design_params(design_params)
-        created = designs.save_design(email, name, params, kind=kind)
+            preview = outfit_preview_svg(state.pattern_state)
+        created = designs.save_design(email, name, params, kind=kind,
+                                      preview=preview)
         ui.notify(f'{"Saved" if created else "Updated"} "{name}"',
                   type='positive')
         save_dialog.close()
@@ -180,6 +239,14 @@ def designs_ui(state):
             for row in rows:
                 with ui.row().classes('items-center w-full justify-between'):
                     with ui.row(wrap=False).classes('items-center gap-2'):
+                        thumb = preview_data_uri(row.get('preview'))
+                        if thumb:
+                            ui.image(thumb).classes(
+                                'w-12 h-12 object-contain bg-white rounded '
+                                'border border-stone-200')
+                        else:
+                            ui.icon('checkroom').classes(
+                                'text-3xl text-stone-300 w-12 text-center')
                         ui.badge(designs.KIND_LABELS.get(row['kind'], '?')) \
                             .props('outline color=grey-7')
                         ui.label(row['name'])

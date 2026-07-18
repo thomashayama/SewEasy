@@ -7,7 +7,7 @@ mirroring the pattern proven out in Rivulet_Server.
 from datetime import datetime
 
 from sqlalchemy import (JSON, Column, DateTime, ForeignKey, Integer, String,
-                        UniqueConstraint)
+                        Text, UniqueConstraint)
 from sqlalchemy.orm import relationship
 
 from webapp.db import Base
@@ -95,5 +95,7 @@ class Design(TimestampMixin, Base):
     params = Column(JSON, nullable=False)
     kind = Column(String, nullable=False, default='outfit',
                   server_default='outfit')
+    # Pattern-SVG thumbnail captured at save time (NULL for older rows)
+    preview = Column(Text)
 
     owner = relationship('User', back_populates='designs')

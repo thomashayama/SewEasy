@@ -16,6 +16,7 @@ from assets.bodies.body_params import BodyParameters
 from gui import theme
 from webapp import auth, designs, profiles
 from webapp import measurement_guide as guide
+from webapp.gui_widgets import preview_data_uri
 
 BODY_DEFAULT_FILE = './assets/bodies/mean_all.yaml'
 
@@ -372,12 +373,26 @@ async def account_page(request: Request):
                         with ui.row(wrap=False).classes(
                                 'items-center w-full justify-between '
                                 'border-b border-stone-100 py-1'):
-                            with ui.row(wrap=False).classes('items-center gap-2'):
-                                ui.badge(designs.KIND_LABELS.get(row['kind'], '?')) \
-                                    .props('outline color=grey-7')
-                                ui.label(row['name'])
-                                ui.label(row['updated_at'].strftime('%b %d, %Y')) \
-                                    .classes('se-param-label')
+                            with ui.row(wrap=False).classes('items-center gap-3'):
+                                thumb = preview_data_uri(row.get('preview'))
+                                if thumb:
+                                    ui.image(thumb).classes(
+                                        'w-24 h-24 object-contain bg-white '
+                                        'rounded border border-stone-200')
+                                else:
+                                    with ui.element('div').classes(
+                                            'w-24 h-24 rounded border '
+                                            'border-stone-200 bg-stone-50 '
+                                            'flex items-center justify-center'):
+                                        ui.icon('checkroom').classes(
+                                            'text-4xl text-stone-300')
+                                with ui.column().classes('gap-0.5'):
+                                    with ui.row(wrap=False).classes('items-center gap-2'):
+                                        ui.badge(designs.KIND_LABELS.get(row['kind'], '?')) \
+                                            .props('outline color=grey-7')
+                                        ui.label(row['name'])
+                                    ui.label(row['updated_at'].strftime('%b %d, %Y')) \
+                                        .classes('se-param-label')
                             with ui.row(wrap=False).classes('gap-1'):
                                 ui.button(
                                     icon='edit',
