@@ -586,6 +586,17 @@ class GUIState:
         async def handle_upload(e: events.UploadEventArguments):
             param_dict = yaml.safe_load(e.content.read())['body']
 
+            from webapp import measurement_guide
+            errors, warnings = measurement_guide.validate_measurements(param_dict)
+            if errors:
+                ui.notify('File not applied — impossible measurements:\n• '
+                          + '\n• '.join(errors),
+                          type='negative', multi_line=True, close_button=True)
+                return
+            if warnings:
+                ui.notify('Check these values:\n• ' + '\n• '.join(warnings),
+                          type='warning', multi_line=True, close_button=True)
+
             self.toggle_param_update_events(self.ui_active_body_refs)
 
             self.pattern_state.set_new_body_params(param_dict)

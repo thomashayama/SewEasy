@@ -173,3 +173,113 @@ def label_for(key: str) -> str:
 def is_essential(key: str) -> bool:
     entry = GUIDE.get(key)
     return bool(entry and entry['essential'])
+
+
+# --- Keeping hidden measurements consistent with essential edits ---
+
+# Non-essential measurement -> the essential it scales with. When only the
+# essentials are edited (Essential mode), each dependent is scaled by its
+# parent's ratio so the hidden values stay anatomically plausible instead
+# of keeping the mean body's absolute numbers. Angles are left alone.
+COUPLED = {
+    'waist_back_width': 'waist',
+    'back_width': 'bust',
+    'bust_points': 'bust',
+    'hip_back_width': 'hips',
+    'bum_points': 'hips',
+    'neck_w': 'shoulder_w',
+    'head_l': 'height',
+    'vert_bust_line': 'waist_line',
+    'bust_line': 'waist_line',
+    'waist_over_bust_line': 'waist_line',
+    'armscye_depth': 'waist_line',
+    'crotch_hip_diff': 'hips_line',
+}
+
+
+def scale_coupled(old: dict, new: dict) -> dict:
+    """Values for coupled non-essentials, scaled by their parent's change.
+
+    `old` is the stored profile, `new` the profile with essential edits
+    applied. Returns only the entries that actually change.
+    """
+    updated = {}
+    for key, parent in COUPLED.items():
+        try:
+            old_parent = float(old[parent])
+            new_parent = float(new[parent])
+            old_value = float(old[key])
+        except (KeyError, TypeError, ValueError):
+            continue
+        if old_parent <= 0 or abs(new_parent - old_parent) < 1e-9:
+            continue
+        updated[key] = round(old_value * new_parent / old_parent, 2)
+    return updated
+
+
+# --- Validation guardrails ---
+
+def validate_measurements(m: dict):
+    """Sanity-check a full measurement set.
+
+    Returns (errors, warnings): errors are mathematically impossible
+    combinations that break pattern drafting (negative panel widths,
+    negative leg length); warnings are anatomically suspicious values
+    that will draft but fit badly.
+    """
+    def val(key):
+        try:
+            return float(m[key])
+        except (KeyError, TypeError, ValueError):
+            return None
+
+    errors, warnings = [], []
+
+    def check(a_key, b_key, message, level=errors, factor=1.0):
+        a, b = val(a_key), val(b_key)
+        if a is not None and b is not None and a >= b * factor:
+            level.append(message)
+
+    # Impossible: front panel widths become zero or negative
+    check('waist_back_width', 'waist',
+          'Waist back width must be smaller than the waist circumference')
+    check('back_width', 'bust',
+          'Back width must be smaller than the bust circumference')
+    check('hip_back_width', 'hips',
+          'Hip back width must be smaller than the hip circumference')
+    check('underbust', 'bust',
+          'Underbust must be smaller than the bust circumference')
+    check('neck_w', 'shoulder_w',
+          'Neck width must be smaller than the shoulder width')
+    check('vert_bust_line', 'waist_line',
+          'Nape-to-bust must be smaller than the back length '
+          '(the bust sits above the waist)')
+    check('bust_line', 'waist_over_bust_line',
+          'Shoulder-to-bust must be smaller than the front length over '
+          'the bust (it is part of that line)')
+
+    height = val('height')
+    vertical = [val(k) for k in ('head_l', 'waist_line', 'hips_line',
+                                 'crotch_hip_diff')]
+    if height is not None and all(v is not None for v in vertical) \
+            and height <= sum(vertical):
+        errors.append(
+            'Height is smaller than head length + back length + '
+            'waist-to-hip + hip-to-crotch combined — the legs would have '
+            'negative length')
+
+    # Suspicious: drafts, but the front/back split will be badly skewed
+    check('waist_back_width', 'waist',
+          'Waist back width is over 60% of the waist — garment fronts '
+          'will be much narrower than the backs', warnings, factor=0.6)
+    check('back_width', 'bust',
+          'Back width is over 60% of the bust — garment fronts will be '
+          'much narrower than the backs', warnings, factor=0.6)
+    check('hip_back_width', 'hips',
+          'Hip back width is over 60% of the hips — garment fronts will '
+          'be much narrower than the backs', warnings, factor=0.6)
+    check('armscye_depth', 'vert_bust_line',
+          'Armscye depth reaches below the bust level — check both values',
+          warnings)
+
+    return errors, warnings

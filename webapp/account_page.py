@@ -136,9 +136,35 @@ async def account_page(request: Request):
                         values[key] = float(field.value)
                     except (TypeError, ValueError):
                         pass
+
+                # In Essential mode the hidden measurements scale with the
+                # essentials they depend on, staying anatomically consistent
+                scaled = {}
+                if mode.value == 'essential':
+                    scaled = guide.scale_coupled(data['measurements'], values)
+                    values.update(scaled)
+
+                errors, warnings = guide.validate_measurements(values)
+                if errors:
+                    ui.notify('Not saved — impossible measurements:\n• '
+                              + '\n• '.join(errors),
+                              type='negative', multi_line=True,
+                              close_button=True)
+                    return
+
                 profiles.save_profile(email, data['name'], values,
                                       skin_color=data.get('skin_color'))
-                ui.notify(f'Updated "{data["name"]}"', type='positive')
+                message = f'Updated "{data["name"]}"'
+                if scaled:
+                    message += (f' — adjusted {len(scaled)} related '
+                                'measurements to match')
+                ui.notify(message, type='positive')
+                if warnings:
+                    ui.notify('Check these values:\n• ' + '\n• '.join(warnings),
+                              type='warning', multi_line=True,
+                              close_button=True)
+                if scaled:
+                    load_editor()  # Re-read so a mode switch shows new values
 
             def load_editor():
                 editor.clear()
