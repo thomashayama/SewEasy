@@ -176,9 +176,13 @@ body {
 .se-skin-slider .q-slider__selection {
     background: transparent !important;
 }
-/* The thumb shows the picked tone (inline color style set from code) */
+/* The thumb shows the picked tone: the slider root carries an inline
+   color style set from code; Quasar paints the thumb with its palette
+   class (.text-primary, which is !important), so force inheritance with
+   higher specificity */
 .se-skin-slider .q-slider__thumb {
-    filter: drop-shadow(0 0 1px rgba(0, 0, 0, 0.45));
+    color: inherit !important;
+    filter: drop-shadow(0 0 1.5px rgba(0, 0, 0, 0.5));
 }
 
 /* Quiet, thin scrollbars */
