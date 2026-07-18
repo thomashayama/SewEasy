@@ -67,6 +67,8 @@ class BodyProfile(TimestampMixin, Base):
     skin_color = Column(String)
 
     owner = relationship('User', back_populates='body_profiles')
+    shares = relationship('BodyProfileShare', back_populates='profile',
+                          cascade='all, delete-orphan')
 
 
 class Design(TimestampMixin, Base):
@@ -107,3 +109,43 @@ class Design(TimestampMixin, Base):
     fabric_color = Column(String)
 
     owner = relationship('User', back_populates='designs')
+    shares = relationship('DesignShare', back_populates='design',
+                          cascade='all, delete-orphan')
+
+
+class BodyProfileShare(Base):
+    """Read access to a body profile granted to another user.
+
+    The recipient is keyed on their (lowercased) email rather than a User
+    FK, so an item can be shared with someone before their first sign-in;
+    the share shows up once they authenticate with that address.
+    """
+    __tablename__ = 'body_profile_shares'
+    __table_args__ = (UniqueConstraint('profile_id', 'recipient_email',
+                                       name='uq_body_profile_shares'),)
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    profile_id = Column(Integer,
+                        ForeignKey('body_profiles.id', ondelete='CASCADE'),
+                        nullable=False, index=True)
+    recipient_email = Column(String, nullable=False, index=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+    profile = relationship('BodyProfile', back_populates='shares')
+
+
+class DesignShare(Base):
+    """Read access to a design granted to another user (see BodyProfileShare
+    for the email-keyed recipient rationale)."""
+    __tablename__ = 'design_shares'
+    __table_args__ = (UniqueConstraint('design_id', 'recipient_email',
+                                       name='uq_design_shares'),)
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    design_id = Column(Integer,
+                       ForeignKey('designs.id', ondelete='CASCADE'),
+                       nullable=False, index=True)
+    recipient_email = Column(String, nullable=False, index=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+    design = relationship('Design', back_populates='shares')

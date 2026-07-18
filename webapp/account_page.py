@@ -15,12 +15,13 @@ from nicegui import run, ui
 
 from assets.bodies.body_params import BodyParameters
 from gui import theme
-from webapp import auth, designs, profiles
+from webapp import auth, designs, profiles, sharing
 from webapp import measurement_guide as guide
 # body_display registers the /body and /body_tones static mounts and owns
 # the tone-tinted mannequin cache (shared with the studio 3D view)
 from webapp.body_display import tinted_body_glb_url
-from webapp.gui_widgets import confirm_delete, preview_data_uri
+from webapp.gui_widgets import (confirm_delete, open_share_dialog,
+                                preview_data_uri)
 
 BODY_DEFAULT_FILE = './assets/bodies/mean_all.yaml'
 
@@ -53,6 +54,7 @@ SECTIONS = {
     'account': ('person', 'Account'),
     'measurements': ('straighten', 'Measurements'),
     'garments': ('checkroom', 'Garments'),
+    'shared': ('folder_shared', 'Shared with me'),
     'settings': ('settings', 'Settings'),
 }
 
@@ -175,8 +177,14 @@ async def account_page(request: Request):
 
             with ui.row(wrap=False).classes('items-center w-full justify-between'):
                 ui.label('Body measurements').classes('se-section-label text-lg')
-                delete_btn = ui.button('Delete', on_click=lambda: delete_current()) \
-                    .props('outline size=sm icon=delete color=negative')
+                with ui.row(wrap=False).classes('gap-2'):
+                    share_btn = ui.button('Share',
+                                          on_click=lambda: share_current()) \
+                        .props('outline size=sm icon=share') \
+                        .tooltip('Share this profile with another user')
+                    delete_btn = ui.button('Delete',
+                                           on_click=lambda: delete_current()) \
+                        .props('outline size=sm icon=delete color=negative')
 
             last_selected = {'id': None}
 
@@ -453,6 +461,7 @@ async def account_page(request: Request):
                 options[NEW_PROFILE] = '＋ New profile…'
                 profile_select.set_options(options)
                 hint.set_visibility(not has_rows)
+                share_btn.set_visibility(has_rows)
                 delete_btn.set_visibility(has_rows)
                 if has_rows:
                     chosen = select_id if select_id in options \
@@ -467,6 +476,16 @@ async def account_page(request: Request):
                     profile_select.value = None
                     editor.clear()
                     fields.clear()
+
+            async def share_current():
+                if profile_select.value in (None, NEW_PROFILE):
+                    return
+                data = await run.io_bound(
+                    profiles.get_profile, email, profile_select.value)
+                if data is None:
+                    return
+                await open_share_dialog(email, 'profile',
+                                        data['id'], data['name'])
 
             async def delete_current():
                 if profile_select.value in (None, NEW_PROFILE):
@@ -585,6 +604,14 @@ async def account_page(request: Request):
                                         ui.label(row['name']).classes('truncate')
                                     with ui.row(wrap=False).classes('gap-0'):
                                         ui.button(
+                                            icon='share',
+                                            on_click=lambda _, iid=row['id'],
+                                                n=row['name']: open_share_dialog(
+                                                    email, 'design', iid, n)
+                                        ).props('flat dense round size=sm '
+                                                'color=grey-7 aria-label="Share"') \
+                                            .tooltip('Share with another user')
+                                        ui.button(
                                             icon='edit',
                                             on_click=lambda _, iid=row['id'],
                                                 n=row['name']: open_rename(iid, n)
@@ -602,6 +629,129 @@ async def account_page(request: Request):
                                     .classes('se-param-label px-1')
 
             await refresh()
+
+    # ------------------------------------------------------------------
+    # SECTION Shared with me
+
+    async def build_shared():
+        prof_rows = await run.io_bound(sharing.shared_profiles_with_me, email)
+        design_rows = await run.io_bound(sharing.shared_designs_with_me, email)
+
+        with ui.card().classes('se-stitch-card w-full'):
+            ui.label('Shared with me').classes('se-section-label text-lg')
+            ui.label('Measurement profiles and garments other users shared '
+                     'with you. Use them directly in the studio (they follow '
+                     'the owner\'s edits), or save your own editable copy.') \
+                .classes('text-sm text-stone-600')
+
+        async def copy_profile(profile_id):
+            name = await run.io_bound(
+                sharing.copy_shared_profile, email, profile_id)
+            if name:
+                ui.notify(f'Saved a copy as "{name}" in your measurements',
+                          type='positive')
+            else:
+                ui.notify('This is no longer shared with you',
+                          type='negative')
+
+        async def copy_design(design_id):
+            name = await run.io_bound(
+                sharing.copy_shared_design, email, design_id)
+            if name:
+                ui.notify(f'Saved a copy as "{name}" in your garments',
+                          type='positive')
+            else:
+                ui.notify('This is no longer shared with you',
+                          type='negative')
+
+        async def decline(kind, share_id, name, owner):
+            if not await confirm_delete(
+                    f'Remove "{name}" (shared by {owner}) from your list? '
+                    'Their original is not affected.'):
+                return
+            fn = sharing.decline_profile_share if kind == 'profile' \
+                else sharing.decline_design_share
+            await run.io_bound(fn, email, share_id)
+            await show('shared')
+
+        with ui.card().classes('se-stitch-card w-full'):
+            ui.label('Measurement profiles').classes('se-section-label')
+            if not prof_rows:
+                ui.label('No one has shared measurements with you yet') \
+                    .classes('text-gray-500')
+            for row in prof_rows:
+                with ui.row(wrap=False).classes(
+                        'items-center w-full justify-between'):
+                    with ui.row(wrap=False).classes('items-center gap-2 min-w-0'):
+                        ui.icon('straighten').classes('text-stone-400')
+                        with ui.column().classes('gap-0 min-w-0'):
+                            ui.label(row['name']).classes('truncate')
+                            ui.label(f'shared by {row["owner_name"]} · '
+                                     f'updated {row["updated_at"]:%b %d, %Y}') \
+                                .classes('se-param-label truncate')
+                    with ui.row(wrap=False).classes('gap-1'):
+                        ui.button(
+                            'Save a copy',
+                            on_click=lambda _, pid=row['profile_id']:
+                                copy_profile(pid)
+                        ).props('outline size=sm no-caps icon=content_copy')
+                        ui.button(
+                            icon='close',
+                            on_click=lambda _, sid=row['share_id'],
+                                n=row['name'], o=row['owner_name']:
+                                decline('profile', sid, n, o)
+                        ).props('flat dense round size=sm color=negative '
+                                'aria-label="Remove from my list"') \
+                            .tooltip('Remove from my list')
+
+        with ui.card().classes('se-stitch-card w-full'):
+            ui.label('Outfits & garments').classes('se-section-label')
+            if not design_rows:
+                ui.label('No one has shared garments with you yet') \
+                    .classes('text-gray-500')
+            else:
+                with ui.grid(columns=2).classes('w-full gap-3'):
+                    for row in design_rows:
+                        with ui.card().classes('se-stitch-card w-full p-2 gap-1'):
+                            thumb = preview_data_uri(row.get('preview'))
+                            if thumb:
+                                ui.image(thumb).props('fit=contain') \
+                                    .classes('w-full h-56 bg-white rounded')
+                            else:
+                                with ui.element('div').classes(
+                                        'w-full h-56 rounded bg-stone-50 '
+                                        'flex items-center justify-center'):
+                                    ui.icon('checkroom').classes(
+                                        'text-6xl text-stone-300')
+                            with ui.row(wrap=False).classes(
+                                    'items-center w-full justify-between px-1'):
+                                with ui.row(wrap=False).classes(
+                                        'items-center gap-2 min-w-0'):
+                                    ui.badge(designs.KIND_LABELS.get(
+                                        row['kind'], '?')) \
+                                        .props('outline color=grey-7')
+                                    ui.label(row['name']).classes('truncate')
+                                with ui.row(wrap=False).classes('gap-0'):
+                                    ui.button(
+                                        icon='content_copy',
+                                        on_click=lambda _, did=row['design_id']:
+                                            copy_design(did)
+                                    ).props('flat dense round size=sm '
+                                            'color=grey-7 '
+                                            'aria-label="Save a copy"') \
+                                        .tooltip('Save a copy to your garments')
+                                    ui.button(
+                                        icon='close',
+                                        on_click=lambda _, sid=row['share_id'],
+                                            n=row['name'], o=row['owner_name']:
+                                            decline('design', sid, n, o)
+                                    ).props('flat dense round size=sm '
+                                            'color=negative '
+                                            'aria-label="Remove from my list"') \
+                                        .tooltip('Remove from my list')
+                            ui.label(f'shared by {row["owner_name"]} · '
+                                     f'{row["updated_at"]:%b %d, %Y}') \
+                                .classes('se-param-label px-1')
 
     # ------------------------------------------------------------------
     # SECTION Settings
@@ -627,6 +777,7 @@ async def account_page(request: Request):
         'account': build_account,
         'measurements': build_measurements,
         'garments': build_garments,
+        'shared': build_shared,
         'settings': build_settings,
     }
     await show('account')

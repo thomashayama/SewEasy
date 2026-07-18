@@ -8,7 +8,7 @@ from copy import deepcopy
 
 from nicegui import run, ui
 
-from webapp import config, designs, profiles
+from webapp import config, designs, profiles, sharing
 
 
 async def confirm_delete(message: str) -> bool:
@@ -23,6 +23,93 @@ async def confirm_delete(message: str) -> bool:
     result = await dialog
     dialog.delete()
     return result is True
+
+
+SHARE_RESULT_MESSAGES = {
+    'exists': ('Already shared with them', 'info'),
+    'self': ("That's your own email — it's already yours", 'warning'),
+    'bad_email': ('Enter a valid email address', 'warning'),
+    'not_found': ('Item not found', 'negative'),
+}
+
+
+async def open_share_dialog(owner_email: str, kind: str, item_id: int,
+                            item_name: str):
+    """Dialog to share a body profile or design with other users by email
+    and to see/revoke who it is already shared with.
+    `kind` is 'profile' or 'design'."""
+    if kind == 'profile':
+        share_fn = sharing.share_profile
+        recipients_fn = sharing.profile_recipients
+        revoke_fn = sharing.revoke_profile_share
+    else:
+        share_fn = sharing.share_design
+        recipients_fn = sharing.design_recipients
+        revoke_fn = sharing.revoke_design_share
+
+    with ui.dialog() as dialog, ui.card().classes('items-center'):
+        ui.label(f'Share "{item_name}"').classes('font-medium')
+        ui.label('Enter the Google account email of another SewEasy user. '
+                 'They can use it in the studio and save their own copy; '
+                 'your original stays yours.') \
+            .classes('text-sm text-stone-600 max-w-xs')
+
+        async def do_share():
+            result = await run.io_bound(
+                share_fn, owner_email, item_id, email_input.value)
+            if result == 'shared':
+                ui.notify(f'Shared with {email_input.value.strip()}',
+                          type='positive')
+                email_input.value = ''
+                await refresh()
+            else:
+                message, level = SHARE_RESULT_MESSAGES[result]
+                ui.notify(message, type=level)
+
+        with ui.row(wrap=False).classes('items-center gap-2'):
+            email_input = ui.input(
+                label='Email', placeholder='friend@example.com'
+            ).classes('w-64').props('outlined dense type=email') \
+                .on('keydown.enter', do_share)
+            ui.button('Share', on_click=do_share) \
+                .props('unelevated icon=person_add')
+
+        recipient_list = ui.column().classes('w-full gap-1')
+        ui.button('Close', on_click=dialog.close).props('flat')
+
+    async def revoke(share_id, recipient):
+        if not await confirm_delete(
+                f'Stop sharing "{item_name}" with {recipient}?'):
+            return
+        await run.io_bound(revoke_fn, owner_email, share_id)
+        await refresh()
+
+    async def refresh():
+        rows = await run.io_bound(recipients_fn, owner_email, item_id)
+        recipient_list.clear()
+        with recipient_list:
+            if not rows:
+                ui.label('Not shared with anyone yet') \
+                    .classes('text-sm text-gray-500')
+                return
+            for row in rows:
+                with ui.row(wrap=False).classes(
+                        'items-center w-full justify-between gap-2'):
+                    with ui.row(wrap=False).classes('items-center gap-2 min-w-0'):
+                        ui.icon('person').classes('text-stone-400')
+                        ui.label(row['email']).classes('text-sm truncate')
+                    ui.button(
+                        icon='close',
+                        on_click=lambda _, sid=row['share_id'],
+                            r=row['email']: revoke(sid, r)
+                    ).props('flat dense round size=sm color=negative '
+                            'aria-label="Stop sharing"') \
+                        .tooltip('Stop sharing')
+
+    dialog.open()
+    await refresh()
+    await dialog
+    dialog.delete()
 
 
 def preview_data_uri(svg_text):
@@ -104,6 +191,7 @@ def body_source_ui(state):
     account page. `state` is the GUIState."""
     email = state.user['email'] if state.user else None
     DEFAULT = '__default__'
+    SHARED_PREFIX = 'shared:'  # shared-profile option keys: 'shared:<id>'
 
     async def apply_measurements(measurements):
         state.pattern_state.set_new_body_params(measurements)
@@ -116,8 +204,14 @@ def body_source_ui(state):
                     if not k.startswith('_')}
             await apply_measurements(base)
             await state.apply_skin_color(None)
-        elif isinstance(e.value, int) and email:
-            data = await run.io_bound(profiles.get_profile, email, e.value)
+        elif email and (isinstance(e.value, int)
+                        or str(e.value).startswith(SHARED_PREFIX)):
+            if isinstance(e.value, int):
+                data = await run.io_bound(profiles.get_profile, email, e.value)
+            else:
+                data = await run.io_bound(
+                    sharing.get_shared_profile, email,
+                    int(e.value[len(SHARED_PREFIX):]))
             if data is None:
                 ui.notify('Saved measurements not found', type='negative')
                 return
@@ -129,6 +223,9 @@ def body_source_ui(state):
         if email:
             for row in profiles.list_profiles(email):
                 opts[row['id']] = row['name']
+            for row in sharing.shared_profiles_with_me(email):
+                opts[f'{SHARED_PREFIX}{row["profile_id"]}'] = \
+                    f'{row["name"]} — shared by {row["owner_name"]}'
         return opts
 
     with ui.row(wrap=False).classes('w-full items-center gap-1'):
@@ -251,9 +348,10 @@ def designs_ui(state):
             ui.button('Cancel', on_click=save_dialog.close).props('flat')
 
     # --- Load dialog: outfits replace, garments merge ---
-    async def load_and_apply(item_id: int):
+    async def load_and_apply(item_id: int, shared: bool = False):
         # Off the event loop: fetches the drape blob (can be tens of MB)
-        data = await run.io_bound(designs.get_design, email, item_id)
+        fetch = sharing.get_shared_design if shared else designs.get_design
+        data = await run.io_bound(fetch, email, item_id)
         if data is None:
             ui.notify('Saved design not found', type='negative')
             return
@@ -283,35 +381,51 @@ def designs_ui(state):
         await run.io_bound(designs.delete_design, email, item_id)
         await refresh_list()
 
+    def render_item(row, shared: bool):
+        item_id = row['design_id'] if shared else row['id']
+        with ui.row().classes('items-center w-full justify-between'):
+            with ui.row(wrap=False).classes('items-center gap-2 min-w-0'):
+                thumb = preview_data_uri(row.get('preview'))
+                if thumb:
+                    ui.image(thumb).props('fit=contain').classes(
+                        'w-12 h-12 bg-white rounded '
+                        'border border-stone-200')
+                else:
+                    ui.icon('checkroom').classes(
+                        'text-3xl text-stone-300 w-12 text-center')
+                ui.badge(designs.KIND_LABELS.get(row['kind'], '?')) \
+                    .props('outline color=grey-7')
+                with ui.column().classes('gap-0 min-w-0'):
+                    ui.label(row['name']).classes('truncate')
+                    if shared:
+                        ui.label(f'shared by {row["owner_name"]}') \
+                            .classes('se-param-label truncate')
+            with ui.row():
+                ui.button(
+                    'Load',
+                    on_click=lambda _, iid=item_id, s=shared:
+                        load_and_apply(iid, shared=s))
+                if not shared:
+                    ui.button(
+                        icon='delete',
+                        on_click=lambda _, iid=item_id, n=row['name']:
+                            remove_item(iid, n)
+                    ).props('flat color=negative aria-label="Delete"')
+
     async def refresh_list():
         rows = await run.io_bound(designs.list_designs, email)
+        shared_rows = await run.io_bound(sharing.shared_designs_with_me, email)
         item_list.clear()
         with item_list:
-            if not rows:
+            if not rows and not shared_rows:
                 ui.label('Nothing saved yet').classes('text-gray-500')
             for row in rows:
-                with ui.row().classes('items-center w-full justify-between'):
-                    with ui.row(wrap=False).classes('items-center gap-2'):
-                        thumb = preview_data_uri(row.get('preview'))
-                        if thumb:
-                            ui.image(thumb).props('fit=contain').classes(
-                                'w-12 h-12 bg-white rounded '
-                                'border border-stone-200')
-                        else:
-                            ui.icon('checkroom').classes(
-                                'text-3xl text-stone-300 w-12 text-center')
-                        ui.badge(designs.KIND_LABELS.get(row['kind'], '?')) \
-                            .props('outline color=grey-7')
-                        ui.label(row['name'])
-                    with ui.row():
-                        ui.button(
-                            'Load',
-                            on_click=lambda _, iid=row['id']: load_and_apply(iid))
-                        ui.button(
-                            icon='delete',
-                            on_click=lambda _, iid=row['id'], n=row['name']:
-                                remove_item(iid, n)
-                        ).props('flat color=negative aria-label="Delete"')
+                render_item(row, shared=False)
+            if shared_rows:
+                ui.label('Shared with me') \
+                    .classes('se-param-label mt-2')
+                for row in shared_rows:
+                    render_item(row, shared=True)
 
     with ui.dialog() as load_dialog, ui.card().classes('items-center w-96'):
         ui.label('My outfits & garments')
