@@ -8,20 +8,68 @@ current database state (e.g. a units change in Settings shows up in the
 Measurements editor immediately).
 """
 
+from pathlib import Path
+
+import numpy as np
+import trimesh
 from fastapi import Request
 from fastapi.responses import RedirectResponse
 from nicegui import app, ui
 
 from assets.bodies.body_params import BodyParameters
 from gui import theme
+from gui.gui_pattern import display_to_base_rgba
 from webapp import auth, designs, profiles
 from webapp import measurement_guide as guide
 from webapp.gui_widgets import preview_data_uri
 
 BODY_DEFAULT_FILE = './assets/bodies/mean_all.yaml'
+BODY_GLB_FILE = './assets/bodies/mean_all_display.glb'
+BODY_TONE_CACHE = Path('./tmp_gui/body_tones')
 
-# Measurement diagrams and overview illustration
+# Measurement diagrams, overview illustration, body models
 app.add_static_files('/img', './assets/img')
+app.add_static_files('/body', './assets/bodies')
+BODY_TONE_CACHE.mkdir(parents=True, exist_ok=True)
+app.add_static_files('/body_tones', str(BODY_TONE_CACHE))
+
+
+def tinted_body_glb_url(color: str) -> str:
+    """URL of the display body tinted with a skin tone. Cached by tone —
+    the mannequin shape is shared, only the material differs."""
+    name = f'body_{color.lstrip("#").lower()}.glb'
+    path = BODY_TONE_CACHE / name
+    if not path.exists():
+        body = trimesh.load(BODY_GLB_FILE)
+        for geom in body.geometry.values():
+            geom.visual.material.baseColorFactor = display_to_base_rgba(color)
+        body.export(path)
+    return f'/body_tones/{name}'
+
+
+def _mannequin_scene():
+    """A small 3D stage matching the studio's lighting (the skin-tone
+    calibration in display_to_base_rgba assumes these lights)"""
+    camera = ui.scene.perspective_camera(fov=30)
+    camera.x, camera.y, camera.z = 0, -4.15, 1.25
+    camera.look_at_x = camera.look_at_y = 0
+    camera.look_at_z = 1.25 * 2 / 3
+    with ui.scene(
+        width=260, height=400, camera=camera, grid=False,
+        background_color='#f7f5f0',
+    ).classes('rounded') as scene:
+        light_positions = np.array([
+            [1.60614, 1.23701, 1.5341],
+            [1.31844, -2.52238, 1.92831],
+            [-2.80522, 2.34624, 1.2594],
+            [0.160261, 3.52215, 1.81789],
+            [-2.65752, -1.26328, 1.41194],
+        ])
+        z_dirs = np.arctan2(light_positions[:, 1], light_positions[:, 0])
+        for pos, z_dir in zip(light_positions, z_dirs):
+            scene.spot_light(color='#ffffff', intensity=10., angle=np.pi) \
+                .rotate(0., 0., -z_dir).move(*pos)
+    return scene
 
 SECTIONS = {
     'account': ('person', 'Account'),
@@ -189,9 +237,29 @@ async def account_page(request: Request):
                     'Display units — values are stored in centimeters')
             update_unit_note()
 
-            editor = ui.column().classes('w-full')
+            # Mannequin beside the editor: skin tone follows this profile
+            # (the shape is the average body — measurements don't reshape it)
+            with ui.row(wrap=False).classes('w-full gap-4 items-start'):
+                with ui.column().classes('shrink-0 gap-1'):
+                    scene = _mannequin_scene()
+                    ui.label('Average body shape; skin tone follows '
+                             'this profile').classes('se-param-label w-64')
+                editor = ui.column().classes('grow min-w-0')
+
             fields = {}
             skin_ctl = {'slider': None, 'touched': False, 'stored': None}
+            scene_ctl = {'body': None, 'url': None}
+
+            def set_mannequin_tone(color):
+                url = tinted_body_glb_url(color) if color \
+                    else '/body/mean_all_display.glb'
+                if url == scene_ctl['url']:
+                    return
+                if scene_ctl['body'] is not None:
+                    scene_ctl['body'].delete()
+                with scene:
+                    scene_ctl['body'] = scene.gltf(url).rotate(np.pi / 2, 0., 0.)
+                scene_ctl['url'] = url
 
             def save_changes():
                 data = profiles.get_profile(email, profile_select.value)
@@ -259,13 +327,15 @@ async def account_page(request: Request):
                     # profile is selected in the studio
                     stored_tone = data.get('skin_color')
                     skin_ctl.update(touched=False, stored=stored_tone)
+                    set_mannequin_tone(stored_tone)
                     with ui.row(wrap=False).classes('items-center gap-3 mt-2 w-full'):
                         ui.label('Skin tone').classes('se-param-label w-24')
 
                         def _touch_tone(e):
                             skin_ctl['touched'] = True
-                            skin_ctl['slider'].style(
-                                f'color: {guide.skin_tone_hex(e.args)}')
+                            tone = guide.skin_tone_hex(e.args)
+                            skin_ctl['slider'].style(f'color: {tone}')
+                            set_mannequin_tone(tone)
 
                         skin_ctl['slider'] = ui.slider(
                             value=guide.skin_tone_t(stored_tone)
@@ -280,7 +350,7 @@ async def account_page(request: Request):
                             ui.label('not set — mannequin uses muslin') \
                                 .classes('se-param-label')
 
-                    with ui.grid(columns=3).classes('w-full gap-x-4 gap-y-1 mt-2'):
+                    with ui.grid(columns=2).classes('w-full gap-x-4 gap-y-1 mt-2'):
                         for key in keys:
                             with ui.row(wrap=False).classes('items-center gap-0 w-full'):
                                 fields[key] = ui.number(
