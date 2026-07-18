@@ -41,7 +41,9 @@ class OAuthState(Base):
     __tablename__ = 'oauth_states'
 
     state = Column(String, primary_key=True)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    # Indexed: every login sweeps expired states by created_at
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False,
+                        index=True)
 
 
 class BodyProfile(TimestampMixin, Base):

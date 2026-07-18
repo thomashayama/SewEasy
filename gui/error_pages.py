@@ -2,6 +2,7 @@ from nicegui import ui, app
 from nicegui import Client
 from nicegui.page import page
 import random
+import traceback
 
 from gui.callbacks import theme_colors
 
@@ -18,16 +19,21 @@ error_icons = [
 # https://github.com/zauberzeug/nicegui/discussions/883#discussioncomment-5801636
 def error_handler(err_type, text, exception: Exception):
     """Base error page, with customizable error messages"""
+    # The exception belongs in the server log, not on a visitor's screen
+    # (raw messages leak internals and read as gibberish to users)
+    if exception is not None:
+        traceback.print_exception(
+            type(exception), exception, exception.__traceback__)
+
     with ui.column().classes('h-[95vh] w-[95vw] items-center justify-top space-y-8 self-center'):
         img = random.choice(error_icons)
-        ui.image(img).classes('h-[45vh]').props('fit="scale-down"') 
-        
+        ui.image(img).classes('h-[45vh]').props('fit="scale-down" alt="Decorative dress illustration"')
+
         with ui.column().classes('h-fit w-fit py-6 px-12 items-center justify-center space-y-4 '
                                  'se-stitch-card'):
             ui.label(err_type).classes('text-3xl')
             if text:
                 ui.label(text).classes('text-2xl')
-            ui.label(str(exception)).classes('text-xl text-stone-500')
 
 # https://www.pixelfish.com.au/blog/most-common-website-errors/
 @app.exception_handler(404)

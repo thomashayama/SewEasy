@@ -15,7 +15,6 @@ import math
 import re
 from pathlib import Path
 
-import cairosvg
 from pypdf import PdfReader, PdfWriter
 from svgpathtools import svg2paths
 
@@ -43,6 +42,9 @@ def _svg_viewbox(svg_text: str):
 
 
 def _page_pdf(page_svg: str) -> PdfReader:
+    # Lazy: cairo is only needed when a PDF is actually rendered
+    # (the Windows DLL path fix in .wrappers has run by this point)
+    import cairosvg
     pdf_bytes = cairosvg.svg2pdf(bytestring=page_svg.encode('utf-8'))
     return PdfReader(io.BytesIO(pdf_bytes))
 

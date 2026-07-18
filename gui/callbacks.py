@@ -8,7 +8,6 @@ from datetime import datetime
 from argparse import Namespace
 import numpy as np
 import shutil
-import trimesh
 from pathlib import Path
 import time
 
@@ -20,7 +19,7 @@ import asyncio
 
 # Custom
 import seweasy as pyg
-from .gui_pattern import GUIPattern, hex_to_rgba, display_to_base_rgba
+from .gui_pattern import GUIPattern
 from . import theme
 from webapp import gui_widgets as account_widgets
 
@@ -41,7 +40,6 @@ icon_arxiv = """<svg id="primary_logo_-_single_color_-_white" data-name="primary
 
 theme_colors = theme.colors
 
-BODY_GLB = './assets/bodies/mean_all_display.glb'
 # How the display body's baked muslin actually renders on the 3D stage
 # (body colors are kept in display space; display_to_base_rgba converts
 # them to material factors at export time)
@@ -49,6 +47,18 @@ DEFAULT_BODY_COLOR = '#f9f2e4'
 
 # Skin tone ramp + helpers live with the rest of the body knowledge
 from webapp.measurement_guide import skin_tone_hex, skin_tone_t
+# Skin-tinted mannequin exports, cached by tone across sessions
+from webapp import body_display
+
+# Static mounts are app-wide: registering them per connection only bloats
+# the router. Session-specific files under /geo get unique names, so long
+# browser caching is safe everywhere.
+PATH_STATIC_IMG = '/img'
+LOCAL_PATH_3D = Path('./tmp_gui/garm_3d')
+LOCAL_PATH_3D.mkdir(parents=True, exist_ok=True)
+app.add_static_files(PATH_STATIC_IMG, './assets/img', max_cache_age=24 * 3600)
+app.add_static_files('/geo', LOCAL_PATH_3D, max_cache_age=30 * 24 * 3600)
+app.add_static_files('/body', './assets/bodies', max_cache_age=24 * 3600)
 
 
 # State of GUI
@@ -64,8 +74,9 @@ class GUIState:
         self.window = None
         self.user = user  # Signed-in account ({email, name, picture}) or None
 
-        # Pattern
-        self.pattern_state = GUIPattern()
+        # Pattern: drafting is deferred (see initial_draft) so the page
+        # renders instantly and the heavy assembly runs off the event loop
+        self.pattern_state = GUIPattern(draft=False)
 
         # Pattern display constants
         self.canvas_aspect_ratio = 1500. / 900   # Millimiter paper
@@ -76,37 +87,75 @@ class GUIState:
         self.w_canvas_pad, self.h_canvas_pad = 0.011, 0.04
         self.body_outline_classes = ''   # Application of pattern&body scaling when it overflows
 
-        # Paths setup
-        # Static images for GUI
-        self.path_static_img = '/img'
-        app.add_static_files(self.path_static_img, './assets/img')
-        
-        # 3D updates
-        self.path_static_3d = '/geo'
+        # Paths setup (static mounts are registered once at module scope)
+        self.path_static_img = PATH_STATIC_IMG
         self.garm_3d_filename = f'garm_3d_{self.pattern_state.id}.glb'
         self.body_color = DEFAULT_BODY_COLOR
-        self.body_3d_filename = ''   # Set when the mannequin is re-tinted
-        self.local_path_3d = Path('./tmp_gui/garm_3d')
-        self.local_path_3d.mkdir(parents=True, exist_ok=True)
-        app.add_static_files(self.path_static_3d, self.local_path_3d)
-        app.add_static_files('/body', './assets/bodies')
+        self.local_path_3d = LOCAL_PATH_3D
+
+        # A design stashed before an auth/account navigation survives the
+        # round trip (signing in must not discard the work being saved)
+        self._restored_skin = None
+        self._restore_pending_design()
 
         # Elements
         self.ui_design_subtabs = {}
         self.ui_pattern_display = None
-        self._async_executor = ThreadPoolExecutor(1)  
+        self._async_executor = ThreadPoolExecutor(1)
 
-        # NOTE: the pattern itself is already assembled by GUIPattern's constructor
         self.stylings()
         self.layout()
-        self.update_pattern_display()  # Show the initial garment
+        self.update_pattern_display()  # Empty until the initial draft lands
 
     def release(self):
         """Clean-up after the sesssion"""
         self.pattern_state.release()
         (self.local_path_3d / self.garm_3d_filename).unlink(missing_ok=True)
-        if self.body_3d_filename:
-            (self.local_path_3d / self.body_3d_filename).unlink(missing_ok=True)
+
+    async def initial_draft(self):
+        """Draft and show the starting garment; call once the page is
+        delivered, so the first paint never waits on pattern assembly"""
+        await asyncio.get_event_loop().run_in_executor(
+            self._async_executor, self._sync_update_state)
+        if self._restored_skin:
+            await self.apply_skin_color(self._restored_skin)
+
+    # --- Design persistence across navigation ---
+
+    def stash_pending_design(self):
+        """Snapshot the working design into the user's browser storage so
+        a sign-in redirect or an account-page visit doesn't discard it"""
+        try:
+            from webapp.designs import snapshot_design_params
+            from webapp.profiles import measurements_from_body
+            app.storage.user['pending_design'] = {
+                'design': snapshot_design_params(self.pattern_state.design_params),
+                'body': measurements_from_body(self.pattern_state.body_params),
+                'fabric': self.pattern_state.fabric_color,
+                'skin': self.body_color
+                        if self.body_color != DEFAULT_BODY_COLOR else None,
+            }
+        except Exception:
+            traceback.print_exc()   # never block navigation on a stash failure
+
+    def _restore_pending_design(self):
+        """One-shot restore of a stashed design (see stash_pending_design)"""
+        try:
+            snapshot = app.storage.user.pop('pending_design', None)
+        except Exception:
+            snapshot = None
+        if not snapshot:
+            return
+        try:
+            if snapshot.get('design'):
+                self.pattern_state.set_new_design(snapshot['design'])
+            if snapshot.get('body'):
+                self.pattern_state.set_new_body_params(snapshot['body'])
+            if snapshot.get('fabric'):
+                self.pattern_state.fabric_color = snapshot['fabric']
+            self._restored_skin = snapshot.get('skin')
+        except Exception:
+            traceback.print_exc()   # a broken snapshot falls back to defaults
 
     # Initial definitions
     def stylings(self):
@@ -145,8 +194,11 @@ class GUIState:
 
         # Configurator GUI
         # Collapsible configuration side panel
+        # breakpoint: below 1024px CSS width the drawer overlays the stage
+        # and can be dismissed — a 390px fixed panel would swallow a phone
+        # screen entirely
         self.ui_side_panel = ui.left_drawer(value=True, elevated=False, bordered=True) \
-            .classes('relative px-3 py-2 bg-[#fcfcfa]').props('width=390 breakpoint=0')
+            .classes('relative px-3 py-2 bg-[#fcfcfa]').props('width=390 breakpoint=1024')
         with self.ui_side_panel:
             self.def_side_panel()
 
@@ -162,7 +214,8 @@ class GUIState:
                 # Brand
                 with ui.row(wrap=False).classes('items-center gap-2.5'):
                     ui.button(icon='menu', on_click=self.ui_side_panel.toggle) \
-                        .props('flat color=white dense round').tooltip('Configuration panel')
+                        .props('flat color=white dense round aria-label="Toggle configuration panel"') \
+                        .tooltip('Configuration panel')
                     ui.icon('content_cut').classes('text-2xl rotate-[-90deg] opacity-90')
                     with ui.column().classes('gap-0.5'):
                         ui.label('SewEasy').classes('se-wordmark')
@@ -183,7 +236,7 @@ class GUIState:
                             ui.menu_item(
                                 'Source on GitHub',
                                 lambda: ui.navigate.to('https://github.com/thomashayama/SewEasy', new_tab=True))
-                    account_widgets.auth_header_ui(self.user)
+                    account_widgets.auth_header_ui(self)
             # Signature: selvedge edge
             ui.element('div').classes('se-selvedge w-full')
         # NOTE No footer: attribution floats over the stage (see view_stage)
@@ -210,7 +263,7 @@ class GUIState:
 
             # Fabric color: applies to both the 2D pattern and the 3D drape
             with ui.button(icon='palette') \
-                    .props('round unelevated size=sm') \
+                    .props('round unelevated size=sm aria-label="Fabric color"') \
                     .classes('shadow-lg') \
                     .tooltip('Fabric color') as self.ui_fabric_color_btn:
                 self.ui_fabric_color_picker = ui.color_picker(
@@ -240,7 +293,7 @@ class GUIState:
         self.ui_passive_body_refs = {}
 
         ui.button(icon='chevron_left', on_click=self.ui_side_panel.toggle) \
-            .props('flat dense round size=sm color=grey-7') \
+            .props('flat dense round size=sm color=grey-7 aria-label="Collapse panel"') \
             .classes('absolute top-1.5 right-1.5 z-10').tooltip('Collapse panel')
 
         ui.label('Body').classes('se-section-label')
@@ -294,11 +347,12 @@ class GUIState:
                         max=p_range[1], 
                         step=0.025 if p_type == 'float' else 1,
                     ).props('snap label').classes('w-full')  \
-                        .on('update:model-value', 
-                            lambda e, dic=design_params, param=param: self.update_pattern_ui_state(dic, param, e.args),
-                            throttle=0.5, leading_events=False)
+                        .on('change',
+                            lambda e, dic=design_params, param=param: self.update_pattern_ui_state(dic, param, e.args))
 
-                    # NOTE Events control: https://nicegui.io/documentation/slider#throttle_events_with_leading_and_trailing_options
+                    # NOTE 'change' fires when the user releases the slider:
+                    # one draft per adjustment instead of one per drag tick
+                    # (the 'label' prop still shows the live value while dragging)
                 elif 'file' in p_type:
                     print(f'GUI::NotImplementedERROR::{param}::'
                           '"file" parameter type is not yet supported in Web SewEasy. '
@@ -361,6 +415,12 @@ class GUIState:
             ui.button('Random', on_click=self.random).props('outline size=sm icon=shuffle')
             ui.button('Default', on_click=self.default).props('outline size=sm icon=restart_alt')
             ui.button('Upload', on_click=self.ui_design_dialog.open).props('outline size=sm icon=upload_file')
+            # Restores the design Random/Default just replaced
+            self._design_undo = None
+            self.ui_undo_design_btn = ui.button('Undo', on_click=self.undo_design) \
+                .props('outline size=sm icon=undo') \
+                .tooltip('Restore the design that was just replaced')
+            self.ui_undo_design_btn.set_visibility(False)
             if self.user:
                 account_widgets.designs_ui(self)
 
@@ -425,6 +485,7 @@ class GUIState:
                 with ui.row().classes('w-full h-full p-0 m-0 bg-transparent relative top-[0%] left-[0%]'):
                     self.body_outline_classes = 'bg-transparent h-full absolute top-[0%] left-[0%] p-0 m-0'
                     self.ui_body_outline = ui.image(f'{self.path_static_img}/ggg_outline_mean_all.svg') \
+                        .props('alt="Body silhouette behind the pattern"') \
                         .classes(self.body_outline_classes)
                 
                 # NOTE: ui.row allows for correct classes application (e.g. no padding on svg pattern)
@@ -531,13 +592,23 @@ class GUIState:
             # Mannequin skin tone
             with ui.element('div').classes('se-overlay-chip w-44 px-4 pt-0.5'):
                 self.ui_skin_slider = ui.slider(
-                    value=0.3, min=0., max=1., step=0.01,
-                ).props('dense').classes('se-skin-slider w-full') \
+                    value=skin_tone_t(self.body_color)
+                        if self.body_color != DEFAULT_BODY_COLOR else 0.3,
+                    min=0., max=1., step=0.01,
+                ).props('dense aria-label="Mannequin skin tone"') \
+                    .classes('se-skin-slider w-full') \
                     .style(f'color: {self.body_color}') \
-                    .on('update:model-value',
-                        lambda e: self.update_body_color(skin_tone_hex(e.args)),
-                        throttle=0.5, leading_events=False) \
+                    .on('change',
+                        lambda e: self.update_body_color(skin_tone_hex(e.args))) \
                     .tooltip('Mannequin skin tone')
+
+            # The 3D result goes stale as soon as the design changes;
+            # make the required re-drape step visible instead of implied
+            self.ui_3d_stale = ui.label(
+                'Press "Drape current design" to see this design in 3D'
+            ).classes('se-warning-chip') \
+                .bind_visibility_from(self.pattern_state, 'is_in_3D',
+                                      backward=lambda in_3d: not in_3d)
 
         # Floating primary action
         ui.button('Drape current design', on_click=lambda: self.update_3d_scene()) \
@@ -547,21 +618,38 @@ class GUIState:
     # !SECTION
     # SECTION -- Other UI details
     def def_pattern_waiting(self):
-        """Define the waiting splashcreen with spinner 
+        """Define the waiting splashcreen with spinner
             (e.g. waiting for a pattern to update)"""
-        
+
         # NOTE: the screen darkens because of the shadow
         with ui.dialog(value=False).props(
             'persistent maximized'
         ) as self.spin_dialog, ui.card().classes('bg-transparent'):
-            # Styles https://quasar.dev/vue-components/spinners
-            ui.spinner('tail', size='6em', color='white').classes('fixed-center')
+            with ui.column().classes('fixed-center items-center gap-4'):
+                # Styles https://quasar.dev/vue-components/spinners
+                ui.spinner('tail', size='6em', color='white')
+                self.spin_message = ui.label('') \
+                    .classes('text-white text-lg text-center max-w-md')
+
+    def open_spinner(self, message=''):
+        """Show the blocking spinner with a message saying what is running"""
+        self.spin_message.set_text(message)
+        self.spin_dialog.open()
 
     def def_body_file_dialog(self):
         """ Dialog for loading parameter files (body)
         """
         async def handle_upload(e: events.UploadEventArguments):
-            param_dict = yaml.safe_load(e.content.read())['body']
+            try:
+                param_dict = yaml.safe_load(e.content.read())['body']
+                if not isinstance(param_dict, dict):
+                    raise TypeError('"body" section is not a mapping')
+            except Exception:
+                traceback.print_exc()
+                ui.notify('Could not read this file — expected a SewEasy '
+                          'body-measurements YAML or JSON with a "body" section',
+                          type='negative', close_button=True)
+                return
 
             from webapp import measurement_guide
             errors, warnings = measurement_guide.validate_measurements(param_dict)
@@ -575,12 +663,17 @@ class GUIState:
                           type='warning', multi_line=True, close_button=True)
 
             self.toggle_param_update_events(self.ui_active_body_refs)
-
-            self.pattern_state.set_new_body_params(param_dict)
-            self.update_body_params_ui_state(self.ui_active_body_refs)            
-            await self.update_pattern_ui_state()
-
-            self.toggle_param_update_events(self.ui_active_body_refs)
+            try:
+                self.pattern_state.set_new_body_params(param_dict)
+                self.update_body_params_ui_state(self.ui_active_body_refs)
+                await self.update_pattern_ui_state()
+            except Exception:
+                traceback.print_exc()
+                ui.notify('Could not apply these measurements',
+                          type='negative', close_button=True)
+                return
+            finally:
+                self.toggle_param_update_events(self.ui_active_body_refs)
 
             ui.notify(f'Successfully applied {e.name}')
             self.ui_body_dialog.close()
@@ -599,15 +692,29 @@ class GUIState:
         """
 
         async def handle_upload(e: events.UploadEventArguments):
-            param_dict = yaml.safe_load(e.content.read())['design']
+            try:
+                param_dict = yaml.safe_load(e.content.read())['design']
+                if not isinstance(param_dict, dict):
+                    raise TypeError('"design" section is not a mapping')
+            except Exception:
+                traceback.print_exc()
+                ui.notify('Could not read this file — expected a SewEasy '
+                          'design YAML or JSON with a "design" section',
+                          type='negative', close_button=True)
+                return
 
             self.toggle_param_update_events(self.ui_design_refs)  # Don't react to value updates
-
-            self.pattern_state.set_new_design(param_dict)
-            self.update_design_params_ui_state(self.ui_design_refs, self.pattern_state.design_params)
-            await self.update_pattern_ui_state()
-
-            self.toggle_param_update_events(self.ui_design_refs)  # Re-enable reaction to value updates
+            try:
+                self.pattern_state.set_new_design(param_dict)
+                self.update_design_params_ui_state(self.ui_design_refs, self.pattern_state.design_params)
+                await self.update_pattern_ui_state()
+            except Exception:
+                traceback.print_exc()
+                ui.notify('Could not apply this design file',
+                          type='negative', close_button=True)
+                return
+            finally:
+                self.toggle_param_update_events(self.ui_design_refs)  # Re-enable reaction to value updates
 
             ui.notify(f'Successfully applied {e.name}')
             self.ui_design_dialog.close()
@@ -641,36 +748,31 @@ class GUIState:
         # Keep the visible parameter sections in sync with the composition
         self._refresh_section_relevance()
 
+        # NOTE: even "quick" drafts run in the executor — pattern assembly
+        # is CPU-bound Python, and NiceGUI serves every session from one
+        # event loop, so a synchronous draft freezes all connected users.
+        slow = self.pattern_state.is_slow_design()
         try:
-            if not self.pattern_state.is_slow_design(): 
-                # Quick update
-                self._sync_update_state()
-                return
+            if slow:
+                # Splashscreen blocks users from modifying params while updating
+                # https://github.com/zauberzeug/nicegui/discussions/1988
+                self.open_spinner('Updating the pattern…')
 
-            # Display waiting spinner untill getting the result
-            # NOTE Splashscreen solution to block users from modifying params while updating
-            # https://github.com/zauberzeug/nicegui/discussions/1988
-
-            self.spin_dialog.open()   
-            # NOTE: Using threads for async call 
-            # https://stackoverflow.com/questions/49822552/python-asyncio-typeerror-object-dict-cant-be-used-in-await-expression
             self.loop = asyncio.get_event_loop()
             await self.loop.run_in_executor(self._async_executor, self._sync_update_state)
-            
-            self.spin_dialog.close()
 
-        except KeyboardInterrupt as e:
-            raise e
-        except BaseException as e:
+        except Exception as e:
             traceback.print_exc()
             print(e)
-            self.spin_dialog.close()  # If open
             ui.notify(
-                'Failed to generate pattern correctly. Try different parameter values',
+                'This parameter combination could not be drafted — '
+                'try different values',
                 type='negative',
                 close_button=True,
                 position='center'
             )
+        finally:
+            self.spin_dialog.close()  # If open
 
     def _sync_update_state(self):
         # Update derivative body values (just in case)
@@ -805,8 +907,9 @@ class GUIState:
             # NOTE Splashscreen solution to block users from modifying params while updating
             # https://github.com/zauberzeug/nicegui/discussions/1988
 
-            self.spin_dialog.open()
-            # NOTE: Using threads for async call 
+            self.open_spinner('Simulating the 3D drape — this can take '
+                              'a couple of minutes on the first run')
+            # NOTE: Using threads for async call
             # https://stackoverflow.com/questions/49822552/python-asyncio-typeerror-object-dict-cant-be-used-in-await-expression
             self.loop = asyncio.get_event_loop()
             await self.loop.run_in_executor(self._async_executor, self._sync_update_3d)
@@ -816,25 +919,22 @@ class GUIState:
             with self.ui_3d_scene:
                 # NOTE: material is defined in the glb file
                 self.ui_garment_3d = self.ui_3d_scene.gltf(
-                            f'geo/{self.garm_3d_filename}', 
+                            f'geo/{self.garm_3d_filename}',
                         ).scale(0.01).rotate(np.pi / 2, 0., 0.)
-            
-            # Show the result! =)
-            self.spin_dialog.close()
 
-        except KeyboardInterrupt as e:
-            raise e
-        except BaseException as e:
+        except Exception as e:
             traceback.print_exc()
             print(e)
             self.ui_3d_scene.set_visibility(True)
-            self.spin_dialog.close()  # If open
             ui.notify(
-                'Failed to generate 3D model correctly. Try different parameter values',
+                'The drape simulation failed — this is usually on our side, '
+                'not your design. Try again, or adjust the parameters if it persists',
                 type='negative',
                 close_button=True,
                 position='center'
             )
+        finally:
+            self.spin_dialog.close()  # If open
     
     def _sync_update_3d(self):
         """Update 3d model"""
@@ -859,8 +959,12 @@ class GUIState:
         print('INFO::Updating fabric color...')
         self.ui_fabric_color_btn.style(f'background-color: {color} !important')
 
-        # 2D: cheap SVG re-serialization of the already-assembled pattern
-        self.pattern_state.set_fabric_color(color)
+        self.loop = asyncio.get_event_loop()
+
+        # 2D: SVG re-serialization of the already-assembled pattern —
+        # still an assembly+render pass, so keep it off the event loop
+        await self.loop.run_in_executor(
+            self._async_executor, self.pattern_state.set_fabric_color, color)
         self.update_pattern_display()
 
         # 3D: re-tint the existing drape -- material re-export only,
@@ -868,8 +972,7 @@ class GUIState:
         if self.ui_garment_3d is None:
             return
         try:
-            self.spin_dialog.open()
-            self.loop = asyncio.get_event_loop()
+            self.open_spinner('Applying the fabric color to the 3D drape…')
             updated = await self.loop.run_in_executor(
                 self._async_executor, self._sync_recolor_3d)
 
@@ -879,19 +982,17 @@ class GUIState:
                     self.ui_garment_3d = self.ui_3d_scene.gltf(
                                 f'geo/{self.garm_3d_filename}',
                             ).scale(0.01).rotate(np.pi / 2, 0., 0.)
-            self.spin_dialog.close()
-        except KeyboardInterrupt as e:
-            raise e
-        except BaseException as e:
+        except Exception as e:
             traceback.print_exc()
             print(e)
-            self.spin_dialog.close()  # If open
             ui.notify(
                 'Failed to apply the fabric color to the 3D view',
                 type='negative',
                 close_button=True,
                 position='center'
             )
+        finally:
+            self.spin_dialog.close()  # If open
 
     async def update_body_color(self, color):
         """Re-tint the 3D mannequin with the chosen skin tone"""
@@ -903,21 +1004,20 @@ class GUIState:
         self.ui_skin_slider.style(f'color: {color}')   # thumb shows the tone
 
         try:
+            # Tinted exports are cached by tone and shared across sessions
+            # (see webapp.body_display); only a cache miss does mesh work
             self.loop = asyncio.get_event_loop()
-            await self.loop.run_in_executor(
-                self._async_executor, self._sync_recolor_body)
+            url = await self.loop.run_in_executor(
+                self._async_executor, body_display.tinted_body_glb_url, color)
 
             # Swap the body model in the scene, preserving visibility
             visible = self.ui_body_3d_switch.value
             self.ui_body_3d.delete()
             with self.ui_3d_scene:
-                self.ui_body_3d = self.ui_3d_scene.gltf(
-                        f'geo/{self.body_3d_filename}'
-                    ).rotate(np.pi / 2, 0., 0.)
+                self.ui_body_3d = self.ui_3d_scene.gltf(url) \
+                    .rotate(np.pi / 2, 0., 0.)
             self.ui_body_3d.visible(visible)
-        except KeyboardInterrupt as e:
-            raise e
-        except BaseException as e:
+        except Exception as e:
             traceback.print_exc()
             print(e)
             ui.notify(
@@ -934,21 +1034,6 @@ class GUIState:
         self.ui_skin_slider.set_value(skin_tone_t(color))
         self.ui_skin_slider.style(f'color: {color}')
         await self.update_body_color(color)
-
-    def _sync_recolor_body(self):
-        """Export a copy of the display body GLB tinted with the current
-        body color (the mesh carries a plain PBR color, no texture)"""
-        body = trimesh.load(BODY_GLB)
-        for geom in body.geometry.values():
-            geom.visual.material.baseColorFactor = \
-                display_to_base_rgba(self.body_color)
-
-        # Delete previous file
-        if self.body_3d_filename:
-            (self.local_path_3d / self.body_3d_filename).unlink(missing_ok=True)
-        # Put the new one for display
-        self.body_3d_filename = f'body_3d_{self.pattern_state.id}_{time.time()}.glb'
-        body.export(self.local_path_3d / self.body_3d_filename)
 
     def _sync_recolor_3d(self):
         """Re-export the draped garment GLB in the current fabric color"""
@@ -994,39 +1079,85 @@ class GUIState:
     async def design_sample(self):
         """Run design sampling"""
         self.loop = asyncio.get_event_loop()
-        await self.loop.run_in_executor(self._async_executor, self.pattern_state.sample_design)
+        # reload=False: update_pattern_ui_state drafts right after — no
+        # need to assemble the garment twice per click
+        await self.loop.run_in_executor(
+            self._async_executor,
+            lambda: self.pattern_state.sample_design(reload=False))
+
+    def _snapshot_design_for_undo(self):
+        """Remember the design about to be replaced by Random/Default"""
+        from webapp.designs import snapshot_design_params
+        self._design_undo = snapshot_design_params(self.pattern_state.design_params)
+        self.ui_undo_design_btn.set_visibility(True)
+
+    async def undo_design(self):
+        """Bring back the design Random/Default overwrote"""
+        if not self._design_undo:
+            return
+        params, self._design_undo = self._design_undo, None
+        self.ui_undo_design_btn.set_visibility(False)
+        self.toggle_param_update_events(self.ui_design_refs)
+        try:
+            self.pattern_state.set_new_design(params)
+            self.update_design_params_ui_state(self.ui_design_refs, self.pattern_state.design_params)
+            await self.update_pattern_ui_state()
+        finally:
+            self.toggle_param_update_events(self.ui_design_refs)
 
     async def random(self):
+        self._snapshot_design_for_undo()
         # Sampling could be slow, so add spin always
-        self.spin_dialog.open() 
+        self.open_spinner('Sampling a random design…')
 
         self.toggle_param_update_events(self.ui_design_refs)  # Don't react to value updates
-
-        await self.design_sample()
-        self.update_design_params_ui_state(self.ui_design_refs, self.pattern_state.design_params)
-        await self.update_pattern_ui_state()
-
-        self.toggle_param_update_events(self.ui_design_refs)  # Re-do reaction to value updates
-
-        self.spin_dialog.close() 
+        try:
+            await self.design_sample()
+            self.update_design_params_ui_state(self.ui_design_refs, self.pattern_state.design_params)
+            await self.update_pattern_ui_state()
+        except Exception as e:
+            traceback.print_exc()
+            print(e)
+            ui.notify('Random sampling failed — please try again',
+                      type='negative', close_button=True)
+        finally:
+            # The spinner and the controls must always come back —
+            # otherwise a sampling error locks the whole UI
+            self.toggle_param_update_events(self.ui_design_refs)
+            self.spin_dialog.close()
 
     async def default(self):
+        self._snapshot_design_for_undo()
         self.toggle_param_update_events(self.ui_design_refs)
-
-        self.pattern_state.restore_design(False)
-        self.update_design_params_ui_state(self.ui_design_refs, self.pattern_state.design_params)
-        await self.update_pattern_ui_state()
-
-        self.toggle_param_update_events(self.ui_design_refs)
+        try:
+            self.pattern_state.restore_design(False)
+            self.update_design_params_ui_state(self.ui_design_refs, self.pattern_state.design_params)
+            await self.update_pattern_ui_state()
+        finally:
+            self.toggle_param_update_events(self.ui_design_refs)
 
     # !SECTION
 
-    def state_download(self):
+    async def state_download(self):
         """Download the current garment as a print-ready PDF"""
         try:
-            pdf_path = self.pattern_state.save()
+            # Tiling + per-page cairosvg rendering takes seconds for a
+            # complex garment: run off the loop, with visible progress
+            self.open_spinner('Preparing your print-ready PDF…')
+            self.loop = asyncio.get_event_loop()
+            pdf_path = await self.loop.run_in_executor(
+                self._async_executor, self.pattern_state.save)
         except pyg.EmptyPatternError:
             ui.notify('Nothing to print yet — choose a garment first',
                       type='warning')
             return
+        except Exception as e:
+            traceback.print_exc()
+            print(e)
+            ui.notify('Could not generate the PDF — please try again',
+                      type='negative', close_button=True)
+            return
+        finally:
+            self.spin_dialog.close()
         ui.download(pdf_path, f'SewEasy_pattern_{datetime.now().strftime("%y%m%d-%H-%M-%S")}.pdf')
+        ui.notify('Your pattern PDF is downloading', type='positive')

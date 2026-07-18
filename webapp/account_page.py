@@ -8,43 +8,21 @@ current database state (e.g. a units change in Settings shows up in the
 Measurements editor immediately).
 """
 
-from pathlib import Path
-
 import numpy as np
-import trimesh
 from fastapi import Request
 from fastapi.responses import RedirectResponse
-from nicegui import app, ui
+from nicegui import run, ui
 
 from assets.bodies.body_params import BodyParameters
 from gui import theme
-from gui.gui_pattern import display_to_base_rgba
 from webapp import auth, designs, profiles
 from webapp import measurement_guide as guide
+# body_display registers the /body and /body_tones static mounts and owns
+# the tone-tinted mannequin cache (shared with the studio 3D view)
+from webapp.body_display import tinted_body_glb_url
 from webapp.gui_widgets import confirm_delete, preview_data_uri
 
 BODY_DEFAULT_FILE = './assets/bodies/mean_all.yaml'
-BODY_GLB_FILE = './assets/bodies/mean_all_display.glb'
-BODY_TONE_CACHE = Path('./tmp_gui/body_tones')
-
-# Measurement diagrams, overview illustration, body models
-app.add_static_files('/img', './assets/img')
-app.add_static_files('/body', './assets/bodies')
-BODY_TONE_CACHE.mkdir(parents=True, exist_ok=True)
-app.add_static_files('/body_tones', str(BODY_TONE_CACHE))
-
-
-def tinted_body_glb_url(color: str) -> str:
-    """URL of the display body tinted with a skin tone. Cached by tone —
-    the mannequin shape is shared, only the material differs."""
-    name = f'body_{color.lstrip("#").lower()}.glb'
-    path = BODY_TONE_CACHE / name
-    if not path.exists():
-        body = trimesh.load(BODY_GLB_FILE)
-        for geom in body.geometry.values():
-            geom.visual.material.baseColorFactor = display_to_base_rgba(color)
-        body.export(path)
-    return f'/body_tones/{name}'
 
 
 def _mannequin_scene():
@@ -118,7 +96,7 @@ async def account_page(request: Request):
     # --- Sidebar navigation ---
     nav_buttons = {}
     with ui.left_drawer(value=True, bordered=True) \
-            .classes('bg-[#fcfcfa] px-2 py-3').props('width=220 breakpoint=0'):
+            .classes('bg-[#fcfcfa] px-2 py-3').props('width=220 breakpoint=640'):
         for key, (icon, label) in SECTIONS.items():
             nav_buttons[key] = ui.button(
                 label, icon=icon,
@@ -128,23 +106,52 @@ async def account_page(request: Request):
 
     content = ui.column().classes('w-full max-w-3xl mx-auto gap-4 p-4')
 
-    def show(section):
+    # Unsaved measurement edits: set by the editor, checked before anything
+    # rebuilds a section (rebuilding re-reads the DB and discards edits)
+    unsaved = {'dirty': False}
+
+    async def confirm_discard() -> bool:
+        with ui.dialog() as dialog, ui.card().classes('items-center'):
+            ui.label('You have unsaved measurement edits — discard them?') \
+                .classes('max-w-xs')
+            with ui.row():
+                ui.button('Discard', on_click=lambda: dialog.submit(True)) \
+                    .props('unelevated color=negative')
+                ui.button('Keep editing', on_click=lambda: dialog.submit(False)) \
+                    .props('flat')
+        result = await dialog
+        dialog.delete()
+        return result is True
+
+    async def show(section):
+        if unsaved['dirty'] and not await confirm_discard():
+            return
+        unsaved['dirty'] = False
         for key, btn in nav_buttons.items():
             btn.classes(replace='w-full justify-start rounded-lg'
                         + (' bg-[#e5ebf4] text-[#35558a] font-medium'
                            if key == section else ''))
         content.clear()
         with content:
-            builders[section]()
+            await builders[section]()
 
     # ------------------------------------------------------------------
     # SECTION Account
 
-    def build_account():
+    async def build_account():
+        # Counts only — no reason to pull every design's preview SVG out
+        # of the database for three numbers
+        n_profiles = len(await run.io_bound(profiles.list_profiles, email))
+        kind_counts = await run.io_bound(designs.count_designs, email)
+        n_outfits = kind_counts.get('outfit', 0)
+        n_garments = sum(kind_counts.values()) - n_outfits
+
         with ui.card().classes('se-stitch-card w-full'):
             with ui.row(wrap=False).classes('items-center gap-4 w-full'):
                 if user.get('picture'):
-                    ui.image(user['picture']).classes('w-14 h-14 rounded-full')
+                    ui.image(user['picture']) \
+                        .props('alt="Your account picture"') \
+                        .classes('w-14 h-14 rounded-full')
                 else:
                     ui.icon('account_circle').classes('text-6xl text-gray-400')
                 with ui.column().classes('gap-0.5'):
@@ -155,10 +162,6 @@ async def account_page(request: Request):
                     .props('outline size=sm icon=logout')
         with ui.card().classes('se-stitch-card w-full'):
             ui.label('At a glance').classes('se-section-label')
-            n_profiles = len(profiles.list_profiles(email))
-            rows = designs.list_designs(email)
-            n_outfits = sum(1 for r in rows if r['kind'] == 'outfit')
-            n_garments = len(rows) - n_outfits
             ui.label(f'{n_profiles} measurement profile(s) · '
                      f'{n_outfits} outfit(s) · {n_garments} garment(s)') \
                 .classes('text-sm text-stone-600')
@@ -166,7 +169,7 @@ async def account_page(request: Request):
     # ------------------------------------------------------------------
     # SECTION Measurements
 
-    def build_measurements():
+    async def build_measurements():
         with ui.card().classes('se-stitch-card w-full'):
             NEW_PROFILE = '__new__'
 
@@ -177,18 +180,26 @@ async def account_page(request: Request):
 
             last_selected = {'id': None}
 
-            def on_profile_change():
+            async def on_profile_change(e=None):
+                # Programmatic reverts re-fire this handler with the old
+                # value — a no-op change is always ignored
+                if profile_select.value == last_selected['id']:
+                    return
                 if profile_select.value == NEW_PROFILE:
                     # Creating happens in the dialog; restore the selection
                     profile_select.value = last_selected['id']
                     new_dialog.open()
                     return
+                if unsaved['dirty'] and not await confirm_discard():
+                    profile_select.value = last_selected['id']
+                    return
+                unsaved['dirty'] = False
                 last_selected['id'] = profile_select.value
                 load_editor()
 
             profile_select = ui.select(
                 {}, label='Profile',
-                on_change=lambda: on_profile_change(),
+                on_change=on_profile_change,
             ).classes('w-64').props('outlined dense')
 
             hint = ui.label('No saved measurements yet — choose '
@@ -222,9 +233,26 @@ async def account_page(request: Request):
                 guide_dialog.open()
 
             def change_units():
-                profiles.set_units(email, units.value)
+                # Converts the visible fields in place: switching units
+                # mid-edit must never discard what was typed
+                old, new = last_units['v'], units.value
+                if old == new:
+                    return
+                last_units['v'] = new
+                profiles.set_units(email, new)
                 update_unit_note()
-                load_editor()
+                was_dirty = unsaved['dirty']
+                for key, field in fields.items():
+                    try:
+                        cm = guide.stored_value(key, field.value, old)
+                        field.value = guide.display_value(key, cm, new)
+                    except (TypeError, ValueError):
+                        continue
+                    field.props(f'label="{guide.label_for(key)}'
+                                f'{guide.unit_suffix(key, new)}" '
+                                f'step={0.25 if new == "in" else 0.5}')
+                # Programmatic conversion is not a user edit
+                unsaved['dirty'] = was_dirty
 
             def update_unit_note():
                 unit_note.set_text(
@@ -232,16 +260,29 @@ async def account_page(request: Request):
                     .format('inches' if units.value == 'in'
                             else 'centimeters'))
 
+            last_mode = {'v': 'essential'}
+
+            async def on_mode_change(e=None):
+                if mode.value == last_mode['v']:
+                    return
+                if unsaved['dirty'] and not await confirm_discard():
+                    mode.value = last_mode['v']
+                    return
+                last_mode['v'] = mode.value
+                unsaved['dirty'] = False
+                load_editor()
+
             with ui.row(wrap=False).classes('items-center gap-3 mt-1'):
                 mode = ui.toggle(
                     {'essential': 'Essential', 'all': 'All measurements'},
                     value='essential',
-                    on_change=lambda: load_editor(),
+                    on_change=on_mode_change,
                 ).props('no-caps unelevated rounded toggle-color=primary '
                         'padding="1px 12px"')
+                last_units = {'v': profiles.get_units(email)}
                 units = ui.toggle(
                     {'in': 'inches', 'cm': 'cm'},
-                    value=profiles.get_units(email),
+                    value=last_units['v'],
                     on_change=change_units,
                 ).props('no-caps unelevated rounded toggle-color=primary '
                         'padding="1px 12px"').tooltip(
@@ -261,9 +302,7 @@ async def account_page(request: Request):
             skin_ctl = {'slider': None, 'touched': False, 'stored': None}
             scene_ctl = {'body': None, 'url': None}
 
-            def set_mannequin_tone(color):
-                url = tinted_body_glb_url(color) if color \
-                    else '/body/mean_all_display.glb'
+            def set_mannequin_url(url):
                 if url == scene_ctl['url']:
                     return
                 if scene_ctl['body'] is not None:
@@ -272,8 +311,15 @@ async def account_page(request: Request):
                     scene_ctl['body'] = scene.gltf(url).rotate(np.pi / 2, 0., 0.)
                 scene_ctl['url'] = url
 
-            def save_changes():
-                data = profiles.get_profile(email, profile_select.value)
+            def set_mannequin_tone(color):
+                # Sync path (initial load): stored tones are almost always
+                # already in the tint cache, so this is just a URL lookup
+                set_mannequin_url(tinted_body_glb_url(color) if color
+                                  else '/body/mean_all_display.glb')
+
+            async def save_changes():
+                data = await run.io_bound(
+                    profiles.get_profile, email, profile_select.value)
                 if data is None:
                     ui.notify('Profile not found', type='negative')
                     return
@@ -308,8 +354,10 @@ async def account_page(request: Request):
                     skin_color = guide.skin_tone_hex(skin_ctl['slider'].value)
                 else:
                     skin_color = data.get('skin_color')
-                profiles.save_profile(email, data['name'], values,
-                                      skin_color=skin_color)
+                await run.io_bound(profiles.save_profile,
+                                   email, data['name'], values,
+                                   skin_color=skin_color)
+                unsaved['dirty'] = False
                 message = f'Updated "{data["name"]}"'
                 if scaled:
                     message += (f' — adjusted {len(scaled)} related '
@@ -325,6 +373,7 @@ async def account_page(request: Request):
             def load_editor():
                 editor.clear()
                 fields.clear()
+                unsaved['dirty'] = False
                 if profile_select.value is None:
                     return
                 data = profiles.get_profile(email, profile_select.value)
@@ -342,21 +391,28 @@ async def account_page(request: Request):
                     with ui.row(wrap=False).classes('items-center gap-3 mt-2 w-full'):
                         ui.label('Skin tone').classes('se-param-label w-24')
 
-                        def _touch_tone(e):
+                        async def _touch_tone(e):
                             skin_ctl['touched'] = True
+                            unsaved['dirty'] = True
                             tone = guide.skin_tone_hex(e.args)
                             skin_ctl['slider'].style(f'color: {tone}')
-                            set_mannequin_tone(tone)
+                            # A first-time tone tints the mesh: off-loop
+                            url = await run.io_bound(tinted_body_glb_url, tone)
+                            set_mannequin_url(url)
 
                         skin_ctl['slider'] = ui.slider(
                             value=guide.skin_tone_t(stored_tone)
                                 if stored_tone else 0.3,
                             min=0., max=1., step=0.01,
-                        ).props('dense').classes('se-skin-slider w-64') \
+                        ).props('dense aria-label="Skin tone"') \
+                            .classes('se-skin-slider w-64') \
                             .style('color: {}'.format(
                                 stored_tone or '#b9b2a6')) \
-                            .on('update:model-value', _touch_tone,
-                                throttle=0.2, leading_events=False)
+                            .on('update:model-value',   # live thumb color only
+                                lambda e: skin_ctl['slider'].style(
+                                    f'color: {guide.skin_tone_hex(e.args)}'),
+                                throttle=0.1) \
+                            .on('change', _touch_tone)  # mesh tint on release
                         if not stored_tone:
                             ui.label('not set — mannequin uses muslin') \
                                 .classes('se-param-label')
@@ -372,11 +428,15 @@ async def account_page(request: Request):
                                         units.value),
                                     format='%.2f',
                                     step=0.25 if units.value == 'in' else 0.5,
+                                    # Angles can be negative; lengths can't
+                                    min=None if key in guide.ANGLE_KEYS else 0,
+                                    on_change=lambda: unsaved.update(dirty=True),
                                 ).classes('se-mono grow').props('outlined dense')
                                 ui.button(
                                     icon='help_outline',
                                     on_click=lambda _, k=key: show_guide(k)
-                                ).props('flat dense round size=sm color=grey-7') \
+                                ).props('flat dense round size=sm color=grey-7 '
+                                        'aria-label="How to take this measurement"') \
                                     .tooltip('How to take this measurement')
                     if mode.value == 'essential':
                         ui.label('Showing the essential measurements — the '
@@ -399,6 +459,9 @@ async def account_page(request: Request):
                         else next(iter(options))
                     last_selected['id'] = chosen
                     profile_select.value = chosen
+                    # The change handler ignores programmatic no-op updates,
+                    # so (re)build the editor explicitly
+                    load_editor()
                 else:
                     last_selected['id'] = None
                     profile_select.value = None
@@ -447,7 +510,7 @@ async def account_page(request: Request):
     # ------------------------------------------------------------------
     # SECTION Garments
 
-    def build_garments():
+    async def build_garments():
         with ui.card().classes('se-stitch-card w-full'):
             ui.label('Outfits & garments').classes('se-section-label text-lg')
             ui.label('Saved from the studio design panel ("Save"); load '
@@ -462,12 +525,12 @@ async def account_page(request: Request):
                 rename_input = ui.input(label='New name') \
                     .classes('w-64').props('outlined dense')
 
-                def do_rename():
+                async def do_rename():
                     ok = designs.rename_design(
                         email, rename_state['id'], rename_input.value)
                     if ok:
                         rename_dialog.close()
-                        refresh()
+                        await refresh()
                     else:
                         ui.notify('Name is empty or already taken',
                                   type='warning')
@@ -485,13 +548,14 @@ async def account_page(request: Request):
                 if not await confirm_delete(
                         f'Delete "{name}" from your library?'):
                     return
-                designs.delete_design(email, item_id)
-                refresh()
+                await run.io_bound(designs.delete_design, email, item_id)
+                await refresh()
 
-            def refresh():
+            async def refresh():
+                # Preview SVGs make this the heaviest account query
+                rows = await run.io_bound(designs.list_designs, email)
                 listing.clear()
                 with listing:
-                    rows = designs.list_designs(email)
                     if not rows:
                         ui.label('Nothing saved yet').classes('text-gray-500')
                         return
@@ -525,22 +589,24 @@ async def account_page(request: Request):
                                             on_click=lambda _, iid=row['id'],
                                                 n=row['name']: open_rename(iid, n)
                                         ).props('flat dense round size=sm '
-                                                'color=grey-7').tooltip('Rename')
+                                                'color=grey-7 aria-label="Rename"') \
+                                            .tooltip('Rename')
                                         ui.button(
                                             icon='delete',
                                             on_click=lambda _, iid=row['id'],
                                                 n=row['name']: remove(iid, n)
                                         ).props('flat dense round size=sm '
-                                                'color=negative').tooltip('Delete')
+                                                'color=negative aria-label="Delete"') \
+                                            .tooltip('Delete')
                                 ui.label(row['updated_at'].strftime('%b %d, %Y')) \
                                     .classes('se-param-label px-1')
 
-            refresh()
+            await refresh()
 
     # ------------------------------------------------------------------
     # SECTION Settings
 
-    def build_settings():
+    async def build_settings():
         with ui.card().classes('se-stitch-card w-full'):
             ui.label('Preferences').classes('se-section-label text-lg')
 
@@ -563,4 +629,4 @@ async def account_page(request: Request):
         'garments': build_garments,
         'settings': build_settings,
     }
-    show('account')
+    await show('account')

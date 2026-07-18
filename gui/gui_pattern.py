@@ -13,11 +13,14 @@ from typing import Optional
 from assets.garment_programs.meta_garment import MetaGarment
 from assets.bodies.body_params import BodyParameters
 import seweasy as pyg
-from seweasy.meshgen.boxmeshgen import BoxMesh
-from seweasy.meshgen.simulation import run_sim
 import seweasy.data_config as data_config
 from seweasy.meshgen.sim_config import PathCofig
 from seweasy.pattern.print_export import save_print_pdf
+
+# NOTE: the simulation stack (seweasy.meshgen.boxmeshgen / .simulation)
+# pulls in NVIDIA Warp, pyrender and libigl — seconds of import time and
+# hundreds of MB of RAM. It is only needed when a design is draped without
+# the Modal service, so it is imported lazily inside drape_3d().
 
 verbose = False
 
@@ -45,11 +48,31 @@ def _id_generator(size=10, chars=string.ascii_uppercase + string.digits):
         """
         return ''.join(random.choices(chars, k=size))
 
+def sweep_stale_tmp(max_age_hours=24):
+    """Remove per-session tmp_gui dirs left behind by unclean disconnects
+    (release() only runs on graceful connection close)"""
+    cutoff = time.time() - max_age_hours * 3600
+    for parent in (Path.cwd() / 'tmp_gui' / 'display',
+                   Path.cwd() / 'tmp_gui' / 'downloads',
+                   Path.cwd() / 'tmp_gui' / 'garm_3d'):
+        if not parent.is_dir():
+            continue
+        for entry in parent.iterdir():
+            try:
+                if entry.stat().st_mtime < cutoff:
+                    if entry.is_dir():
+                        shutil.rmtree(entry, ignore_errors=True)
+                    else:
+                        entry.unlink(missing_ok=True)
+            except OSError:
+                pass
+
+
 class GUIPattern:
     # Default fabric color -- matches the classic "washed denim" panel fill
     DEFAULT_FABRIC_COLOR = '#b7cde5'
 
-    def __init__(self) -> None:
+    def __init__(self, draft=True) -> None:
         # Unique id to distiguish tab sessions correctly
         self.id = _id_generator(20)
 
@@ -90,7 +113,10 @@ class GUIPattern:
         # the 3D result when no fresh simulation output exists
         self.loaded_drape_glb = None
 
-        self.reload_garment()
+        # draft=False defers the first (expensive) garment assembly so a
+        # page can render immediately and draft off the event loop
+        if draft:
+            self.reload_garment()
 
     def release(self):
         """Clean up tmp files after the session"""
@@ -260,6 +286,9 @@ class GUIPattern:
 
         if not self._drape_remote(pattern_folder, paths):
             # Local (CPU on most setups) simulation
+            from seweasy.meshgen.boxmeshgen import BoxMesh
+            from seweasy.meshgen.simulation import run_sim
+
             # Generate and save garment box mesh (if not existent)
             garment_box_mesh = BoxMesh(paths.in_g_spec, props['sim']['config']['resolution_scale'])
             garment_box_mesh.load()
@@ -428,6 +457,8 @@ class GUIPattern:
         """
         # Save current pattern
         if save_pattern is None:
+            if self.sew_pattern is None:   # deferred initial draft not run yet
+                self.reload_garment()
             save_pattern = self.sew_pattern
 
         pattern = save_pattern.assembly()

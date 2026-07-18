@@ -6,7 +6,7 @@ import base64
 import traceback
 from copy import deepcopy
 
-from nicegui import ui
+from nicegui import run, ui
 
 from webapp import config, designs, profiles
 
@@ -70,21 +70,31 @@ def outfit_preview_svg(pattern_state):
     return None
 
 
-def auth_header_ui(user):
-    """Header controls: sign-in button, or user identity (-> account page)"""
+def auth_header_ui(state):
+    """Header controls: sign-in button, or user identity (-> account page).
+    `state` is the GUIState — both navigations stash the working design
+    first, so signing in or visiting the account never discards it."""
+    user = state.user
+
+    def go(url):
+        state.stash_pending_design()
+        ui.navigate.to(url)
+
     if user:
         with ui.row(wrap=False).classes(
                 'items-center gap-2 cursor-pointer rounded-md px-2 py-1 '
                 'hover:bg-white/10') \
-                .on('click', lambda: ui.navigate.to('/account')):
+                .on('click', lambda: go('/account')):
             if user.get('picture'):
-                ui.image(user['picture']).classes('w-8 h-8 rounded-full')
+                ui.image(user['picture']) \
+                    .props('alt="Your account picture"') \
+                    .classes('w-8 h-8 rounded-full')
             else:
                 ui.icon('account_circle').classes('text-3xl')
             ui.label(user.get('name') or user['email']).classes('text-white')
     elif config.google_configured():
         ui.button('Sign in with Google',
-                  on_click=lambda: ui.navigate.to('/auth/login')) \
+                  on_click=lambda: go('/auth/login')) \
             .props('outline color=white no-caps icon=login')
 
 
@@ -107,7 +117,7 @@ def body_source_ui(state):
             await apply_measurements(base)
             await state.apply_skin_color(None)
         elif isinstance(e.value, int) and email:
-            data = profiles.get_profile(email, e.value)
+            data = await run.io_bound(profiles.get_profile, email, e.value)
             if data is None:
                 ui.notify('Saved measurements not found', type='negative')
                 return
@@ -126,7 +136,8 @@ def body_source_ui(state):
                            on_change=on_select) \
             .classes('grow').props('outlined dense options-dense')
         ui.button(icon='upload_file', on_click=state.ui_body_dialog.open) \
-            .props('flat dense').tooltip('Upload a measurements file')
+            .props('flat dense aria-label="Upload a measurements file"') \
+            .tooltip('Upload a measurements file')
 
         if email:
             def save_current():
@@ -151,10 +162,15 @@ def body_source_ui(state):
                     ui.button('Cancel', on_click=save_dialog.close).props('flat')
 
             ui.button(icon='save', on_click=save_dialog.open) \
-                .props('flat dense').tooltip('Save current measurements to your account')
+                .props('flat dense aria-label="Save current measurements to your account"') \
+                .tooltip('Save current measurements to your account')
 
     if email:
-        ui.button('Manage measurements', on_click=lambda: ui.navigate.to('/account')) \
+        def go_account():
+            state.stash_pending_design()   # keep the working design safe
+            ui.navigate.to('/account')
+
+        ui.button('Manage measurements', on_click=go_account) \
             .props('flat dense no-caps size=sm icon=straighten')
     else:
         ui.label('Sign in to save measurement profiles').classes('se-param-label')
@@ -210,9 +226,10 @@ def designs_ui(state):
         if kind == 'outfit':
             fabric_color = state.pattern_state.fabric_color
             drape_glb = state.pattern_state.current_drape_bytes()
-        created = designs.save_design(email, name, params, kind=kind,
-                                      preview=preview, drape_glb=drape_glb,
-                                      fabric_color=fabric_color)
+        # Off the event loop: the drape blob can be tens of MB
+        created = await run.io_bound(
+            designs.save_design, email, name, params, kind=kind,
+            preview=preview, drape_glb=drape_glb, fabric_color=fabric_color)
         message = f'{"Saved" if created else "Updated"} "{name}"'
         if drape_glb:
             message += ' (with its 3D drape)'
@@ -235,7 +252,8 @@ def designs_ui(state):
 
     # --- Load dialog: outfits replace, garments merge ---
     async def load_and_apply(item_id: int):
-        data = designs.get_design(email, item_id)
+        # Off the event loop: fetches the drape blob (can be tens of MB)
+        data = await run.io_bound(designs.get_design, email, item_id)
         if data is None:
             ui.notify('Saved design not found', type='negative')
             return
@@ -262,13 +280,13 @@ def designs_ui(state):
     async def remove_item(item_id: int, name: str):
         if not await confirm_delete(f'Delete "{name}" from your library?'):
             return
-        designs.delete_design(email, item_id)
-        refresh_list()
+        await run.io_bound(designs.delete_design, email, item_id)
+        await refresh_list()
 
-    def refresh_list():
+    async def refresh_list():
+        rows = await run.io_bound(designs.list_designs, email)
         item_list.clear()
         with item_list:
-            rows = designs.list_designs(email)
             if not rows:
                 ui.label('Nothing saved yet').classes('text-gray-500')
             for row in rows:
@@ -293,16 +311,16 @@ def designs_ui(state):
                             icon='delete',
                             on_click=lambda _, iid=row['id'], n=row['name']:
                                 remove_item(iid, n)
-                        ).props('flat color=negative')
+                        ).props('flat color=negative aria-label="Delete"')
 
     with ui.dialog() as load_dialog, ui.card().classes('items-center w-96'):
         ui.label('My outfits & garments')
         item_list = ui.column().classes('w-full')
         ui.button('Close', on_click=load_dialog.close).props('flat')
 
-    def open_load_dialog():
-        refresh_list()
+    async def open_load_dialog():
         load_dialog.open()
+        await refresh_list()
 
     ui.button('Save', on_click=save_dialog.open) \
         .props('outline size=sm icon=cloud_upload') \

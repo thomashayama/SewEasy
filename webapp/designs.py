@@ -3,6 +3,7 @@
 import json
 from typing import Optional
 
+from sqlalchemy import func
 from sqlalchemy.exc import IntegrityError
 
 from webapp.db import SessionLocal
@@ -64,6 +65,17 @@ def list_designs(email: str) -> list:
         return [{'id': r.id, 'name': r.name, 'kind': r.kind or 'outfit',
                  'updated_at': r.updated_at, 'preview': r.preview}
                 for r in rows]
+
+
+def count_designs(email: str) -> dict:
+    """Design counts per kind — for summary displays, without dragging
+    every row's preview SVG out of the database"""
+    with SessionLocal() as db:
+        rows = (db.query(Design.kind, func.count(Design.id))
+                .filter(Design.owner_email == email)
+                .group_by(Design.kind)
+                .all())
+        return {(kind or 'outfit'): n for kind, n in rows}
 
 
 # Don't let a pathological drape blob bloat the database

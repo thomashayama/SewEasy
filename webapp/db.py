@@ -57,3 +57,9 @@ def _migrate():
                 with engine.begin() as conn:
                     conn.execute(text(
                         f'ALTER TABLE {table} ADD COLUMN {column} {ddl_type}'))
+
+    # Indexes added after a table shipped (create_all won't backfill them)
+    with engine.begin() as conn:
+        conn.execute(text(
+            'CREATE INDEX IF NOT EXISTS ix_oauth_states_created_at '
+            'ON oauth_states (created_at)'))

@@ -14,11 +14,13 @@ if 'Windows' in os.environ.get('OS',''):
     dir_path = os.path.dirname(os.path.realpath(__file__))
     os.environ['path'] += f';{os.path.abspath(dir_path + "/cairo_dlls/")}'
 
-import cairosvg
 import svgpathtools as svgpath
 import svgwrite as sw
 
-import matplotlib.pyplot as plt
+# NOTE: cairosvg and matplotlib are only needed for raster/PDF/3D-debug
+# output, but each costs noticeable import time and memory. They are
+# imported lazily inside the routines that use them, so constructing and
+# serializing patterns (the common path) stays light.
 
 # my
 from seweasy import data_config
@@ -320,13 +322,15 @@ class VisPattern(core.ParametrizedPattern):
         # NOTE: Assuming the pattern uses cm
         # 3 px == 1 cm
         # DPI = 96 (default) px/inch == 96/2.54 px/cm
+        import cairosvg
         cairosvg.svg2png(
             url=svg_filename, write_to=png_filename, dpi=2.54*self.px_per_unit)
-        
+
     def _save_as_image_3D(self, png_filename):
         """Save the patterns with 3D positioning using matplotlib visualization"""
 
         # NOTE: this routine is mostly needed for debugging
+        import matplotlib.pyplot as plt
 
         fig = plt.figure(figsize=(30 / 2.54, 30 / 2.54))
         ax = fig.add_subplot(projection='3d')
@@ -375,6 +379,7 @@ class VisPattern(core.ParametrizedPattern):
         # NOTE: Assuming the pattern uses cm
         # 3 px == 1 cm
         # DPI = 96 (default) px/inch == 96/2.54 px/cm
+        import cairosvg
         cairosvg.svg2pdf(
             url=svg_filename, write_to=pdf_filename, dpi=2.54*self.px_per_unit)
 
