@@ -20,7 +20,7 @@ import asyncio
 
 # Custom
 import seweasy as pyg
-from .gui_pattern import GUIPattern, hex_to_rgba
+from .gui_pattern import GUIPattern, hex_to_rgba, display_to_base_rgba
 from . import theme
 from webapp import gui_widgets as account_widgets
 
@@ -42,8 +42,10 @@ icon_arxiv = """<svg id="primary_logo_-_single_color_-_white" data-name="primary
 theme_colors = theme.colors
 
 BODY_GLB = './assets/bodies/mean_all_display.glb'
-# The muslin tone baked into the display body GLB (its baseColorFactor)
-DEFAULT_BODY_COLOR = '#70695c'
+# How the display body's baked muslin actually renders on the 3D stage
+# (body colors are kept in display space; display_to_base_rgba converts
+# them to material factors at export time)
+DEFAULT_BODY_COLOR = '#f9f2e4'
 
 # Light-to-deep skin tone ramp for the mannequin slider.
 # NOTE: must match the .se-skin-slider track gradient in gui/theme.py
@@ -60,6 +62,17 @@ def skin_tone_hex(t) -> str:
     c0, c1 = hex_to_rgba(SKIN_TONES[i]), hex_to_rgba(SKIN_TONES[i + 1])
     rgb = [round(a + (b - a) * frac) for a, b in zip(c0[:3], c1[:3])]
     return '#{:02x}{:02x}{:02x}'.format(*rgb)
+
+
+def skin_tone_t(hex_color) -> float:
+    """Closest slider position on the skin-tone ramp for a stored color"""
+    target = hex_to_rgba(hex_color)[:3]
+    return min(
+        (i / 100 for i in range(101)),
+        key=lambda t: sum(
+            (a - b) ** 2
+            for a, b in zip(hex_to_rgba(skin_tone_hex(t))[:3], target))
+    )
 
 
 # State of GUI
@@ -925,12 +938,20 @@ class GUIState:
                 position='center'
             )
 
+    async def apply_skin_color(self, color):
+        """Apply a stored skin tone (None -> default muslin) and sync the
+        slider position to it"""
+        color = color or DEFAULT_BODY_COLOR
+        self.ui_skin_slider.set_value(skin_tone_t(color))
+        await self.update_body_color(color)
+
     def _sync_recolor_body(self):
         """Export a copy of the display body GLB tinted with the current
         body color (the mesh carries a plain PBR color, no texture)"""
         body = trimesh.load(BODY_GLB)
         for geom in body.geometry.values():
-            geom.visual.material.baseColorFactor = hex_to_rgba(self.body_color)
+            geom.visual.material.baseColorFactor = \
+                display_to_base_rgba(self.body_color)
 
         # Delete previous file
         if self.body_3d_filename:

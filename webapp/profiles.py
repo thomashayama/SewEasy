@@ -33,7 +33,8 @@ def list_profiles(email: str) -> list:
                 for r in rows]
 
 
-def save_profile(email: str, name: str, measurements: dict) -> bool:
+def save_profile(email: str, name: str, measurements: dict,
+                 skin_color: Optional[str] = None) -> bool:
     """Create or update the profile with this name. Returns True if created"""
     with SessionLocal() as db:
         row = (db.query(BodyProfile)
@@ -43,9 +44,11 @@ def save_profile(email: str, name: str, measurements: dict) -> bool:
         created = row is None
         if created:
             db.add(BodyProfile(owner_email=email, name=name,
-                               measurements=measurements))
+                               measurements=measurements,
+                               skin_color=skin_color))
         else:
             row.measurements = measurements
+            row.skin_color = skin_color
         db.commit()
         return created
 
@@ -56,7 +59,8 @@ def get_profile(email: str, profile_id: int) -> Optional[dict]:
         if row is None or row.owner_email != email:
             return None
         return {'id': row.id, 'name': row.name,
-                'measurements': row.measurements}
+                'measurements': row.measurements,
+                'skin_color': row.skin_color}
 
 
 def delete_profile(email: str, profile_id: int) -> bool:

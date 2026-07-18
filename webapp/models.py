@@ -57,6 +57,9 @@ class BodyProfile(TimestampMixin, Base):
                          nullable=False, index=True)
     name = Column(String, nullable=False)
     measurements = Column(JSON, nullable=False)
+    # Display-space '#rrggbb' mannequin skin tone; NULL = default muslin.
+    # Kept out of the measurements dict, which feeds BodyParameters as-is.
+    skin_color = Column(String)
 
     owner = relationship('User', back_populates='body_profiles')
 

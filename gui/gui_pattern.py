@@ -26,6 +26,19 @@ def hex_to_rgba(hex_color):
     hex_color = hex_color.lstrip('#')
     return [int(hex_color[i:i + 2], 16) for i in (0, 2, 4)] + [255]
 
+# The 3D stage's lights overdrive material colors: measured against the
+# baked muslin body under the default lights, the displayed color is
+# (in linear space) ~2.16x the glTF baseColorFactor on every channel
+LIGHT_GAIN = 2.16
+
+def display_to_base_rgba(hex_color):
+    """Convert a picked (sRGB display) color to the glTF baseColorFactor
+    that actually renders as that color on the 3D stage: sRGB -> linear,
+    then compensated for the stage lighting"""
+    rgb = hex_to_rgba(hex_color)[:3]
+    base = [round(255 * min(1., (c / 255) ** 2.2 / LIGHT_GAIN)) for c in rgb]
+    return base + [255]
+
 def _id_generator(size=10, chars=string.ascii_uppercase + string.digits):
         """Generate a random string of a given size, see
         https://stackoverflow.com/questions/2257441/random-string-generation-with-upper-case-letters-and-digits
@@ -291,10 +304,6 @@ class GUIPattern:
             print('WARNING::Modal drape failed, falling back to local simulation')
             return False
 
-    def _fabric_color_rgba(self):
-        """Current fabric color as an RGBA list (0-255) for trimesh materials"""
-        return hex_to_rgba(self.fabric_color)
-
     def _export_display_glb(self, paths):
         """Export the simulated garment as a GLB for the 3D viewer,
         tinted with the current fabric color"""
@@ -305,7 +314,7 @@ class GUIPattern:
         pbr_material.doubleSided = True
         # The baked UV texture uses neutral white panels (see gui_sim_props),
         # so the base color factor acts as the fabric color
-        pbr_material.baseColorFactor = self._fabric_color_rgba()
+        pbr_material.baseColorFactor = display_to_base_rgba(self.fabric_color)
         mesh.visual.material = pbr_material
         # export
         mesh.export(paths.g_sim_glb)

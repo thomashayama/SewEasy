@@ -23,10 +23,30 @@ Base = declarative_base()
 
 
 def init_db():
-    """Create any missing tables. Idempotent.
+    """Create any missing tables and columns. Idempotent.
 
-    Plain create_all is enough while the schema is young; switch to Alembic
-    migrations once there is production data to preserve.
+    Plain create_all (plus additive micro-migrations below) is enough while
+    the schema is young; switch to Alembic migrations once the schema needs
+    anything beyond ADD COLUMN.
     """
     import webapp.models  # noqa: F401  -- register models on Base
     Base.metadata.create_all(engine)
+    _migrate()
+
+
+def _migrate():
+    """Additive micro-migrations: create_all never alters existing tables,
+    so columns added to models after a table shipped are added here."""
+    from sqlalchemy import inspect, text
+
+    added = {
+        'body_profiles': {'skin_color': 'VARCHAR'},
+    }
+    inspector = inspect(engine)
+    for table, columns in added.items():
+        existing = {c['name'] for c in inspector.get_columns(table)}
+        for column, ddl_type in columns.items():
+            if column not in existing:
+                with engine.begin() as conn:
+                    conn.execute(text(
+                        f'ALTER TABLE {table} ADD COLUMN {column} {ddl_type}'))

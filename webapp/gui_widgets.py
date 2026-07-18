@@ -118,12 +118,14 @@ def body_source_ui(state):
                     state.pattern_state.default_body_params.params.items()
                     if not k.startswith('_')}
             await apply_measurements(base)
+            await state.apply_skin_color(None)
         elif isinstance(e.value, int) and email:
             data = profiles.get_profile(email, e.value)
             if data is None:
                 ui.notify('Saved measurements not found', type='negative')
                 return
             await apply_measurements(data['measurements'])
+            await state.apply_skin_color(data.get('skin_color'))
 
     def options():
         opts = {DEFAULT: 'Default body'}
@@ -147,7 +149,8 @@ def body_source_ui(state):
                     return
                 profiles.save_profile(
                     email, name,
-                    profiles.measurements_from_body(state.pattern_state.body_params))
+                    profiles.measurements_from_body(state.pattern_state.body_params),
+                    skin_color=state.body_color)
                 select.set_options(options())
                 save_dialog.close()
                 ui.notify(f'Saved "{name}"', type='positive')
