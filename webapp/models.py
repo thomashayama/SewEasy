@@ -26,6 +26,9 @@ class User(TimestampMixin, Base):
     email = Column(String, primary_key=True)
     name = Column(String)
     picture = Column(String)
+    # Preferred display units for body measurements ('in' or 'cm');
+    # values are always stored in centimeters
+    units = Column(String, nullable=False, default='in', server_default='in')
 
     body_profiles = relationship('BodyProfile', back_populates='owner',
                                  cascade='all,delete')

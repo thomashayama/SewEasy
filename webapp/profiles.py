@@ -3,7 +3,24 @@
 from typing import Optional
 
 from webapp.db import SessionLocal
-from webapp.models import BodyProfile
+from webapp.models import BodyProfile, User
+
+
+def get_units(email: str) -> str:
+    """The user's preferred display units ('in' default)"""
+    with SessionLocal() as db:
+        row = db.get(User, email)
+        return row.units if row and row.units in ('in', 'cm') else 'in'
+
+
+def set_units(email: str, units: str) -> None:
+    if units not in ('in', 'cm'):
+        return
+    with SessionLocal() as db:
+        row = db.get(User, email)
+        if row is not None:
+            row.units = units
+            db.commit()
 
 
 def measurements_from_body(body_params) -> dict:

@@ -92,6 +92,7 @@ async def account_page(request: Request):
             # --- How-to-measure guide ---
             with ui.expansion('How to measure').classes('w-full se-stitch-card'):
                 ui.label(guide.GENERAL_TIPS).classes('text-sm text-stone-600')
+                unit_note = ui.label('').classes('text-sm text-stone-600')
                 ui.image(guide.OVERVIEW_DIAGRAM).classes('w-full max-w-md mx-auto mt-2')
                 ui.label(guide.OVERVIEW_CREDIT).classes('se-param-label text-[0.65rem]')
                 ui.label('Every field below has a ? button with a diagram '
@@ -114,12 +115,32 @@ async def account_page(request: Request):
                                     else 'No guide available yet.')
                 guide_dialog.open()
 
-            mode = ui.toggle(
-                {'essential': 'Essential', 'all': 'All measurements'},
-                value='essential',
-                on_change=lambda: load_editor(),
-            ).props('no-caps unelevated rounded toggle-color=primary '
-                    'padding="1px 12px"').classes('mt-1')
+            def change_units():
+                profiles.set_units(email, units.value)
+                update_unit_note()
+                load_editor()
+
+            def update_unit_note():
+                unit_note.set_text(
+                    'Lengths are shown in {} — switch above the fields.'
+                    .format('inches' if units.value == 'in'
+                            else 'centimeters'))
+
+            with ui.row(wrap=False).classes('items-center gap-3 mt-1'):
+                mode = ui.toggle(
+                    {'essential': 'Essential', 'all': 'All measurements'},
+                    value='essential',
+                    on_change=lambda: load_editor(),
+                ).props('no-caps unelevated rounded toggle-color=primary '
+                        'padding="1px 12px"')
+                units = ui.toggle(
+                    {'in': 'inches', 'cm': 'cm'},
+                    value=profiles.get_units(email),
+                    on_change=change_units,
+                ).props('no-caps unelevated rounded toggle-color=primary '
+                        'padding="1px 12px"').tooltip(
+                    'Display units — values are stored in centimeters')
+            update_unit_note()
 
             editor = ui.column().classes('w-full')
             fields = {}
@@ -133,7 +154,9 @@ async def account_page(request: Request):
                 values = dict(data['measurements'])
                 for key, field in fields.items():
                     try:
-                        values[key] = float(field.value)
+                        values[key] = guide.stored_value(
+                            key, field.value, units.value,
+                            previous_cm=data['measurements'].get(key))
                     except (TypeError, ValueError):
                         pass
 
@@ -182,10 +205,13 @@ async def account_page(request: Request):
                         for key in keys:
                             with ui.row(wrap=False).classes('items-center gap-0 w-full'):
                                 fields[key] = ui.number(
-                                    label=guide.label_for(key),
-                                    value=data['measurements'][key],
+                                    label=guide.label_for(key)
+                                        + guide.unit_suffix(key, units.value),
+                                    value=guide.display_value(
+                                        key, data['measurements'][key],
+                                        units.value),
                                     format='%.2f',
-                                    step=0.5,
+                                    step=0.25 if units.value == 'in' else 0.5,
                                 ).classes('se-mono grow').props('outlined dense')
                                 ui.button(
                                     icon='help_outline',

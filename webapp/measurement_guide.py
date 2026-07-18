@@ -25,8 +25,40 @@ GENERAL_TIPS = (
     'snug but not tight — it should lie flat on the body without pressing '
     'in. Stand naturally, look straight ahead, and breathe normally. For '
     'circumferences, keep the tape parallel to the floor; a mirror or a '
-    'helper makes this much easier. All lengths are in centimeters.'
+    'helper makes this much easier.'
 )
+
+# --- Display units (storage is always centimeters) ---
+CM_PER_IN = 2.54
+ANGLE_KEYS = {'hip_inclination', 'shoulder_incl', 'arm_pose_angle'}
+
+
+def display_value(key: str, cm_value, units: str) -> float:
+    """Stored cm -> the value shown in the editor (angles pass through)"""
+    if units == 'in' and key not in ANGLE_KEYS:
+        return round(float(cm_value) / CM_PER_IN, 2)
+    return round(float(cm_value), 2)
+
+
+def stored_value(key: str, shown, units: str, previous_cm=None) -> float:
+    """Editor value -> cm for storage.
+
+    When the field is an unchanged round-trip of `previous_cm`, the exact
+    previous value is kept so displaying in inches never drifts the
+    stored centimeters."""
+    value = float(shown)
+    if units == 'in' and key not in ANGLE_KEYS:
+        value *= CM_PER_IN
+    if previous_cm is not None and abs(value - float(previous_cm)) < 0.02:
+        return float(previous_cm)
+    return round(value, 2)
+
+
+def unit_suffix(key: str, units: str) -> str:
+    """Label suffix for the editor field; angles carry their own (°)"""
+    if key in ANGLE_KEYS:
+        return ''
+    return ' (in)' if units == 'in' else ' (cm)'
 
 GUIDE = {
     # --- Circumferences ---
