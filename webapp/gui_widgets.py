@@ -241,8 +241,8 @@ def designs_ui(state):
                     with ui.row(wrap=False).classes('items-center gap-2'):
                         thumb = preview_data_uri(row.get('preview'))
                         if thumb:
-                            ui.image(thumb).classes(
-                                'w-12 h-12 object-contain bg-white rounded '
+                            ui.image(thumb).props('fit=contain').classes(
+                                'w-12 h-12 bg-white rounded '
                                 'border border-stone-200')
                         else:
                             ui.icon('checkroom').classes(

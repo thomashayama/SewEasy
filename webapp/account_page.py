@@ -369,42 +369,46 @@ async def account_page(request: Request):
                     rows = designs.list_designs(email)
                     if not rows:
                         ui.label('Nothing saved yet').classes('text-gray-500')
-                    for row in rows:
-                        with ui.row(wrap=False).classes(
-                                'items-center w-full justify-between '
-                                'border-b border-stone-100 py-1'):
-                            with ui.row(wrap=False).classes('items-center gap-3'):
+                        return
+                    with ui.grid(columns=2).classes('w-full gap-3'):
+                        for row in rows:
+                            with ui.card().classes(
+                                    'se-stitch-card w-full p-2 gap-1'):
+                                # The preview is the card: full design,
+                                # fully contained, no cropping
                                 thumb = preview_data_uri(row.get('preview'))
                                 if thumb:
-                                    ui.image(thumb).classes(
-                                        'w-24 h-24 object-contain bg-white '
-                                        'rounded border border-stone-200')
+                                    ui.image(thumb).props('fit=contain') \
+                                        .classes('w-full h-56 bg-white rounded')
                                 else:
                                     with ui.element('div').classes(
-                                            'w-24 h-24 rounded border '
-                                            'border-stone-200 bg-stone-50 '
+                                            'w-full h-56 rounded bg-stone-50 '
                                             'flex items-center justify-center'):
                                         ui.icon('checkroom').classes(
-                                            'text-4xl text-stone-300')
-                                with ui.column().classes('gap-0.5'):
-                                    with ui.row(wrap=False).classes('items-center gap-2'):
-                                        ui.badge(designs.KIND_LABELS.get(row['kind'], '?')) \
+                                            'text-6xl text-stone-300')
+                                with ui.row(wrap=False).classes(
+                                        'items-center w-full justify-between px-1'):
+                                    with ui.row(wrap=False).classes(
+                                            'items-center gap-2 min-w-0'):
+                                        ui.badge(designs.KIND_LABELS.get(
+                                            row['kind'], '?')) \
                                             .props('outline color=grey-7')
-                                        ui.label(row['name'])
-                                    ui.label(row['updated_at'].strftime('%b %d, %Y')) \
-                                        .classes('se-param-label')
-                            with ui.row(wrap=False).classes('gap-1'):
-                                ui.button(
-                                    icon='edit',
-                                    on_click=lambda _, iid=row['id'], n=row['name']:
-                                        open_rename(iid, n)
-                                ).props('flat dense round size=sm color=grey-7') \
-                                    .tooltip('Rename')
-                                ui.button(
-                                    icon='delete',
-                                    on_click=lambda _, iid=row['id']: remove(iid)
-                                ).props('flat dense round size=sm color=negative') \
-                                    .tooltip('Delete')
+                                        ui.label(row['name']).classes('truncate')
+                                    with ui.row(wrap=False).classes('gap-0'):
+                                        ui.button(
+                                            icon='edit',
+                                            on_click=lambda _, iid=row['id'],
+                                                n=row['name']: open_rename(iid, n)
+                                        ).props('flat dense round size=sm '
+                                                'color=grey-7').tooltip('Rename')
+                                        ui.button(
+                                            icon='delete',
+                                            on_click=lambda _, iid=row['id']:
+                                                remove(iid)
+                                        ).props('flat dense round size=sm '
+                                                'color=negative').tooltip('Delete')
+                                ui.label(row['updated_at'].strftime('%b %d, %Y')) \
+                                    .classes('se-param-label px-1')
 
             refresh()
 
