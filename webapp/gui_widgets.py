@@ -24,83 +24,6 @@ def auth_header_ui(user):
             .props('outline color=white no-caps icon=login')
 
 
-def _library_ui(email, *, noun, noun_plural, save_label, load_label,
-                load_icon, snapshot, apply_item, list_items, save_item,
-                get_item, delete_item):
-    """Two buttons + dialogs for a user's library of named, saved items.
-
-    * snapshot() -> dict payload of the current GUI state
-    * apply_item(data) -> async, applies a loaded item to the GUI
-    """
-
-    # --- Save dialog ---
-    def save_current():
-        name = (name_input.value or '').strip()
-        if not name:
-            ui.notify(f'Give the {noun} a name', type='warning')
-            return
-        created = save_item(email, name, snapshot())
-        ui.notify(f'{"Saved" if created else "Updated"} "{name}"',
-                  type='positive')
-        save_dialog.close()
-
-    with ui.dialog() as save_dialog, ui.card().classes('items-center'):
-        ui.label(f'Save current {noun} to your account')
-        name_input = ui.input(
-            label='Name', placeholder=f'e.g. My {noun}'
-        ).classes('w-64').props('outlined dense')
-        with ui.row():
-            ui.button('Save', on_click=save_current)
-            ui.button('Cancel', on_click=save_dialog.close).props('flat')
-
-    # --- Load dialog ---
-    async def load_and_apply(item_id: int):
-        data = get_item(email, item_id)
-        if data is None:
-            ui.notify(f'Saved {noun} not found', type='negative')
-            return
-        await apply_item(data)
-        ui.notify(f'Applied "{data["name"]}"', type='positive')
-        load_dialog.close()
-
-    def remove_item(item_id: int):
-        delete_item(email, item_id)
-        refresh_list()
-
-    def refresh_list():
-        item_list.clear()
-        with item_list:
-            rows = list_items(email)
-            if not rows:
-                ui.label(f'No saved {noun_plural} yet').classes('text-gray-500')
-            for row in rows:
-                with ui.row().classes('items-center w-full justify-between'):
-                    ui.label(row['name'])
-                    with ui.row():
-                        ui.button(
-                            'Load',
-                            on_click=lambda _, iid=row['id']: load_and_apply(iid))
-                        ui.button(
-                            icon='delete',
-                            on_click=lambda _, iid=row['id']: remove_item(iid)
-                        ).props('flat color=negative')
-
-    with ui.dialog() as load_dialog, ui.card().classes('items-center w-96'):
-        ui.label(load_label)
-        item_list = ui.column().classes('w-full')
-        ui.button('Close', on_click=load_dialog.close).props('flat')
-
-    def open_load_dialog():
-        refresh_list()
-        load_dialog.open()
-
-    # --- The buttons themselves ---
-    ui.button(save_label, on_click=save_dialog.open) \
-        .props('outline size=sm icon=cloud_upload')
-    ui.button(load_label, on_click=open_load_dialog) \
-        .props(f'outline size=sm icon={load_icon}')
-
-
 def body_source_ui(state):
     """Measurement source selector for the side panel: default body,
     saved profiles (signed in), or file upload. Editing happens on the
@@ -174,30 +97,113 @@ def body_source_ui(state):
 
 
 def designs_ui(state):
-    """Save/load garment designs; call inside a ui.row in the design tab.
-    `state` is the GUIState; requires state.user to be set."""
+    """Save/load whole outfits and individual garments; call inside a
+    ui.row in the design tab. `state` is the GUIState; requires
+    state.user to be set."""
+    email = state.user['email']
+    design_params = state.pattern_state.design_params
 
-    async def apply_item(data):
-        # Same flow as the design-file upload dialog in gui/callbacks.py
+    async def apply_params(params):
+        # Same flow as the design-file upload dialog in gui/callbacks.py.
+        # set_new_design merges: a full outfit replaces every section, a
+        # partial garment snapshot only touches its own sections
         state.toggle_param_update_events(state.ui_design_refs)
-        state.pattern_state.set_new_design(data['params'])
+        state.pattern_state.set_new_design(params)
         state.update_design_params_ui_state(
             state.ui_design_refs, state.pattern_state.design_params)
         await state.update_pattern_ui_state()
         state.toggle_param_update_events(state.ui_design_refs)
 
-    _library_ui(
-        state.user['email'],
-        noun='design',
-        noun_plural='designs',
-        save_label='Save design',
-        load_label='My designs',
-        load_icon='checkroom',
-        snapshot=lambda: designs.snapshot_design_params(
-            state.pattern_state.design_params),
-        apply_item=apply_item,
-        list_items=designs.list_designs,
-        save_item=designs.save_design,
-        get_item=designs.get_design,
-        delete_item=designs.delete_design,
-    )
+    # --- Save dialog: whole outfit or one piece ---
+    def save_current():
+        name = (name_input.value or '').strip()
+        kind = kind_select.value
+        if not name:
+            ui.notify('Give it a name', type='warning')
+            return
+        if kind != 'outfit':
+            meta_key = designs.GARMENT_SECTIONS[kind]['meta'][0]
+            if design_params['meta'][meta_key]['v'] is None:
+                ui.notify(
+                    f'The current design has no '
+                    f'{designs.KIND_LABELS[kind].lower()} to save',
+                    type='warning')
+                return
+            params = designs.snapshot_garment(design_params, kind)
+        else:
+            params = designs.snapshot_design_params(design_params)
+        created = designs.save_design(email, name, params, kind=kind)
+        ui.notify(f'{"Saved" if created else "Updated"} "{name}"',
+                  type='positive')
+        save_dialog.close()
+
+    with ui.dialog() as save_dialog, ui.card().classes('items-center'):
+        ui.label('Save to your account')
+        kind_select = ui.select(
+            {'outfit': 'Whole outfit', 'top': 'Top only',
+             'bottom': 'Bottom only', 'waistband': 'Waistband only'},
+            value='outfit', label='What to save'
+        ).classes('w-64').props('outlined dense options-dense')
+        name_input = ui.input(
+            label='Name', placeholder='e.g. Summer dress'
+        ).classes('w-64').props('outlined dense')
+        with ui.row():
+            ui.button('Save', on_click=save_current)
+            ui.button('Cancel', on_click=save_dialog.close).props('flat')
+
+    # --- Load dialog: outfits replace, garments merge ---
+    async def load_and_apply(item_id: int):
+        data = designs.get_design(email, item_id)
+        if data is None:
+            ui.notify('Saved design not found', type='negative')
+            return
+        await apply_params(data['params'])
+        if data['kind'] == 'outfit':
+            ui.notify(f'Applied outfit "{data["name"]}"', type='positive')
+        else:
+            ui.notify(
+                f'Merged {designs.KIND_LABELS[data["kind"]].lower()} '
+                f'"{data["name"]}" into the current outfit',
+                type='positive')
+        load_dialog.close()
+
+    def remove_item(item_id: int):
+        designs.delete_design(email, item_id)
+        refresh_list()
+
+    def refresh_list():
+        item_list.clear()
+        with item_list:
+            rows = designs.list_designs(email)
+            if not rows:
+                ui.label('Nothing saved yet').classes('text-gray-500')
+            for row in rows:
+                with ui.row().classes('items-center w-full justify-between'):
+                    with ui.row(wrap=False).classes('items-center gap-2'):
+                        ui.badge(designs.KIND_LABELS.get(row['kind'], '?')) \
+                            .props('outline color=grey-7')
+                        ui.label(row['name'])
+                    with ui.row():
+                        ui.button(
+                            'Load',
+                            on_click=lambda _, iid=row['id']: load_and_apply(iid))
+                        ui.button(
+                            icon='delete',
+                            on_click=lambda _, iid=row['id']: remove_item(iid)
+                        ).props('flat color=negative')
+
+    with ui.dialog() as load_dialog, ui.card().classes('items-center w-96'):
+        ui.label('My outfits & garments')
+        item_list = ui.column().classes('w-full')
+        ui.button('Close', on_click=load_dialog.close).props('flat')
+
+    def open_load_dialog():
+        refresh_list()
+        load_dialog.open()
+
+    ui.button('Save', on_click=save_dialog.open) \
+        .props('outline size=sm icon=cloud_upload') \
+        .tooltip('Save the outfit or one garment to your account')
+    ui.button('Library', on_click=open_load_dialog) \
+        .props('outline size=sm icon=checkroom') \
+        .tooltip('Load saved outfits and garments')

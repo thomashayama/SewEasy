@@ -73,6 +73,13 @@ class Design(TimestampMixin, Base):
     see BodyProfile for the other half). Params are stored in the same
     self-describing format as the 'design' section of the design-param
     YAML files, so saved designs and file uploads are interchangeable.
+
+    `kind` distinguishes a whole outfit from an individual piece:
+    * 'outfit' — full design-parameter snapshot; loading replaces the
+      current design
+    * 'top' / 'bottom' / 'waistband' — partial snapshot holding only that
+      piece's sections (see designs.GARMENT_SECTIONS); loading merges the
+      piece into the current outfit, keeping the other pieces
     """
     __tablename__ = 'designs'
     __table_args__ = (UniqueConstraint('owner_email', 'name',
@@ -83,5 +90,7 @@ class Design(TimestampMixin, Base):
                          nullable=False, index=True)
     name = Column(String, nullable=False)
     params = Column(JSON, nullable=False)
+    kind = Column(String, nullable=False, default='outfit',
+                  server_default='outfit')
 
     owner = relationship('User', back_populates='designs')
