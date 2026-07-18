@@ -6,13 +6,17 @@ otherwise). Uses the same visual theme as the studio (gui/theme.py).
 
 from fastapi import Request
 from fastapi.responses import RedirectResponse
-from nicegui import ui
+from nicegui import app, ui
 
 from assets.bodies.body_params import BodyParameters
 from gui import theme
 from webapp import auth, profiles
+from webapp import measurement_guide as guide
 
 BODY_DEFAULT_FILE = './assets/bodies/mean_all.yaml'
+
+# Measurement diagrams and overview illustration
+app.add_static_files('/img', './assets/img')
 
 
 def _default_measurements() -> dict:
@@ -84,6 +88,39 @@ async def account_page(request: Request):
 
             hint = ui.label('No saved measurements yet — create a profile to start') \
                 .classes('text-gray-500')
+
+            # --- How-to-measure guide ---
+            with ui.expansion('How to measure').classes('w-full se-stitch-card'):
+                ui.label(guide.GENERAL_TIPS).classes('text-sm text-stone-600')
+                ui.image(guide.OVERVIEW_DIAGRAM).classes('w-full max-w-md mx-auto mt-2')
+                ui.label(guide.OVERVIEW_CREDIT).classes('se-param-label text-[0.65rem]')
+                ui.label('Every field below has a ? button with a diagram '
+                         'showing exactly where that measurement is taken.') \
+                    .classes('text-sm text-stone-600 mt-1')
+
+            # Shared per-measurement help dialog
+            with ui.dialog() as guide_dialog, \
+                    ui.card().classes('items-center max-w-sm'):
+                guide_title = ui.label('').classes('se-section-label')
+                guide_image = ui.image('').classes('w-56')
+                guide_text = ui.label('').classes('text-sm text-stone-600')
+                ui.button('Close', on_click=guide_dialog.close).props('flat')
+
+            def show_guide(key):
+                guide_title.set_text(guide.label_for(key))
+                guide_image.set_source(f'{guide.DIAGRAM_URL}/{key}.svg')
+                entry = guide.GUIDE.get(key)
+                guide_text.set_text(entry['how'] if entry
+                                    else 'No guide available yet.')
+                guide_dialog.open()
+
+            mode = ui.toggle(
+                {'essential': 'Essential', 'all': 'All measurements'},
+                value='essential',
+                on_change=lambda: load_editor(),
+            ).props('no-caps unelevated rounded toggle-color=primary '
+                    'padding="1px 12px"').classes('mt-1')
+
             editor = ui.column().classes('w-full')
             fields = {}
 
@@ -92,13 +129,15 @@ async def account_page(request: Request):
                 if data is None:
                     ui.notify('Profile not found', type='negative')
                     return
-                values = {}
+                # Merge: fields not shown (Essential mode) keep their values
+                values = dict(data['measurements'])
                 for key, field in fields.items():
                     try:
                         values[key] = float(field.value)
                     except (TypeError, ValueError):
-                        values[key] = data['measurements'].get(key)
-                profiles.save_profile(email, data['name'], values)
+                        pass
+                profiles.save_profile(email, data['name'], values,
+                                      skin_color=data.get('skin_color'))
                 ui.notify(f'Updated "{data["name"]}"', type='positive')
 
             def load_editor():
@@ -109,15 +148,29 @@ async def account_page(request: Request):
                 data = profiles.get_profile(email, profile_select.value)
                 if data is None:
                     return
+                keys = sorted(data['measurements'])
+                if mode.value == 'essential':
+                    keys = [k for k in keys if guide.is_essential(k)]
                 with editor:
                     with ui.grid(columns=3).classes('w-full gap-x-4 gap-y-1 mt-2'):
-                        for key in sorted(data['measurements']):
-                            fields[key] = ui.number(
-                                label=key.replace('_', ' ').capitalize(),
-                                value=data['measurements'][key],
-                                format='%.2f',
-                                step=0.5,
-                            ).classes('se-mono').props('outlined dense')
+                        for key in keys:
+                            with ui.row(wrap=False).classes('items-center gap-0 w-full'):
+                                fields[key] = ui.number(
+                                    label=guide.label_for(key),
+                                    value=data['measurements'][key],
+                                    format='%.2f',
+                                    step=0.5,
+                                ).classes('se-mono grow').props('outlined dense')
+                                ui.button(
+                                    icon='help_outline',
+                                    on_click=lambda _, k=key: show_guide(k)
+                                ).props('flat dense round size=sm color=grey-7') \
+                                    .tooltip('How to take this measurement')
+                    if mode.value == 'essential':
+                        ui.label('Showing the essential measurements — the '
+                                 'rest keep their current values. Switch to '
+                                 '"All measurements" for fine-tuning.') \
+                            .classes('se-param-label mt-1')
                     ui.button('Save changes', on_click=save_changes) \
                         .props('unelevated icon=save').classes('mt-3 self-end')
 
