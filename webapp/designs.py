@@ -3,6 +3,8 @@
 import json
 from typing import Optional
 
+from sqlalchemy.exc import IntegrityError
+
 from webapp.db import SessionLocal
 from webapp.models import Design
 
@@ -89,6 +91,24 @@ def get_design(email: str, design_id: int) -> Optional[dict]:
             return None
         return {'id': row.id, 'name': row.name, 'params': row.params,
                 'kind': row.kind or 'outfit'}
+
+
+def rename_design(email: str, design_id: int, new_name: str) -> bool:
+    """Rename; False if not found, not owned, or the name is taken"""
+    new_name = (new_name or '').strip()
+    if not new_name:
+        return False
+    with SessionLocal() as db:
+        row = db.get(Design, design_id)
+        if row is None or row.owner_email != email:
+            return False
+        row.name = new_name
+        try:
+            db.commit()
+        except IntegrityError:
+            db.rollback()
+            return False
+        return True
 
 
 def delete_design(email: str, design_id: int) -> bool:

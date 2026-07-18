@@ -1,7 +1,11 @@
-"""Account page: identity + body-measurement library management.
+"""Account area: sidebar-navigated pages for identity, measurements,
+garments, and settings.
 
 Registered by webapp.setup(); requires a signed-in user (redirects home
 otherwise). Uses the same visual theme as the studio (gui/theme.py).
+Sections are rebuilt on every sidebar switch so they always reflect the
+current database state (e.g. a units change in Settings shows up in the
+Measurements editor immediately).
 """
 
 from fastapi import Request
@@ -10,13 +14,20 @@ from nicegui import app, ui
 
 from assets.bodies.body_params import BodyParameters
 from gui import theme
-from webapp import auth, profiles
+from webapp import auth, designs, profiles
 from webapp import measurement_guide as guide
 
 BODY_DEFAULT_FILE = './assets/bodies/mean_all.yaml'
 
 # Measurement diagrams and overview illustration
 app.add_static_files('/img', './assets/img')
+
+SECTIONS = {
+    'account': ('person', 'Account'),
+    'measurements': ('straighten', 'Measurements'),
+    'garments': ('checkroom', 'Garments'),
+    'settings': ('settings', 'Settings'),
+}
 
 
 def _default_measurements() -> dict:
@@ -55,9 +66,32 @@ async def account_page(request: Request):
                 .props('flat color=white no-caps icon=arrow_back')
         ui.element('div').classes('se-selvedge w-full')
 
-    with ui.column().classes('w-full max-w-3xl mx-auto gap-4 p-4'):
+    # --- Sidebar navigation ---
+    nav_buttons = {}
+    with ui.left_drawer(value=True, bordered=True) \
+            .classes('bg-[#fcfcfa] px-2 py-3').props('width=220 breakpoint=0'):
+        for key, (icon, label) in SECTIONS.items():
+            nav_buttons[key] = ui.button(
+                label, icon=icon,
+                on_click=lambda _, k=key: show(k)
+            ).props('flat no-caps align=left color=grey-9') \
+                .classes('w-full justify-start rounded-lg')
 
-        # --- Identity ---
+    content = ui.column().classes('w-full max-w-3xl mx-auto gap-4 p-4')
+
+    def show(section):
+        for key, btn in nav_buttons.items():
+            btn.classes(replace='w-full justify-start rounded-lg'
+                        + (' bg-[#e5ebf4] text-[#35558a] font-medium'
+                           if key == section else ''))
+        content.clear()
+        with content:
+            builders[section]()
+
+    # ------------------------------------------------------------------
+    # SECTION Account
+
+    def build_account():
         with ui.card().classes('se-stitch-card w-full'):
             with ui.row(wrap=False).classes('items-center gap-4 w-full'):
                 if user.get('picture'):
@@ -70,8 +104,20 @@ async def account_page(request: Request):
                 ui.space()
                 ui.button('Log out', on_click=lambda: ui.navigate.to('/auth/logout')) \
                     .props('outline size=sm icon=logout')
+        with ui.card().classes('se-stitch-card w-full'):
+            ui.label('At a glance').classes('se-section-label')
+            n_profiles = len(profiles.list_profiles(email))
+            rows = designs.list_designs(email)
+            n_outfits = sum(1 for r in rows if r['kind'] == 'outfit')
+            n_garments = len(rows) - n_outfits
+            ui.label(f'{n_profiles} measurement profile(s) · '
+                     f'{n_outfits} outfit(s) · {n_garments} garment(s)') \
+                .classes('text-sm text-stone-600')
 
-        # --- Body measurements library ---
+    # ------------------------------------------------------------------
+    # SECTION Measurements
+
+    def build_measurements():
         with ui.card().classes('se-stitch-card w-full'):
             with ui.row(wrap=False).classes('items-center w-full justify-between'):
                 ui.label('Body measurements').classes('se-section-label text-lg')
@@ -274,3 +320,103 @@ async def account_page(request: Request):
                     ui.button('Cancel', on_click=new_dialog.close).props('flat')
 
             refresh_profiles()
+
+    # ------------------------------------------------------------------
+    # SECTION Garments
+
+    def build_garments():
+        with ui.card().classes('se-stitch-card w-full'):
+            ui.label('Outfits & garments').classes('se-section-label text-lg')
+            ui.label('Saved from the studio design panel ("Save"); load '
+                     'them onto a design there ("Library"). Manage them here.') \
+                .classes('text-sm text-stone-600')
+
+            listing = ui.column().classes('w-full mt-2')
+
+            rename_state = {'id': None}
+            with ui.dialog() as rename_dialog, ui.card().classes('items-center'):
+                ui.label('Rename')
+                rename_input = ui.input(label='New name') \
+                    .classes('w-64').props('outlined dense')
+
+                def do_rename():
+                    ok = designs.rename_design(
+                        email, rename_state['id'], rename_input.value)
+                    if ok:
+                        rename_dialog.close()
+                        refresh()
+                    else:
+                        ui.notify('Name is empty or already taken',
+                                  type='warning')
+
+                with ui.row():
+                    ui.button('Rename', on_click=do_rename)
+                    ui.button('Cancel', on_click=rename_dialog.close).props('flat')
+
+            def open_rename(item_id, current_name):
+                rename_state['id'] = item_id
+                rename_input.value = current_name
+                rename_dialog.open()
+
+            def remove(item_id):
+                designs.delete_design(email, item_id)
+                refresh()
+
+            def refresh():
+                listing.clear()
+                with listing:
+                    rows = designs.list_designs(email)
+                    if not rows:
+                        ui.label('Nothing saved yet').classes('text-gray-500')
+                    for row in rows:
+                        with ui.row(wrap=False).classes(
+                                'items-center w-full justify-between '
+                                'border-b border-stone-100 py-1'):
+                            with ui.row(wrap=False).classes('items-center gap-2'):
+                                ui.badge(designs.KIND_LABELS.get(row['kind'], '?')) \
+                                    .props('outline color=grey-7')
+                                ui.label(row['name'])
+                                ui.label(row['updated_at'].strftime('%b %d, %Y')) \
+                                    .classes('se-param-label')
+                            with ui.row(wrap=False).classes('gap-1'):
+                                ui.button(
+                                    icon='edit',
+                                    on_click=lambda _, iid=row['id'], n=row['name']:
+                                        open_rename(iid, n)
+                                ).props('flat dense round size=sm color=grey-7') \
+                                    .tooltip('Rename')
+                                ui.button(
+                                    icon='delete',
+                                    on_click=lambda _, iid=row['id']: remove(iid)
+                                ).props('flat dense round size=sm color=negative') \
+                                    .tooltip('Delete')
+
+            refresh()
+
+    # ------------------------------------------------------------------
+    # SECTION Settings
+
+    def build_settings():
+        with ui.card().classes('se-stitch-card w-full'):
+            ui.label('Preferences').classes('se-section-label text-lg')
+
+            ui.label('Measurement units').classes('se-param-label mt-2')
+            ui.toggle(
+                {'in': 'inches', 'cm': 'centimeters'},
+                value=profiles.get_units(email),
+                on_change=lambda e: (
+                    profiles.set_units(email, e.value),
+                    ui.notify('Units updated', type='positive')),
+            ).props('no-caps unelevated rounded toggle-color=primary '
+                    'padding="1px 12px"')
+            ui.label('Applies to how measurements are displayed and edited; '
+                     'values are always stored in centimeters.') \
+                .classes('text-sm text-stone-600')
+
+    builders = {
+        'account': build_account,
+        'measurements': build_measurements,
+        'garments': build_garments,
+        'settings': build_settings,
+    }
+    show('account')
