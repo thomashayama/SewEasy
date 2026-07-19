@@ -23,6 +23,13 @@ from .gui_pattern import GUIPattern
 from . import theme
 from webapp import gui_widgets as account_widgets
 
+# Optional AI photo-to-design service (see chatgarment_modal.py); the GUI
+# works without it — the feature's UI simply doesn't appear
+try:
+    import chatgarment_modal
+except ImportError:
+    chatgarment_modal = None
+
 
 icon_github = """
     <svg viewbox="0 0 98 96" xmlns="http://www.w3.org/2000/svg">
@@ -191,6 +198,7 @@ class GUIState:
         # TODOLOW One dialog for both? 
         self.def_design_file_dialog()
         self.def_body_file_dialog()
+        self.def_photo_dialog()
 
         # Configurator GUI
         # Collapsible configuration side panel
@@ -415,6 +423,10 @@ class GUIState:
             ui.button('Random', on_click=self.random).props('outline size=sm icon=shuffle')
             ui.button('Default', on_click=self.default).props('outline size=sm icon=restart_alt')
             ui.button('Upload', on_click=self.ui_design_dialog.open).props('outline size=sm icon=upload_file')
+            if chatgarment_modal is not None and chatgarment_modal.is_enabled():
+                ui.button('From photo', on_click=self.ui_photo_dialog.open) \
+                    .props('outline size=sm icon=auto_awesome') \
+                    .tooltip('AI: estimate this design from a garment photo')
             # Restores the design Random/Default just replaced
             self._design_undo = None
             self.ui_undo_design_btn = ui.button('Undo', on_click=self.undo_design) \
@@ -727,6 +739,70 @@ class GUIState:
             ).classes('max-w-full').props('accept=".yaml,.json"')  
 
             ui.button('Close without upload', on_click=self.ui_design_dialog.close)
+
+    def def_photo_dialog(self):
+        """Dialog for estimating a design from a garment photo (AI service,
+        see chatgarment_modal.py)"""
+
+        async def handle_upload(e: events.UploadEventArguments):
+            img_bytes = e.content.read()
+            name = e.name
+            self.ui_photo_dialog.close()
+            self._snapshot_design_for_undo()
+            self.open_spinner('Estimating a design from your photo… '
+                              'A first request can take a few minutes '
+                              'while the AI model starts up')
+            try:
+                loop = asyncio.get_event_loop()
+                result = await loop.run_in_executor(
+                    self._async_executor,
+                    lambda: chatgarment_modal.photo_to_design(img_bytes))
+                design = chatgarment_modal.merge_designs(result['designs'])
+                if design is None:
+                    raise RuntimeError(result.get('error') or 'no garment recognized')
+            except Exception:
+                traceback.print_exc()
+                self.spin_dialog.close()
+                ui.notify('Could not estimate a design from this photo — '
+                          'try a clearer, full-garment shot',
+                          type='negative', close_button=True)
+                return
+
+            self.toggle_param_update_events(self.ui_design_refs)
+            try:
+                self.pattern_state.set_new_design(design)
+                self.update_design_params_ui_state(
+                    self.ui_design_refs, self.pattern_state.design_params)
+                await self.update_pattern_ui_state()
+                if result.get('error'):
+                    # Some garments of the outfit made it, some didn't
+                    ui.notify(f'Applied a partial result: {result["error"]}',
+                              type='warning', close_button=True)
+                else:
+                    ui.notify(f'Design estimated from {name} — drafted '
+                              'for the current body measurements',
+                              type='positive')
+            except Exception:
+                traceback.print_exc()
+                ui.notify('The estimated design could not be drafted',
+                          type='negative', close_button=True)
+            finally:
+                self.toggle_param_update_events(self.ui_design_refs)
+                self.spin_dialog.close()
+
+        with ui.dialog() as self.ui_photo_dialog, ui.card().classes('items-center'):
+            ui.label('Upload a photo of a garment. AI estimates its design, '
+                     'and the pattern is drafted to the current body '
+                     'measurements — not the body in the photo.') \
+                .classes('max-w-xs text-center')
+            ui.upload(
+                label='Garment photo',
+                on_upload=handle_upload,
+                max_file_size=10_000_000,
+                auto_upload=True,
+            ).classes('max-w-full').props('accept="image/*"')
+
+            ui.button('Close without upload', on_click=self.ui_photo_dialog.close)
 
     # !SECTION
     # SECTION -- Event callbacks
