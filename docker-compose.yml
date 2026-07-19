@@ -31,6 +31,7 @@ services:
       - GOOGLE_REDIRECT_URI=${GOOGLE_REDIRECT_URI:-http://localhost:8080/auth/callback}
       - JWT_SECRET=${JWT_SECRET:-}
       - MODAL_DRAPE=${MODAL_DRAPE:-}
+      - MODAL_PHOTO2DESIGN=${MODAL_PHOTO2DESIGN:-}
       - MODAL_TOKEN_ID=${MODAL_TOKEN_ID:-}
       - MODAL_TOKEN_SECRET=${MODAL_TOKEN_SECRET:-}
     depends_on:
