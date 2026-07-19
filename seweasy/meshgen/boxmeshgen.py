@@ -264,7 +264,7 @@ class Panel:
             return len(self.panel_vertices) - 1
         else:  # > 1
             raise PatternLoadingError(
-                f'{self.__class__.__name__}::{self.name}::Corner stitch vertex has been added more than once to panel vertices!')
+                f'{self.__class__.__name__}::{self.panel_name}::Corner stitch vertex has been added more than once to panel vertices!')
 
     @staticmethod
     def _vert_key(v):
@@ -456,7 +456,7 @@ class Edge:
 
             else:
                 raise NotImplementedError(
-                    f'{self.__class__.__name__}::{self.name}::Unknown curvature type {edge["curvature"]["type"]}')
+                    f'{self.__class__.__name__}::Unknown curvature type {edge["curvature"]["type"]}')
 
         else:
             self.curve = svgpath.Line(*pat_utils.list_to_c([start, end]))
@@ -471,7 +471,7 @@ class Edge:
         self.n_edge_verts = n_edge_verts
 
         if n_edge_verts == 2 and res > 1.0:
-            print(f'{self.__class__.__name__}::{self.name}::WARNING::Detected edge represented only by two vertices..'
+            print(f'{self.__class__.__name__}::WARNING::Detected edge represented only by two vertices..'
                   'mesh resolution might be too low. resolution = {}, edge length = {}'.format(res, edgelength))
 
 
