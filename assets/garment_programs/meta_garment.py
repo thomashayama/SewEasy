@@ -1,6 +1,7 @@
 from assets.garment_programs.tee import *
 from assets.garment_programs.godet import *
 from assets.garment_programs.bodice import *
+from assets.garment_programs.dress_shirt import *
 from assets.garment_programs.pants import *
 from assets.garment_programs.bands import *
 from assets.garment_programs.skirt_paneled import *
