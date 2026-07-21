@@ -21,6 +21,12 @@ from assets.garment_programs.base_classes import BaseBodicePanel
 from assets.garment_programs.bands import StraightBandPanel
 from assets.garment_programs import sleeves
 from assets.garment_programs import collars
+from assets.garment_programs.closures import pre_fold
+
+# Fold angle for the front collar fall over the stand (degrees). Tuned so the
+# collar drapes down and slightly outward before the sim, instead of standing
+# straight up. See closures.pre_fold.
+_COLLAR_FRONT_FOLD = 148
 
 
 class DressShirtPanel(BaseBodicePanel):
@@ -210,28 +216,45 @@ class ShirtCollar(pyg.Component):
             f'{tag}_stand_back', length_b, stand_h).translate_by(
             [-length_b / 2, height_p, -12])
 
-        # Fold-over collar leaves, sitting above the stand
+        # Fold-over collar leaves. Kept in the same placement as the plain
+        # stand-up collar (so the leaf.bottom <-> stand.top stitch topology
+        # is unchanged), then pre-folded down over the stand so the collar
+        # "falls" correctly in the 3D drape instead of standing straight up.
         self.leaf_f = CollarLeafPanel(
             f'{tag}_collar_front', length_f, collar_d, point_ext=point
             ).translate_by([-length_f / 2, height_p + collar_d + 1, 14])
+        pre_fold(self.leaf_f, self.leaf_f.interfaces['bottom'].edges[0],
+                 _COLLAR_FRONT_FOLD)
+
+        # The BACK fall is left unfolded (a clean short stand). A folded back
+        # fall cannot be seamed to the other half at center back without
+        # collapsing the initial mesh weld, and as a free flap it splays up
+        # in the sim. Folding only the front gives a crisp collar fall where
+        # it is seen, with a tidy band at the back.
         self.leaf_b = CollarLeafPanel(
             f'{tag}_collar_back', length_b, collar_d).translate_by(
             [-length_b / 2, height_p + collar_d + 1, -14])
 
         self.stitching_rules = pyg.Stitches(
-            # stands meet at the shoulder line
+            # stands meet at the shoulder line (the band stays continuous
+            # around the neck)
             (self.stand_f.interfaces['right'], self.stand_b.interfaces['right']),
-            # leaves meet at the shoulder line
-            (self.leaf_f.interfaces['right'], self.leaf_b.interfaces['right']),
-            # collar sewn along the top of the stand
+            # collar fall sewn along the top of the stand
             (self.leaf_f.interfaces['bottom'], self.stand_f.interfaces['top']),
             (self.leaf_b.interfaces['bottom'], self.stand_b.interfaces['top']),
         )
+        # NOTE: the front and back fall are intentionally NOT stitched at the
+        # shoulder. Folding them down sends the front fall forward (+Z) and
+        # the back fall backward (-Z); a shoulder seam between them would be
+        # torn by that divergence (and collapses the initial mesh weld). Each
+        # fall hangs from its own stand-top seam instead.
 
         self.interfaces.update({
             # Center front: only the stand connects (top button); the
-            # collar leaf's pointed edge stays free
+            # collar fall's pointed edge stays free (collar opening)
             'front': self.stand_f.interfaces['left'],
+            # Center back seam: the (unfolded) back stand and back fall, joined
+            # to the other half as one continuous edge
             'back': pyg.Interface.from_multiple(
                 self.stand_b.interfaces['left'],
                 self.leaf_b.interfaces['left']),

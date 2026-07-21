@@ -125,7 +125,13 @@ def drape(spec_files: dict, in_name: str, out_name: str) -> dict:
     start_time = time.time()
     garment_box_mesh = BoxMesh(
         paths.in_g_spec, props['sim']['config']['resolution_scale'])
-    garment_box_mesh.load()
+    try:
+        garment_box_mesh.load()
+    except BaseException as e:
+        # Re-raise mesh-load failures (e.g. StitchingError) as a plain
+        # RuntimeError so the message survives deserialization on clients
+        # that lack the meshgen deps (igl/warp)
+        raise RuntimeError(f'mesh load failed: {type(e).__name__}: {e}')
     garment_box_mesh.serialize(
         paths, store_panels=False,
         uv_config=props['render']['config']['uv_texture'])
