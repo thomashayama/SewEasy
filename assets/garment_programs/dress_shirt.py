@@ -23,10 +23,12 @@ from assets.garment_programs import sleeves
 from assets.garment_programs import collars
 from assets.garment_programs.closures import pre_fold
 
-# Fold angle for the front collar fall over the stand (degrees). Tuned so the
-# collar drapes down and slightly outward before the sim, instead of standing
-# straight up. See closures.pre_fold.
+# Fold angles for the collar falls over the stand (degrees). Tuned so the
+# collar drapes down before the sim instead of standing straight up. See
+# closures.pre_fold. NOTE: a flat rectangular back fall still domes slightly
+# on the curved neckline (a truly flat lie needs a curve-cut fall panel).
 _COLLAR_FRONT_FOLD = 148
+_COLLAR_BACK_FOLD = 165
 
 
 class DressShirtPanel(BaseBodicePanel):
@@ -207,6 +209,10 @@ class ShirtCollar(pyg.Component):
         # -- Panels --
         length_f, length_b = f_collar.length(), b_collar.length()
         height_p = body['height'] - body['head_l'] + stand_h
+        # Exposed so DressShirt can build a matching continuous back fall
+        self.length_b = length_b
+        self.collar_d = collar_d
+        self.stand_top_y = height_p
 
         # Collar stand (like a shallow turtle neck)
         self.stand_f = StraightBandPanel(
@@ -216,48 +222,36 @@ class ShirtCollar(pyg.Component):
             f'{tag}_stand_back', length_b, stand_h).translate_by(
             [-length_b / 2, height_p, -12])
 
-        # Fold-over collar leaves. Kept in the same placement as the plain
-        # stand-up collar (so the leaf.bottom <-> stand.top stitch topology
-        # is unchanged), then pre-folded down over the stand so the collar
-        # "falls" correctly in the 3D drape instead of standing straight up.
+        # Front fold-over collar fall (per half; free at the center-front
+        # collar opening). Placed above the stand, then pre-folded down over
+        # it so the collar "falls" correctly in the drape instead of standing
+        # straight up. The BACK fall is built once, continuously, at the
+        # DressShirt level (see DressShirt._add_back_fall) -- a single piece
+        # with no center-back seam, which is the only way a folded back fall
+        # both welds and holds (a split, folded, center-back-seamed fall
+        # collapses the initial mesh weld).
         self.leaf_f = CollarLeafPanel(
             f'{tag}_collar_front', length_f, collar_d, point_ext=point
             ).translate_by([-length_f / 2, height_p + collar_d + 1, 14])
         pre_fold(self.leaf_f, self.leaf_f.interfaces['bottom'].edges[0],
                  _COLLAR_FRONT_FOLD)
 
-        # The BACK fall is left unfolded (a clean short stand). A folded back
-        # fall cannot be seamed to the other half at center back without
-        # collapsing the initial mesh weld, and as a free flap it splays up
-        # in the sim. Folding only the front gives a crisp collar fall where
-        # it is seen, with a tidy band at the back.
-        self.leaf_b = CollarLeafPanel(
-            f'{tag}_collar_back', length_b, collar_d).translate_by(
-            [-length_b / 2, height_p + collar_d + 1, -14])
-
         self.stitching_rules = pyg.Stitches(
             # stands meet at the shoulder line (the band stays continuous
             # around the neck)
             (self.stand_f.interfaces['right'], self.stand_b.interfaces['right']),
-            # collar fall sewn along the top of the stand
+            # front collar fall sewn along the top of the front stand
             (self.leaf_f.interfaces['bottom'], self.stand_f.interfaces['top']),
-            (self.leaf_b.interfaces['bottom'], self.stand_b.interfaces['top']),
         )
-        # NOTE: the front and back fall are intentionally NOT stitched at the
-        # shoulder. Folding them down sends the front fall forward (+Z) and
-        # the back fall backward (-Z); a shoulder seam between them would be
-        # torn by that divergence (and collapses the initial mesh weld). Each
-        # fall hangs from its own stand-top seam instead.
 
         self.interfaces.update({
             # Center front: only the stand connects (top button); the
-            # collar fall's pointed edge stays free (collar opening)
+            # front fall's pointed edge stays free (collar opening)
             'front': self.stand_f.interfaces['left'],
-            # Center back seam: the (unfolded) back stand and back fall, joined
-            # to the other half as one continuous edge
-            'back': pyg.Interface.from_multiple(
-                self.stand_b.interfaces['left'],
-                self.leaf_b.interfaces['left']),
+            # Center back seam: just the (unfolded) back stand
+            'back': self.stand_b.interfaces['left'],
+            # Top of the back stand -- the continuous back fall welds here
+            'back_stand_top': self.stand_b.interfaces['top'],
             'bottom': pyg.Interface.from_multiple(
                 self.stand_f.interfaces['bottom'],
                 self.stand_b.interfaces['bottom'])
@@ -368,9 +362,17 @@ class DressShirtHalf(pyg.Component):
             self.ftorso.interfaces['inside'], self.interfaces['front_collar']
         )
         self.interfaces['back_collar'] = self.collar_comp.interfaces['back']
-        self.interfaces['back_in'] = pyg.Interface.from_multiple(
-            self.btorso.interfaces['inside'], self.interfaces['back_collar']
-        )
+        # Center-back seam = the torso only. The two back stands are NOT
+        # seamed to each other here: with a continuous back fall welded across
+        # both their tops, adding a stand-to-stand center-back seam makes three
+        # seams meet at the center-back-top point and collapses the initial
+        # mesh weld. The stands are held closed by the neckline below and the
+        # continuous fall above.
+        self.interfaces['back_in'] = self.btorso.interfaces['inside']
+        # Exposed so DressShirt can weld one continuous back fall across both
+        # halves' back stand tops
+        self.interfaces['back_stand_top'] = \
+            self.collar_comp.interfaces['back_stand_top']
 
         fc_interface.edges.propagate_label(f'{self.name}_collar')
         bc_interface.edges.propagate_label(f'{self.name}_collar')
@@ -394,6 +396,9 @@ class DressShirt(pyg.Component):
         self.stitching_rules.append((self.right.interfaces['back_in'],
                                      self.left.interfaces['back_in']))
 
+        # One continuous back fall spanning both halves (see _add_back_fall)
+        self._add_back_fall()
+
         self.interfaces = {
             'bottom': pyg.Interface.from_multiple(
                 self.right.interfaces['f_bottom'].reverse(),
@@ -401,6 +406,33 @@ class DressShirt(pyg.Component):
                 self.left.interfaces['b_bottom'].reverse(),
                 self.right.interfaces['b_bottom'],)
         }
+
+    def _add_back_fall(self):
+        """Build the collar's back fall as ONE continuous panel welded across
+        both halves' back stand tops, then pre-fold it down.
+
+        A split back fall (one per half, seamed at center back) collapses the
+        initial mesh weld once folded. A single piece has no center-back seam,
+        welds cleanly to the two stand tops, and -- being connected to the
+        stand through that weld -- holds its fold via cloth bending, the same
+        way the front fall does.
+        """
+        collar = self.right.collar_comp
+        width = 2 * collar.length_b
+        depth = collar.collar_d
+
+        # Placed above the back stands (behind the neck), mirroring the front
+        # fall's placement, then pre-folded down+back over the stand.
+        self.back_fall = StraightBandPanel('collar_back', width, depth)
+        self.back_fall.translate_by([0, collar.stand_top_y + depth + 1, -14])
+        pre_fold(self.back_fall, self.back_fall.interfaces['bottom'].edges[0],
+                 _COLLAR_BACK_FOLD)
+
+        stand_top = pyg.Interface.from_multiple(
+            self.right.interfaces['back_stand_top'],
+            self.left.interfaces['back_stand_top'])
+        self.stitching_rules.append(
+            (self.back_fall.interfaces['bottom'], stand_top))
 
     def length(self):
         return self.right.length()
