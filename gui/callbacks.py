@@ -507,10 +507,11 @@ class GUIState:
                 
                 # NOTE: ui.row allows for correct classes application (e.g. no padding on svg pattern)
                 with ui.row().classes('w-full h-full p-0 m-0 bg-transparent relative'):
-                    # Automatically updates from source
+                    # Automatically updates from source; clicks select a panel
+                    # to recolor (see on_pattern_click)
                     self.ui_pattern_display = ui.interactive_image(
-                        ''
-                    ).classes('bg-transparent p-0 m-0')
+                        '', on_mouse=self.on_pattern_click, events=['click']
+                    ).classes('bg-transparent p-0 m-0 cursor-pointer')
 
             # Floating controls over the workspace
             # NOTE: stacked vertically so they never collide with the
@@ -524,6 +525,21 @@ class GUIState:
                     'Garment panels are self-intersecting'
                 ).classes('se-warning-chip') \
                     .bind_visibility(self.pattern_state, 'is_self_intersecting')
+
+            # Per-panel color control (top-right of the 2D workspace)
+            self.selected_panel = None
+            self._suppress_color_change = False
+            with ui.column().classes('absolute top-3 right-4 z-40 items-end gap-2'):
+                with ui.row().classes('se-overlay-chip items-center gap-2 px-2 py-1'):
+                    self.ui_panel_color_label = ui.label('Click a panel to color it') \
+                        .classes('text-stone-800 text-sm')
+                    self.ui_panel_color = ui.color_input(
+                        value=self.pattern_state.fabric_color,
+                        on_change=self.apply_panel_color) \
+                        .props('dense').classes('w-28')
+                ui.button('Reset colors', on_click=self.reset_panel_colors) \
+                    .props('flat dense size=sm icon=format_color_reset') \
+                    .classes('se-overlay-chip text-stone-800')
 
             # Floating primary action
             ui.button('Download pattern', on_click=lambda: self.state_download()) \
@@ -941,6 +957,44 @@ class GUIState:
                 # Restore default state
                 self.ui_pattern_display.set_source('')
                 self.ui_body_outline.classes(replace=self.body_outline_classes)
+
+    # --- Per-panel coloring (2D view) ---
+    # SVG units are cm; the <img> natural size renders 1cm as 96/2.54 px
+    _PX_PER_CM = 96 / 2.54
+
+    def on_pattern_click(self, e):
+        """Select the panel under the click for recoloring"""
+        if not self.pattern_state.svg_filename \
+                or e.image_x is None or e.image_y is None:
+            return
+        bbox = self.pattern_state.svg_bbox  # [minx, maxx, miny, maxy]
+        if not bbox:
+            return
+        sx = bbox[0] + e.image_x / self._PX_PER_CM
+        sy = bbox[2] + e.image_y / self._PX_PER_CM
+        panel = self.pattern_state.panel_at_svg_point(sx, sy)
+        if not panel:
+            return
+        self.selected_panel = panel
+        self.ui_panel_color_label.set_text(panel.replace('_', ' '))
+        # Reflect the panel's current color without re-triggering apply
+        self._suppress_color_change = True
+        self.ui_panel_color.value = self.pattern_state.panel_color(panel)
+        self._suppress_color_change = False
+
+    def apply_panel_color(self, e):
+        """Recolor the selected panel"""
+        if self._suppress_color_change or not self.selected_panel or not e.value:
+            return
+        self.pattern_state.set_panel_color(self.selected_panel, e.value)
+        self.update_pattern_display()
+
+    def reset_panel_colors(self):
+        """Clear all per-panel color overrides"""
+        self.selected_panel = None
+        self.pattern_state.reset_panel_colors()
+        self.ui_panel_color_label.set_text('Click a panel to color it')
+        self.update_pattern_display()
 
     def update_design_params_ui_state(self, ui_elems, design_params):
         """Sync ui params with the current state of the design params"""

@@ -39,7 +39,7 @@ def sample_seats(verts, count, diameter, top_frac=0.11, bottom_frac=0.06,
     return seats
 
 
-def build_discs(seats, color=(40, 40, 46, 255), thickness=0.2):
+def build_discs(seats, color=(245, 245, 245, 255), thickness=0.2):
     """Build one trimesh mesh of all button discs, or None if no seats.
 
     Each disc is a thin cylinder centred on its seat, axis along the seat

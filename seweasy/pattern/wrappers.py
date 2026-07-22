@@ -198,6 +198,7 @@ class VisPattern(core.ParametrizedPattern):
             with_text=True, view_ids=True,
             flat=False, fill_panels=True,
             panel_fill_color=None,
+            panel_colors=None,
             margin=2) -> sw.Drawing:
         """Convert pattern to writable svg representation"""
 
@@ -218,11 +219,12 @@ class VisPattern(core.ParametrizedPattern):
         shift_x_front, shift_x_back = margin, margin
         for panel in z_sorted_panels:
             if panel is not None:
+                per_panel = (panel_colors or {}).get(panel)
                 path, attr, front = self._draw_a_panel(
                     panel,
                     apply_transform=not flat,
                     fill=fill_panels,
-                    fill_color=panel_fill_color
+                    fill_color=per_panel or panel_fill_color
                 )
                 if flat:
                     path = path.translated(list_to_c([
@@ -259,6 +261,8 @@ class VisPattern(core.ParametrizedPattern):
         
         # SVG convert
         paths = paths_front + paths_back
+        # Remember panel paths (final SVG coords) for click hit-testing
+        self.last_panel_svg_paths = dict(zip(names_f + names_b, paths))
         arrdims = np.array([path.bbox() for path in paths])
         dims = np.max(arrdims[:, 1]) - np.min(arrdims[:, 0]), np.max(arrdims[:, 3]) - np.min(arrdims[:, 2])
 

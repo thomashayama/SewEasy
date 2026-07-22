@@ -29,6 +29,25 @@ def hex_to_rgba(hex_color):
     hex_color = hex_color.lstrip('#')
     return [int(hex_color[i:i + 2], 16) for i in (0, 2, 4)] + [255]
 
+
+def _point_in_svg_path(pt, path, n=240):
+    """Ray-cast point-in-polygon test for a point (complex) against an
+    svgpathtools Path, using a linearized outline. Bounding-box reject first."""
+    xmin, xmax, ymin, ymax = path.bbox()
+    if not (xmin <= pt.real <= xmax and ymin <= pt.imag <= ymax):
+        return False
+    poly = [path.point(t / n) for t in range(n + 1)]
+    x, y = pt.real, pt.imag
+    inside = False
+    j = len(poly) - 1
+    for i in range(len(poly)):
+        xi, yi, xj, yj = poly[i].real, poly[i].imag, poly[j].real, poly[j].imag
+        if ((yi > y) != (yj > y)) and \
+                (x < (xj - xi) * (y - yi) / (yj - yi + 1e-12) + xi):
+            inside = not inside
+        j = i
+    return inside
+
 # The 3D stage's lights overdrive material colors: measured against the
 # baked muslin body under the default lights, the displayed color is
 # (in linear space) ~2.16x the glTF baseColorFactor on every channel
@@ -93,6 +112,11 @@ class GUIPattern:
         self.body_params = None
         self.design_params = {}
         self.fabric_color = self.DEFAULT_FABRIC_COLOR
+        # Per-panel overrides of the fabric color (panel_name -> hex), set by
+        # clicking a panel in the 2D view. Panels not listed use fabric_color.
+        self.panel_colors = {}
+        # panel_name -> svgpathtools Path (SVG coords), for 2D click hit-tests
+        self.panel_svg_paths = {}
         self.design_sampler = pyg.DesignSampler()
         self.sew_pattern = None
 
@@ -198,6 +222,33 @@ class GUIPattern:
         if self.sew_pattern is not None:
             self._view_serialize()
 
+    # --- Per-panel coloring (2D view) ---
+    def panel_at_svg_point(self, x, y):
+        """Name of the top-most panel whose 2D outline contains (x, y) in SVG
+        coordinates, or None. Iterates front-to-back so the visible (drawn on
+        top) panel wins where panels overlap."""
+        pt = complex(x, y)
+        for name, path in reversed(list(self.panel_svg_paths.items())):
+            if _point_in_svg_path(pt, path):
+                return name
+        return None
+
+    def set_panel_color(self, panel, color):
+        """Override one panel's fabric color and refresh the 2D display"""
+        self.panel_colors[panel] = color
+        if self.sew_pattern is not None:
+            self._view_serialize()
+
+    def panel_color(self, panel):
+        """Effective color of a panel (its override or the fabric color)"""
+        return self.panel_colors.get(panel, self.fabric_color)
+
+    def reset_panel_colors(self):
+        """Clear all per-panel overrides (back to a single fabric color)"""
+        self.panel_colors = {}
+        if self.sew_pattern is not None:
+            self._view_serialize()
+
     def sync_left(self, with_check=False):
         """Synchronize left and right design parameters"""
         # Check if needed in the first place
@@ -225,12 +276,15 @@ class GUIPattern:
                                   view_ids=False,
                                   flat=False,
                                   panel_fill_color=self.fabric_color,
+                                  panel_colors=self.panel_colors,
                                   margin=0
             )
             dwg.save()
 
             self.svg_bbox_size = pattern.svg_bbox_size
             self.svg_bbox = pattern.svg_bbox
+            # Panel paths (SVG coords) for click hit-testing in the 2D view
+            self.panel_svg_paths = pattern.last_panel_svg_paths
         except pyg.EmptyPatternError:
             self.svg_filename = ''
     
