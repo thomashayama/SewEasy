@@ -23,7 +23,11 @@ standard_filenames = [
 pattern_spec_template = {
     'pattern': {
         'panels': {},
-        'stitches': []
+        'stitches': [],
+        # Optional button hardware config: {count, diameter, placket_label}.
+        # Renderers/sim place `count` buttons along the panel edge tagged with
+        # `placket_label`. Additive: consumers that don't know it ignore it.
+        'buttons': {}
     },
     'parameters': {},
     'parameter_order': [],

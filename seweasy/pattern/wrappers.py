@@ -292,7 +292,36 @@ class VisPattern(core.ParametrizedPattern):
                 if panel is not None:
                     self._add_panel_annotations(
                         dwg, panel, paths[i], with_text, view_ids)
-        
+
+        # button markers along the tagged placket edge (if any)
+        self._add_button_markers(dwg, flat)
+
+        return dwg
+
+    def _add_button_markers(self, dwg, flat):
+        """Draw button seats as circles evenly spaced along the panel edge
+        tagged as the button placket (see pattern['buttons'])."""
+        buttons = self.pattern.get('buttons') or {}
+        count = int(buttons.get('count', 0))
+        if count <= 0 or flat:  # markers use the assembled (draped) layout
+            return
+        label = buttons.get('placket_label', 'button_placket')
+        radius = buttons.get('diameter', 1.3) / 2 * self.px_per_unit
+
+        for pname, panel in self.pattern['panels'].items():
+            seg_idx = next((i for i, e in enumerate(panel['edges'])
+                            if e.get('label') == label), None)
+            if seg_idx is None:
+                continue
+            path, _, _ = self._draw_a_panel(pname, apply_transform=True)
+            edge = path[seg_idx]
+            for t in np.linspace(0.06, 0.94, count):
+                p = edge.point(t)
+                dwg.add(dwg.circle(center=(p.real, p.imag), r=radius,
+                                   fill='none', stroke='rgb(80,80,80)',
+                                   stroke_width=0.3))
+                dwg.add(dwg.circle(center=(p.real, p.imag), r=0.35,
+                                   fill='rgb(80,80,80)', stroke='none'))
         return dwg
 
     def _save_as_image(

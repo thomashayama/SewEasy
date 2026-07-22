@@ -30,6 +30,9 @@ from assets.garment_programs.closures import pre_fold
 _COLLAR_FRONT_FOLD = 148
 _COLLAR_BACK_FOLD = 165
 
+# Edge label marking the center-front button placket (buttons placed along it)
+_BUTTON_PLACKET_LABEL = 'button_placket'
+
 
 class DressShirtPanel(BaseBodicePanel):
     """Half of a dress shirt torso (front or back).
@@ -386,6 +389,7 @@ class DressShirt(pyg.Component):
 
     def __init__(self, body, design) -> None:
         super().__init__(self.__class__.__name__)
+        self.design = design
 
         self.right = DressShirtHalf('right', body, design)
         self.left = DressShirtHalf('left', body, design).mirror()
@@ -399,6 +403,11 @@ class DressShirt(pyg.Component):
         # One continuous back fall spanning both halves (see _add_back_fall)
         self._add_back_fall()
 
+        # Tag the right front's center-front edge as the button placket so the
+        # pattern renderer and the drape can place buttons along it
+        self.right.ftorso.interfaces['inside'].edges.propagate_label(
+            _BUTTON_PLACKET_LABEL)
+
         self.interfaces = {
             'bottom': pyg.Interface.from_multiple(
                 self.right.interfaces['f_bottom'].reverse(),
@@ -406,6 +415,20 @@ class DressShirt(pyg.Component):
                 self.left.interfaces['b_bottom'].reverse(),
                 self.right.interfaces['b_bottom'],)
         }
+
+    def assembly(self):
+        """Standard assembly plus the button hardware config, so the 2D
+        pattern and the 3D drape can both place buttons along the placket."""
+        spat = super().assembly()
+        b = self.design.get('buttons', {})
+        count = int(b.get('count', {}).get('v', 0)) if b else 0
+        if count > 0:
+            spat.pattern['buttons'] = {
+                'count': count,
+                'diameter': float(b['diameter']['v']),
+                'placket_label': _BUTTON_PLACKET_LABEL,
+            }
+        return spat
 
     def _add_back_fall(self):
         """Build the collar's back fall as ONE continuous panel welded across

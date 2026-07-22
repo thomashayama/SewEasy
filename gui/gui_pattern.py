@@ -359,7 +359,8 @@ class GUIPattern:
 
     def _export_display_glb(self, paths):
         """Export the simulated garment as a GLB for the 3D viewer,
-        tinted with the current fabric color"""
+        tinted with the current fabric color, with button hardware if the
+        design configures it"""
         mesh = trimesh.load_mesh(paths.g_sim)
 
         # enable double-sided material for nice viewing
@@ -369,8 +370,25 @@ class GUIPattern:
         # so the base color factor acts as the fabric color
         pbr_material.baseColorFactor = display_to_base_rgba(self.fabric_color)
         mesh.visual.material = pbr_material
-        # export
-        mesh.export(paths.g_sim_glb)
+
+        # Button hardware: placed onto the draped surface (not simulated)
+        discs = self._button_discs(mesh)
+        if discs is not None:
+            trimesh.Scene({'garment': mesh, 'buttons': discs}).export(
+                paths.g_sim_glb)
+        else:
+            mesh.export(paths.g_sim_glb)
+
+    def _button_discs(self, garment_mesh):
+        """Trimesh of button discs for the current design, or None"""
+        btn = self.design_params.get('buttons')
+        if not btn or int(btn['count']['v']) <= 0:
+            return None
+        from seweasy.pattern.buttons import sample_seats, build_discs
+        seats = sample_seats(
+            garment_mesh.vertices, int(btn['count']['v']),
+            float(btn['diameter']['v']))
+        return build_discs(seats)
 
     def recolor_3d(self):
         """Re-export the last draped garment with the current fabric color

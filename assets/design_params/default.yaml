@@ -95,6 +95,21 @@ design:
       - 1.2
       type: float
       default_prob: 0.8
+  buttons:
+    count:
+      v: 7
+      range:
+      - 0
+      - 12
+      type: int
+      default_prob: 0.8
+    diameter:
+      v: 1.3
+      range:
+      - 0.8
+      - 2.5
+      type: float
+      default_prob: 0.8
   waistband:
     waist:
       v: 1.0

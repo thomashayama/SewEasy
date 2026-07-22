@@ -108,8 +108,12 @@ class Component(BaseComponent):
             # of stitches
             spattern.pattern['stitches'] += sub_raw['stitches']
 
+            # of optional button config (a single dict; last non-empty wins)
+            if sub_raw.get('buttons'):
+                spattern.pattern['buttons'] = sub_raw['buttons']
+
         spattern.pattern['stitches'] += self.stitching_rules.assembly()
-        return spattern   
+        return spattern
 
     def bbox3D(self):
         """Evaluate 3D bounding box of the current component"""

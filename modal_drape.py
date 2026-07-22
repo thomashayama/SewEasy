@@ -159,10 +159,25 @@ def drape(spec_files: dict, in_name: str, out_name: str) -> dict:
             f'Simulation produced no output mesh; '
             f"failures: {props['sim']['stats'].get('fails', {})}")
 
+    # Button seats: sample the draped front placket so the GUI can place
+    # button geometry (config comes from the pattern spec)
+    import json
+    import numpy as np
+    from seweasy.pattern.buttons import sample_seats
+
+    spec = json.loads(paths.in_g_spec.read_text())
+    btn_cfg = spec.get('pattern', {}).get('buttons') or {}
+    verts = np.array([[float(x) for x in ln.split()[1:4]]
+                      for ln in paths.g_sim.read_text().splitlines()
+                      if ln.startswith('v ')])
+    buttons = sample_seats(verts, int(btn_cfg.get('count', 0)),
+                           float(btn_cfg.get('diameter', 1.3)))
+
     return {
         'files': out_files,
         'fails': props['sim']['stats'].get('fails', {}),
         'sim_time': sim_time,
+        'buttons': buttons,
     }
 
 

@@ -388,7 +388,7 @@ class GUIState:
         'skirt': 'Skirt', 'flare-skirt': 'Circle skirt',
         'godet-skirt': 'Godet skirt', 'pencil-skirt': 'Pencil skirt',
         'levels-skirt': 'Levels skirt', 'pants': 'Pants',
-        'dress_shirt': 'Dress shirt',
+        'dress_shirt': 'Dress shirt', 'buttons': 'Buttons',
     }
     META_LABELS = {'upper': 'Top', 'wb': 'Waistband', 'bottom': 'Bottom'}
 
@@ -465,8 +465,9 @@ class GUIState:
 
         relevant = set()
         if upper == 'DressShirt':
-            # Self-contained: own section + sleeves (no generic collar/asym)
-            relevant |= {'dress_shirt', 'sleeve'}
+            # Self-contained: own section + sleeves + buttons (no generic
+            # collar/asym)
+            relevant |= {'dress_shirt', 'sleeve', 'buttons'}
         elif upper:
             relevant |= {'shirt', 'collar', 'sleeve', 'left'}
         if wb:
