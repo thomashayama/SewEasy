@@ -166,6 +166,59 @@ def drape(spec_files: dict, in_name: str, out_name: str) -> dict:
     }
 
 
+@app.function(image=image, cpu=2.0, memory=8192, timeout=300)
+def check_mesh(spec_files: dict, in_name: str) -> dict:
+    """Load + stitch-weld a pattern spec WITHOUT simulating it.
+
+    This is the CPU-only front half of `drape` (box-mesh generation and the
+    stitch collapse, where geometry/stitching errors surface). It skips the
+    GPU cloth sim entirely, so it returns in seconds instead of minutes --
+    the fast loop for iterating on foldable-collar geometry and any change
+    that risks a StitchingError.
+
+    Returns {'ok': True, 'panels': int, 'load_time': float} on success, or
+    {'ok': False, 'error': str, 'load_time': float} on a mesh-load failure.
+    """
+    import shutil
+    import tempfile
+    import time
+
+    work = Path(tempfile.mkdtemp())
+    os.symlink('/app/assets', work / 'assets')
+    shutil.copy('/app/system.template.json', work / 'system.json')
+    os.chdir(work)
+
+    in_dir = work / 'pattern'
+    in_dir.mkdir()
+    for filename, data in spec_files.items():
+        (in_dir / filename).write_bytes(data)
+
+    import seweasy.data_config as data_config
+    from seweasy.meshgen.boxmeshgen import BoxMesh
+    from seweasy.meshgen.sim_config import PathCofig
+
+    props = data_config.Properties('./assets/Sim_props/gui_sim_props.yaml')
+    props.set_section_stats(
+        'sim', fails={}, sim_time={}, spf={}, fin_frame={},
+        body_collisions={}, self_collisions={})
+    props.set_section_stats('render', render_time={})
+
+    paths = PathCofig(
+        in_element_path=in_dir, out_path=work / 'output',
+        in_name=in_name, out_name='check',
+        body_name='mean_all', smpl_body=False, add_timestamp=False)
+
+    start = time.time()
+    box = BoxMesh(paths.in_g_spec, props['sim']['config']['resolution_scale'])
+    try:
+        box.load()
+    except BaseException as e:
+        return {'ok': False, 'error': f'{type(e).__name__}: {e}',
+                'load_time': time.time() - start}
+    return {'ok': True, 'panels': len(box.panels),
+            'load_time': time.time() - start}
+
+
 # ---------------------------------------------------------------------------
 # Client-side helpers (imported by the GUI)
 
