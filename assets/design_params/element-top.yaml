@@ -69,7 +69,7 @@ design:
       type: float
       default_prob: 0.5
     cuff_depth:
-      v: 10.0
+      v: 12.0
       range:
       - 4.0
       - 14.0

@@ -322,6 +322,8 @@ class VisPattern(core.ParametrizedPattern):
 
         # button markers along the tagged placket edge (if any)
         self._add_button_markers(dwg, flat)
+        # zipper markers running in from the tagged seam edge (if any)
+        self._add_zipper_markers(dwg, flat)
 
         return dwg
 
@@ -340,7 +342,11 @@ class VisPattern(core.ParametrizedPattern):
                             if e.get('label') == label), None)
             if seg_idx is None:
                 continue
-            path, _, _ = self._draw_a_panel(pname, apply_transform=True)
+            # Use the FINAL laid-out path (back panels are shifted into their
+            # own group); re-running _draw_a_panel gives the un-shifted position
+            path = (getattr(self, "last_panel_svg_paths", None) or {}).get(pname)
+            if path is None:
+                continue
             edge = path[seg_idx]
             for t in np.linspace(0.06, 0.94, count):
                 p = edge.point(t)
@@ -351,10 +357,61 @@ class VisPattern(core.ParametrizedPattern):
                                    fill='rgb(80,80,80)', stroke='none'))
         return dwg
 
+    def _add_zipper_markers(self, dwg, flat):
+        """Draw each configured zipper (see pattern['zippers']) as a tape with
+        a dashed center chain and a pull tab, running from the midpoint of the
+        tagged seam edge into the panel for its length. Works for a real seam
+        or a cut-on-fold center line (label the top edge; the marker heads
+        toward the panel centroid, i.e. straight down the center)."""
+        zippers = self.pattern.get('zippers') or []
+        if not zippers or flat:  # markers use the assembled (draped) layout
+            return dwg
+        for z in zippers:
+            label = z.get('seam_label')
+            length_frac = float(z.get('length', 0.6))
+            half = z.get('width', 1.2) / 2 * self.px_per_unit
+            for pname, panel in self.pattern['panels'].items():
+                seg_idx = next((i for i, e in enumerate(panel['edges'])
+                                if e.get('label') == label), None)
+                if seg_idx is None:
+                    continue
+                path = (getattr(self, "last_panel_svg_paths", None) or {}).get(pname)
+                if path is None:
+                    continue
+                start = path[seg_idx].point(0.5)
+                xmin, xmax, ymin, ymax = path.bbox()
+                centroid = complex((xmin + xmax) / 2, (ymin + ymax) / 2)
+                d = centroid - start
+                dn = abs(d)
+                if dn < 1e-6:
+                    continue
+                d = d / dn
+                end = start + d * (length_frac * (ymax - ymin))
+                self._draw_zipper_glyph(dwg, start, end, half)
+        return dwg
+
+    def _draw_zipper_glyph(self, dwg, start, end, half):
+        """A zipper glyph between two SVG points: two tape rails, a dashed
+        center chain, and a small pull tab at the start."""
+        d = (end - start) / abs(end - start)
+        perp = complex(-d.imag, d.real)
+        dark, mid = 'rgb(45,45,48)', 'rgb(120,120,125)'
+        for s in (half, -half):  # tape rails
+            a, b = start + perp * s, end + perp * s
+            dwg.add(dwg.line((a.real, a.imag), (b.real, b.imag),
+                             stroke=dark, stroke_width=0.4))
+        dwg.add(dwg.line((start.real, start.imag), (end.real, end.imag),
+                         stroke=mid, stroke_width=0.5,
+                         stroke_dasharray='0.8,0.6'))
+        pull = start + d * (2 * half)
+        dwg.add(dwg.rect(insert=(pull.real - half * 0.7, pull.imag - half * 0.7),
+                         size=(half * 1.4, half * 1.4), rx=0.3,
+                         fill='rgb(150,150,155)', stroke=dark, stroke_width=0.3))
+
     def _save_as_image(
             self, svg_filename, png_filename,
-            with_text=True, view_ids=True, 
-            margin=2):  
+            with_text=True, view_ids=True,
+            margin=2):
         """
             Saves current pattern in svg and png format for visualization
 

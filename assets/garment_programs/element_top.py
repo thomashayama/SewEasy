@@ -41,6 +41,12 @@ _CUFF_STIFFNESS = 5.0
 # soft cuff stiffness then settle it into a flat, pressed turn-down.
 _CUFF_FOLD = 150
 
+# Center-back zipper (hardware marker, not a real seam -- the back is cut on the
+# fold). The back top edge is tagged with this label so the 2D pattern draws
+# the zip down the center; _ZIP_LENGTH is the fraction of garment height it runs.
+_ZIP_LABEL = 'cb_zip'
+_ZIP_LENGTH = 0.6
+
 
 class ElementTopPanel(pyg.Panel):
     """Full front or back torso panel, symmetric and cut on the fold.
@@ -161,6 +167,13 @@ class ElementTubeTop(pyg.Component):
         self.fcuff = self._add_cuff('fcuff', self.ftorso)
         self.bcuff = self._add_cuff('bcuff', self.btorso)
 
+        # Center-back zipper: the real top closes with an invisible zip down the
+        # center back. The back is cut on the fold (no CB seam -- see class
+        # docstring), so the zipper is a hardware marker (like buttons), not a
+        # real opening: label the back top edge so the 2D pattern can draw the
+        # zip down the center, and declare it for the 3D surface placement.
+        self.btorso.interfaces['top'].edges.propagate_label(_ZIP_LABEL)
+
         self.interfaces = {
             'bottom': pyg.Interface.from_multiple(
                 self.ftorso.interfaces['bottom'],
@@ -183,7 +196,7 @@ class ElementTubeTop(pyg.Component):
 
     def assembly(self):
         """Standard assembly plus a crisp default stiffness on the cuff bands
-        so the fold-over reads as a pressed edge."""
+        (so the fold-over reads as a pressed edge) and the center-back zipper."""
         spat = super().assembly()
         stiff = {}
         for p in spat.pattern['panels']:
@@ -191,6 +204,14 @@ class ElementTubeTop(pyg.Component):
                 stiff[p] = _CUFF_STIFFNESS
         if stiff:
             spat.pattern.setdefault('panel_stiffness', {}).update(stiff)
+
+        spat.pattern.setdefault('zippers', []).append({
+            'placement': 'center_back',
+            'length': _ZIP_LENGTH,
+            'width': 1.2,
+            'panel': 'back',
+            'seam_label': _ZIP_LABEL,
+        })
         return spat
 
     def length(self):

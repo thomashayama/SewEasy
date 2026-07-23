@@ -397,7 +397,7 @@ class GUIState:
         'godet-skirt': 'Godet skirt', 'pencil-skirt': 'Pencil skirt',
         'levels-skirt': 'Levels skirt', 'pants': 'Pants',
         'dress_shirt': 'Dress shirt', 'buttons': 'Buttons',
-        'fabric': 'Fabric',
+        'element_top': 'Tube top', 'fabric': 'Fabric',
     }
     META_LABELS = {'upper': 'Top', 'wb': 'Waistband', 'bottom': 'Bottom'}
 
@@ -477,6 +477,10 @@ class GUIState:
             # Self-contained: own section + sleeves + buttons (no generic
             # collar/asym)
             relevant |= {'dress_shirt', 'sleeve', 'buttons'}
+        elif upper == 'ElementTubeTop':
+            # Self-contained strapless top: only its own section (no sleeves,
+            # collar, buttons or asymmetry)
+            relevant |= {'element_top'}
         elif upper:
             relevant |= {'shirt', 'collar', 'sleeve', 'left'}
         if wb:

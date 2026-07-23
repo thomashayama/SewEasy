@@ -28,6 +28,10 @@ pattern_spec_template = {
         # Renderers/sim place `count` buttons along the panel edge tagged with
         # `placket_label`. Additive: consumers that don't know it ignore it.
         'buttons': {},
+        # Optional zipper hardware: a list of {placement, length, width, panel,
+        # seam_label}. Like buttons, a non-simulated marker -- drawn on the 2D
+        # pattern and placed on the draped surface. Additive.
+        'zippers': [],
         # Optional per-panel bending-stiffness multipliers {panel: factor};
         # the simulator scales each panel's cloth stiffness by its factor.
         'panel_stiffness': {},

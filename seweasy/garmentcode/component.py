@@ -112,6 +112,11 @@ class Component(BaseComponent):
             if sub_raw.get('buttons'):
                 spattern.pattern['buttons'] = sub_raw['buttons']
 
+            # of optional zipper hardware (a list; concatenated across subs)
+            if sub_raw.get('zippers'):
+                spattern.pattern.setdefault('zippers', []).extend(
+                    sub_raw['zippers'])
+
             # of optional per-panel stiffness (merge; later subs win per key)
             if sub_raw.get('panel_stiffness'):
                 spattern.pattern.setdefault('panel_stiffness', {}).update(

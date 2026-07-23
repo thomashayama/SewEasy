@@ -444,13 +444,33 @@ class GUIPattern:
             '#ffffff' if self._fabric_spec() else self.fabric_color)
         mesh.visual.material = pbr_material
 
-        # Button hardware: placed onto the draped surface (not simulated)
-        discs = self._button_discs(mesh)
+        # Hardware (buttons, zippers): placed onto the draped surface, not
+        # simulated. Gated on what the GARMENT declares in its assembled
+        # pattern (read from the saved spec), so hardware only shows on
+        # garments that actually have it -- not from the global design defaults.
+        hw = self._hardware_config(paths)
+        geoms = {'garment': mesh}
+        discs = self._button_discs(mesh, hw)
         if discs is not None:
-            trimesh.Scene({'garment': mesh, 'buttons': discs}).export(
-                paths.g_sim_glb)
+            geoms['buttons'] = discs
+        zip_mesh = self._zipper_mesh(mesh, hw)
+        if zip_mesh is not None:
+            geoms['zipper'] = zip_mesh
+        if len(geoms) > 1:
+            trimesh.Scene(geoms).export(paths.g_sim_glb)
         else:
             mesh.export(paths.g_sim_glb)
+
+    @staticmethod
+    def _hardware_config(paths):
+        """The assembled pattern's hardware block (buttons/zippers) from the
+        saved spec -- what the garment declares, not the global design config."""
+        try:
+            import json
+            return json.loads(Path(paths.in_g_spec).read_text()).get(
+                'pattern', {})
+        except BaseException:
+            return {}
 
     def _fabric_spec(self):
         """The current fabric print as {kind, fg, bg, scale}, or None for a
@@ -470,16 +490,38 @@ class GUIPattern:
                 'v', fabrics.default_scale(kind))),
         }
 
-    def _button_discs(self, garment_mesh):
-        """Trimesh of button discs for the current design, or None"""
-        btn = self.design_params.get('buttons')
-        if not btn or int(btn['count']['v']) <= 0:
+    def _button_discs(self, garment_mesh, hw):
+        """Trimesh of button discs the garment declares, or None. Reads the
+        assembled pattern's buttons block (not design_params), so a garment
+        with no placket -- e.g. a tube top -- gets no buttons even though the
+        global design still carries a button count."""
+        btn = (hw or {}).get('buttons') or {}
+        count = int(btn.get('count', 0))
+        if count <= 0:
             return None
         from seweasy.pattern.buttons import sample_seats, build_discs
         seats = sample_seats(
-            garment_mesh.vertices, int(btn['count']['v']),
-            float(btn['diameter']['v']))
+            garment_mesh.vertices, count, float(btn.get('diameter', 1.3)))
         return build_discs(seats)
+
+    def _zipper_mesh(self, garment_mesh, hw):
+        """Trimesh of the zipper hardware the garment declares, or None.
+        Each zipper rides the center-front/back line of the draped surface."""
+        zippers = (hw or {}).get('zippers') or []
+        if not zippers:
+            return None
+        from seweasy.pattern.zippers import center_seam_line, build_zipper
+        meshes = []
+        for z in zippers:
+            placement = z.get('placement', 'center_back')
+            line = center_seam_line(
+                garment_mesh.vertices, placement, float(z.get('length', 0.6)))
+            m = build_zipper(line, placement, float(z.get('width', 1.2)))
+            if m is not None:
+                meshes.append(m)
+        if not meshes:
+            return None
+        return trimesh.util.concatenate(meshes)
 
     def recolor_3d(self):
         """Re-export the last draped garment with the current fabric color
