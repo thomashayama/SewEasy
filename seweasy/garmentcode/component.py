@@ -112,6 +112,11 @@ class Component(BaseComponent):
             if sub_raw.get('buttons'):
                 spattern.pattern['buttons'] = sub_raw['buttons']
 
+            # of optional per-panel stiffness (merge; later subs win per key)
+            if sub_raw.get('panel_stiffness'):
+                spattern.pattern.setdefault('panel_stiffness', {}).update(
+                    sub_raw['panel_stiffness'])
+
         spattern.pattern['stitches'] += self.stitching_rules.assembly()
         return spattern
 

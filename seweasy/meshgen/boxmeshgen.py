@@ -1587,6 +1587,19 @@ class BoxMesh(wrappers.VisPattern):
                 # Write the row to the file
                 file.write(row_data + '\n')
 
+    def save_panel_labels(self):
+        """Save {panel_name: [global vertex ids]} so the simulator can apply
+        per-panel material (e.g. stiffness). A seam vertex belongs to every
+        panel it was welded from."""
+        import json
+        panel_verts = {}
+        for glob_id, locs in enumerate(self.verts_glob_loc):
+            for entry in locs:
+                pname = entry[0]
+                panel_verts.setdefault(pname, []).append(glob_id)
+        with open(self.paths.g_panel_labels, 'w') as file:
+            json.dump(panel_verts, file)
+
     def save_orig_lens(self,):
         """
         This function stores the self.orig_lens dict as a pickle file to save_path.
@@ -1641,6 +1654,7 @@ class BoxMesh(wrappers.VisPattern):
 
         self.save_box_mesh_obj(with_normals=with_v_norms, in_uv_config=uv_config)
         self.save_segmentation()
+        self.save_panel_labels()
         self.save_orig_lens()
         self.save_vertex_labels()
 

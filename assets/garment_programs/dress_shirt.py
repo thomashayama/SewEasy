@@ -33,6 +33,9 @@ _COLLAR_BACK_FOLD = 165
 # Edge label marking the center-front button placket (buttons placed along it)
 _BUTTON_PLACKET_LABEL = 'button_placket'
 
+# Default bending-stiffness multiplier for the collar panels (crisp collar)
+_COLLAR_STIFFNESS = 15.0
+
 
 class DressShirtPanel(BaseBodicePanel):
     """Half of a dress shirt torso (front or back).
@@ -428,6 +431,13 @@ class DressShirt(pyg.Component):
                 'diameter': float(b['diameter']['v']),
                 'placket_label': _BUTTON_PLACKET_LABEL,
             }
+        # A dress-shirt collar is interfaced (crisp): stiffen the collar
+        # panels by default so it holds its fold instead of drooping/doming.
+        # The user can override any panel's stiffness in the GUI.
+        stiff = {p: _COLLAR_STIFFNESS for p in spat.pattern['panels']
+                 if 'collar' in p or 'stand' in p}
+        if stiff:
+            spat.pattern.setdefault('panel_stiffness', {}).update(stiff)
         return spat
 
     def _add_back_fall(self):

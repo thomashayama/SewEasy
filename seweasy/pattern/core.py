@@ -27,7 +27,10 @@ pattern_spec_template = {
         # Optional button hardware config: {count, diameter, placket_label}.
         # Renderers/sim place `count` buttons along the panel edge tagged with
         # `placket_label`. Additive: consumers that don't know it ignore it.
-        'buttons': {}
+        'buttons': {},
+        # Optional per-panel bending-stiffness multipliers {panel: factor};
+        # the simulator scales each panel's cloth stiffness by its factor.
+        'panel_stiffness': {}
     },
     'parameters': {},
     'parameter_order': [],

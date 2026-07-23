@@ -92,6 +92,42 @@ class Cloth:
         self.last_verts = None
         self.current_verts = wp.array.numpy(self.state_0.particle_q)
 
+    def _read_panel_stiffness(self):
+        """Per-panel stiffness multipliers from the pattern spec
+        (pattern['panel_stiffness'] = {panel: multiplier}). Empty if none."""
+        spec_path = getattr(self.paths, 'in_g_spec', None)
+        if spec_path and spec_path.exists():
+            spec = json.load(open(spec_path))
+            return spec.get('pattern', {}).get('panel_stiffness') or {}
+        return {}
+
+    def _apply_panel_stiffness(self, builder, config):
+        """Scale per-edge bending ke by the stiffest panel each edge touches."""
+        panel_stiffness = self._read_panel_stiffness()
+        if not panel_stiffness or not self.paths.g_panel_labels.exists():
+            return
+        panel_verts = json.load(open(self.paths.g_panel_labels))
+        vert_mult = {}
+        for pname, verts in panel_verts.items():
+            m = float(panel_stiffness.get(pname, 1.0))
+            if m == 1.0:
+                continue
+            for v in verts:
+                if m > vert_mult.get(v, 1.0):
+                    vert_mult[v] = m
+        if not vert_mult:
+            return
+        base_ke = config.garment_edge_ke
+        n = 0
+        for e, idx in enumerate(builder.edge_indices):
+            m = max((vert_mult.get(v, 1.0) for v in idx), default=1.0)
+            if m != 1.0:
+                _, kd = builder.edge_bending_properties[e]
+                builder.edge_bending_properties[e] = (base_ke * m, kd)
+                n += 1
+        print(f'PANELSTIFF edges={n}/{len(builder.edge_indices)} '
+              f'panels={panel_stiffness}', flush=True)
+
     def build_stage(self, config):
 
         builder = wp.sim.ModelBuilder(gravity=0.0)
@@ -155,6 +191,10 @@ class Cloth:
             spring_ke=config.spring_ke,
             spring_kd=config.spring_kd,
         )
+
+        # Per-panel bending stiffness: scale each edge's bending ke by the
+        # stiffness multiplier of the panel(s) it belongs to
+        self._apply_panel_stiffness(builder, config)
 
         # ------------ Add a body -----------      
         if self.enable_body_smoothing:

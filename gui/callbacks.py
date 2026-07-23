@@ -531,12 +531,18 @@ class GUIState:
             self._suppress_color_change = False
             with ui.column().classes('absolute top-3 right-4 z-40 items-end gap-2'):
                 with ui.row().classes('se-overlay-chip items-center gap-2 px-2 py-1'):
-                    self.ui_panel_color_label = ui.label('Click a panel to color it') \
+                    self.ui_panel_color_label = ui.label('Click a panel to edit it') \
                         .classes('text-stone-800 text-sm')
                     self.ui_panel_color = ui.color_input(
                         value=self.pattern_state.fabric_color,
                         on_change=self.apply_panel_color) \
                         .props('dense').classes('w-28')
+                    self.ui_panel_stiffness = ui.number(
+                        label='Stiffness', value=1.0, min=0.5, max=30, step=0.5,
+                        on_change=self.apply_panel_stiffness) \
+                        .props('dense').classes('w-24') \
+                        .tooltip('Bending stiffness of the selected panel '
+                                 '(applied on the next 3D drape)')
                 ui.button('Reset colors', on_click=self.reset_panel_colors) \
                     .props('flat dense size=sm icon=format_color_reset') \
                     .classes('se-overlay-chip text-stone-800')
@@ -977,9 +983,10 @@ class GUIState:
             return
         self.selected_panel = panel
         self.ui_panel_color_label.set_text(panel.replace('_', ' '))
-        # Reflect the panel's current color without re-triggering apply
+        # Reflect the panel's current color/stiffness without re-triggering apply
         self._suppress_color_change = True
         self.ui_panel_color.value = self.pattern_state.panel_color(panel)
+        self.ui_panel_stiffness.value = self.pattern_state.panel_stiffness_of(panel)
         self._suppress_color_change = False
 
     def apply_panel_color(self, e):
@@ -989,11 +996,18 @@ class GUIState:
         self.pattern_state.set_panel_color(self.selected_panel, e.value)
         self.update_pattern_display()
 
+    def apply_panel_stiffness(self, e):
+        """Set the selected panel's bending stiffness (used on next drape)"""
+        if self._suppress_color_change or not self.selected_panel \
+                or e.value is None:
+            return
+        self.pattern_state.set_panel_stiffness(self.selected_panel, e.value)
+
     def reset_panel_colors(self):
         """Clear all per-panel color overrides"""
         self.selected_panel = None
         self.pattern_state.reset_panel_colors()
-        self.ui_panel_color_label.set_text('Click a panel to color it')
+        self.ui_panel_color_label.set_text('Click a panel to edit it')
         self.update_pattern_display()
 
     def update_design_params_ui_state(self, ui_elems, design_params):

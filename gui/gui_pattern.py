@@ -115,6 +115,9 @@ class GUIPattern:
         # Per-panel overrides of the fabric color (panel_name -> hex), set by
         # clicking a panel in the 2D view. Panels not listed use fabric_color.
         self.panel_colors = {}
+        # Per-panel bending-stiffness multipliers (panel_name -> factor). User
+        # overrides on top of any garment default; applied in the 3D drape.
+        self.panel_stiffness = {}
         # panel_name -> svgpathtools Path (SVG coords), for 2D click hit-tests
         self.panel_svg_paths = {}
         self.design_sampler = pyg.DesignSampler()
@@ -248,6 +251,15 @@ class GUIPattern:
         self.panel_colors = {}
         if self.sew_pattern is not None:
             self._view_serialize()
+
+    def set_panel_stiffness(self, panel, factor):
+        """Override one panel's bending-stiffness multiplier (applied on the
+        next 3D drape; does not change the 2D view)"""
+        self.panel_stiffness[panel] = float(factor)
+
+    def panel_stiffness_of(self, panel):
+        """The user's stiffness override for a panel (1.0 if unset)"""
+        return self.panel_stiffness.get(panel, 1.0)
 
     def sync_left(self, with_check=False):
         """Synchronize left and right design parameters"""
@@ -534,6 +546,12 @@ class GUIPattern:
             save_pattern = self.sew_pattern
 
         pattern = save_pattern.assembly()
+
+        # Merge the user's per-panel stiffness overrides on top of any garment
+        # default, so the 3D drape uses them
+        if self.panel_stiffness:
+            pattern.pattern.setdefault('panel_stiffness', {}).update(
+                self.panel_stiffness)
 
         if pack:
             # Single user deliverable: print-at-home PDF

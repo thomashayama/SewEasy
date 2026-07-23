@@ -75,6 +75,8 @@ class PathCofig:
         self.g_mesh_segmentation = self.out_el / f'{self.boxmesh_tag}_sim_segmentation.txt'
         self.g_orig_edge_len = self.out_el / f'{self.boxmesh_tag}_orig_lens.pickle'
         self.g_vert_labels = self.out_el / f'{self.boxmesh_tag}_vertex_labels.yaml'
+        # panel_name -> list of global mesh vertex ids (for per-panel material)
+        self.g_panel_labels = self.out_el / f'{self.boxmesh_tag}_panel_labels.json'
         self.g_texture_fabric = self.out_el / f'{self.boxmesh_tag}_texture_fabric.png'
         self.g_texture = self.out_el / f'{self.boxmesh_tag}_texture.png'
         self.g_mtl = self.out_el / f'{self.boxmesh_tag}_material.mtl'
