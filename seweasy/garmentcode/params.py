@@ -106,30 +106,38 @@ class DesignSampler:
         Path is leading to the leaf of param dict. value. 
         """
 
-        range = nested_get(random_params, path + ['range'])
         p_type = nested_get(random_params, path + ['type'])
-        
+
+        # range is optional: some param types (e.g. 'color') have none
+        try:
+            range = nested_get(random_params, path + ['range'])
+        except KeyError:
+            range = None
+
         # Check Defaults
-        try: 
+        try:
             def_prob = nested_get(random_params, path + ['default_prob'])
         except KeyError as e:   # Default probability not given  -> Sample uniformly
             def_prob = None
 
         def_value = nested_get(self.params, path + ['v'])
-        if self.__use_default(def_prob):
+        # Params without a range (colors) or with an unhandled type keep their
+        # default value instead of being randomized
+        if range is None or self.__use_default(def_prob):
             new_val = def_value
+        elif 'select' in p_type or p_type == 'bool' or 'file' in p_type:  # discrete
+            if p_type == 'select_null' and None not in range:
+                range.append(None)
+            # Exclude default
+            if def_prob is not None:
+                range.remove(def_value)
+            new_val = random.choice(range)
+        elif p_type == 'int':
+            new_val = self.__randint_exclude(range, None if def_prob is None else def_value)
+        elif p_type == 'float':
+            new_val = self.__uniform_exclude(range, None if def_prob is None else def_value)
         else:
-            if 'select' in p_type or p_type == 'bool' or 'file' in p_type:  # All discrete types
-                if p_type == 'select_null' and None not in range:
-                    range.append(None)
-                # Exclude default
-                if def_prob is not None:
-                    range.remove(def_value) 
-                new_val = random.choice(range)
-            elif p_type == 'int':
-                new_val = self.__randint_exclude(range, None if def_prob is None else def_value)
-            elif p_type == 'float':
-                new_val = self.__uniform_exclude(range, None if def_prob is None else def_value)
+            new_val = def_value
 
         nested_set(random_params, path + ['v'], new_val)
 

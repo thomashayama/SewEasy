@@ -332,7 +332,9 @@ class GUIState:
                 # Leaf value
                 p_type = design_params[param]['type']
                 val = design_params[param]['v']
-                p_range = design_params[param]['range']
+                # range is optional (e.g. 'color' params have none); only
+                # select/float/int use it, and those always provide it
+                p_range = design_params[param].get('range')
                 if 'select' in p_type:
                     values = design_params[param]['range']
                     if 'null' in p_type and None not in values: 
