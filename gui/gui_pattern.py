@@ -289,6 +289,7 @@ class GUIPattern:
                                   flat=False,
                                   panel_fill_color=self.fabric_color,
                                   panel_colors=self.panel_colors,
+                                  fabric=self._fabric_spec(),
                                   margin=0
             )
             dwg.save()
@@ -358,8 +359,12 @@ class GUIPattern:
             # Generate and save garment box mesh (if not existent)
             garment_box_mesh = BoxMesh(paths.in_g_spec, props['sim']['config']['resolution_scale'])
             garment_box_mesh.load()
+            from seweasy.pattern import fabrics
+            uv_cfg = fabrics.build_uv_config(
+                props['render']['config']['uv_texture'],
+                self._fabric_spec(), pattern_folder)
             garment_box_mesh.serialize(
-                paths, store_panels=False, uv_config=props['render']['config']['uv_texture'])
+                paths, store_panels=False, uv_config=uv_cfg)
 
             # TODOLOW Don't print progress to console with so many lines
             run_sim(
@@ -432,9 +437,11 @@ class GUIPattern:
         # enable double-sided material for nice viewing
         pbr_material = mesh.visual.material.to_pbr()
         pbr_material.doubleSided = True
-        # The baked UV texture uses neutral white panels (see gui_sim_props),
-        # so the base color factor acts as the fabric color
-        pbr_material.baseColorFactor = display_to_base_rgba(self.fabric_color)
+        # A plain fabric bakes neutral white panels (see gui_sim_props), so the
+        # base color factor acts as the solid fabric color. A patterned fabric
+        # bakes its true colors into the texture -> leave the factor white.
+        pbr_material.baseColorFactor = display_to_base_rgba(
+            '#ffffff' if self._fabric_spec() else self.fabric_color)
         mesh.visual.material = pbr_material
 
         # Button hardware: placed onto the draped surface (not simulated)
@@ -444,6 +451,24 @@ class GUIPattern:
                 paths.g_sim_glb)
         else:
             mesh.export(paths.g_sim_glb)
+
+    def _fabric_spec(self):
+        """The current fabric print as {kind, fg, bg, scale}, or None for a
+        plain (solid-color) fabric."""
+        fab = self.design_params.get('fabric')
+        if not fab:
+            return None
+        kind = fab.get('kind', {}).get('v', 'plain')
+        if not kind or kind == 'plain':
+            return None
+        from seweasy.pattern import fabrics
+        return {
+            'kind': kind,
+            'fg': fab['fg']['v'],
+            'bg': fab['bg']['v'],
+            'scale': float(fab.get('scale', {}).get(
+                'v', fabrics.default_scale(kind))),
+        }
 
     def _button_discs(self, garment_mesh):
         """Trimesh of button discs for the current design, or None"""

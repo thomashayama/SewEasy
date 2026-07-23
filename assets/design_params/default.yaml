@@ -110,6 +110,31 @@ design:
       - 2.5
       type: float
       default_prob: 0.8
+  fabric:
+    kind:
+      v: plain
+      range:
+      - plain
+      - pinstripe
+      - stripe
+      - polka_dot
+      - gingham
+      - windowpane
+      type: select
+      default_prob: 0.7
+    fg:
+      v: '#eef2f8'
+      type: color
+    bg:
+      v: '#b7cde5'
+      type: color
+    scale:
+      v: 0.6
+      range:
+      - 0.2
+      - 4.0
+      type: float
+      default_prob: 0.5
   waistband:
     waist:
       v: 1.0

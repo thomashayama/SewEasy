@@ -117,6 +117,10 @@ class Component(BaseComponent):
                 spattern.pattern.setdefault('panel_stiffness', {}).update(
                     sub_raw['panel_stiffness'])
 
+            # of optional fabric print (a single dict; last non-empty wins)
+            if sub_raw.get('fabric'):
+                spattern.pattern['fabric'] = sub_raw['fabric']
+
         spattern.pattern['stitches'] += self.stitching_rules.assembly()
         return spattern
 

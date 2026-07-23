@@ -30,7 +30,10 @@ pattern_spec_template = {
         'buttons': {},
         # Optional per-panel bending-stiffness multipliers {panel: factor};
         # the simulator scales each panel's cloth stiffness by its factor.
-        'panel_stiffness': {}
+        'panel_stiffness': {},
+        # Optional fabric print: {kind, fg, bg, scale}. Renderers fill the
+        # panels with the motif (2D) and bake it into the drape texture (3D).
+        'fabric': {}
     },
     'parameters': {},
     'parameter_order': [],

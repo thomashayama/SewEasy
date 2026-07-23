@@ -132,9 +132,15 @@ def drape(spec_files: dict, in_name: str, out_name: str) -> dict:
         # RuntimeError so the message survives deserialization on clients
         # that lack the meshgen deps (igl/warp)
         raise RuntimeError(f'mesh load failed: {type(e).__name__}: {e}')
-    garment_box_mesh.serialize(
-        paths, store_panels=False,
-        uv_config=props['render']['config']['uv_texture'])
+
+    # Bake the chosen fabric print into the drape texture (if any)
+    import json as _json
+    from seweasy.pattern import fabrics
+    _spec = _json.loads(paths.in_g_spec.read_text())
+    uv_cfg = fabrics.build_uv_config(
+        props['render']['config']['uv_texture'],
+        _spec.get('pattern', {}).get('fabric'), work)
+    garment_box_mesh.serialize(paths, store_panels=False, uv_config=uv_cfg)
 
     run_sim(
         garment_box_mesh.name,

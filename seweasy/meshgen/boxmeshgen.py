@@ -1536,6 +1536,8 @@ class BoxMesh(wrappers.VisPattern):
             'fabric_grain_texture_path': None,
             'fabric_grain_resolution': 1,
             'panel_color': None,
+            'color_alpha': 0.65,
+            'background_alpha': 0.8,
         }
         # Update with incoming values, if any
         uv_config.update(in_uv_config)
@@ -1551,7 +1553,9 @@ class BoxMesh(wrappers.VisPattern):
             background_img_path=uv_config['fabric_grain_texture_path'],
             background_resolution=uv_config['fabric_grain_resolution'],
             mat_name=mat_name,
-            panel_color=uv_config['panel_color']
+            panel_color=uv_config['panel_color'],
+            color_alpha=uv_config['color_alpha'],
+            background_alpha=uv_config['background_alpha'],
         )
         save_obj(
             self.paths.g_box_mesh, 

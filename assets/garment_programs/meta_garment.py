@@ -98,6 +98,23 @@ class MetaGarment(pyg.Component):
             self.subs[-1].set_panel_label('leg', overwrite=False)
 
 
+    def assembly(self):
+        """Standard assembly plus the garment-wide fabric print, so the 2D
+        pattern and the 3D drape both render the chosen fabric."""
+        spat = super().assembly()
+        fab = self.design.get('fabric', {})
+        kind = fab.get('kind', {}).get('v', 'plain') if fab else 'plain'
+        if kind and kind != 'plain':
+            from seweasy.pattern import fabrics
+            spat.pattern['fabric'] = {
+                'kind': kind,
+                'fg': fab['fg']['v'],
+                'bg': fab['bg']['v'],
+                'scale': float(fab.get('scale', {}).get(
+                    'v', fabrics.default_scale(kind))),
+            }
+        return spat
+
     def assert_total_length(self, tol=1):
         """Check the total length of components"""
         # Check that the total length of the components are less that body height

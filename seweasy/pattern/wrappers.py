@@ -27,6 +27,9 @@ from seweasy import data_config
 from . import core
 from .utils import *
 
+# SVG <defs> id for the tiled fabric-print fill
+_FABRIC_PATTERN_ID = 'seweasy_fabric'
+
 
 class VisPattern(core.ParametrizedPattern):
     """
@@ -199,11 +202,20 @@ class VisPattern(core.ParametrizedPattern):
             flat=False, fill_panels=True,
             panel_fill_color=None,
             panel_colors=None,
+            fabric=None,
             margin=2) -> sw.Drawing:
         """Convert pattern to writable svg representation"""
 
         if len(self.panel_order()) == 0:  # If we are still here, but pattern is empty, don't generate an image
             raise core.EmptyPatternError()
+
+        # Fabric print: panels not individually recolored are filled with a
+        # tiled <pattern>. Falls back to pattern['fabric'] if not passed.
+        fabric = fabric if fabric is not None else (
+            self.pattern.get('fabric') or None)
+        fabric_fill = None
+        if fabric and fabric.get('kind', 'plain') != 'plain':
+            fabric_fill = f'url(#{_FABRIC_PATTERN_ID})'
         
         # Get svg representation per panel
         # Order by depth (=> most front panels render in front)
@@ -224,7 +236,7 @@ class VisPattern(core.ParametrizedPattern):
                     panel,
                     apply_transform=not flat,
                     fill=fill_panels,
-                    fill_color=per_panel or panel_fill_color
+                    fill_color=per_panel or fabric_fill or panel_fill_color
                 )
                 if flat:
                     path = path.translated(list_to_c([
@@ -288,6 +300,17 @@ class VisPattern(core.ParametrizedPattern):
             viewbox=viewbox, 
             dimensions=[str(viewbox[2]) + 'cm', str(viewbox[3]) + 'cm'],
             paths2Drawing=True)
+
+        # fabric print: register the <pattern> the panel fills reference
+        if fabric_fill is not None:
+            from seweasy.pattern import fabrics
+            pat, _ = fabrics.fabric_svg_pattern(
+                dwg, fabric['kind'], fabric['fg'], fabric['bg'],
+                float(fabric.get('scale') or fabrics.default_scale(
+                    fabric['kind'])) * self.px_per_unit,
+                _FABRIC_PATTERN_ID)
+            if pat is not None:
+                dwg.defs.add(pat)
 
         # text annotations
         panel_names = names_f + names_b

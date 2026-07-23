@@ -361,6 +361,12 @@ class GUIState:
                     # NOTE 'change' fires when the user releases the slider:
                     # one draft per adjustment instead of one per drag tick
                     # (the 'label' prop still shows the live value while dragging)
+                elif p_type == 'color':
+                    ui.label(param_name).classes('p-0 m-0 mt-2 se-param-label')
+                    ui_elems[param] = ui.color_input(
+                        value=val,
+                        on_change=lambda e, dic=design_params, param=param: self.update_pattern_ui_state(dic, param, e.value)
+                    ).classes('w-full').props('outlined dense')
                 elif 'file' in p_type:
                     print(f'GUI::NotImplementedERROR::{param}::'
                           '"file" parameter type is not yet supported in Web SewEasy. '
@@ -389,6 +395,7 @@ class GUIState:
         'godet-skirt': 'Godet skirt', 'pencil-skirt': 'Pencil skirt',
         'levels-skirt': 'Levels skirt', 'pants': 'Pants',
         'dress_shirt': 'Dress shirt', 'buttons': 'Buttons',
+        'fabric': 'Fabric',
     }
     META_LABELS = {'upper': 'Top', 'wb': 'Waistband', 'bottom': 'Bottom'}
 
@@ -463,7 +470,7 @@ class GUIState:
         wb = design['meta']['wb']['v']
         bottom = design['meta']['bottom']['v']
 
-        relevant = set()
+        relevant = {'fabric'}  # garment-wide fabric print always applies
         if upper == 'DressShirt':
             # Self-contained: own section + sleeves + buttons (no generic
             # collar/asym)

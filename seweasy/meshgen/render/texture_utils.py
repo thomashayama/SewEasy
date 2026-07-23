@@ -7,17 +7,19 @@ from pathlib import Path
 
 # SECTION UV islands texture creation 
 def texture_mesh_islands(
-        texture_coords, face_texture_coords, 
-        out_texture_image_path: Path, 
-        out_fabric_tex_image_path: Path = None, 
-        out_mtl_file_path: Path = None, 
+        texture_coords, face_texture_coords,
+        out_texture_image_path: Path,
+        out_fabric_tex_image_path: Path = None,
+        out_mtl_file_path: Path = None,
         boundary_width=0.3,
         dpi=1200,
         background_img_path=None,
         background_resolution=1.,
         uv_padding=3,
         mat_name='islands_texture',
-        panel_color=None
+        panel_color=None,
+        color_alpha=0.65,
+        background_alpha=0.8,
 ):
     """
         Returns updated uv coordinates (properly normalized and aligned with the created texture)
@@ -46,7 +48,9 @@ def texture_mesh_islands(
             background_img_path=background_img_path,
             background_resolution=background_resolution,
             preserve_alpha=False,
-            panel_color=panel_color
+            panel_color=panel_color,
+            color_alpha=color_alpha,
+            background_alpha=background_alpha,
         )
     else:
         out_fabric_tex_image_path = None
