@@ -159,25 +159,44 @@ def drape(spec_files: dict, in_name: str, out_name: str) -> dict:
             f'Simulation produced no output mesh; '
             f"failures: {props['sim']['stats'].get('fails', {})}")
 
-    # Button seats: sample the draped front placket so the GUI can place
-    # button geometry (config comes from the pattern spec)
+    # Button seats: place button geometry on the draped garment so the GUI
+    # can display it (config comes from the pattern spec). Prefer the actual
+    # 'button_placket'-labeled seam vertices (buttons ride the real placket
+    # line); fall back to the front-centre surface heuristic if the label is
+    # absent.
     import json
     import numpy as np
-    from seweasy.pattern.buttons import sample_seats
+    import yaml
+    from seweasy.pattern.buttons import sample_seats, seats_along_line
 
     spec = json.loads(paths.in_g_spec.read_text())
     btn_cfg = spec.get('pattern', {}).get('buttons') or {}
+    count = int(btn_cfg.get('count', 0))
+    diameter = float(btn_cfg.get('diameter', 1.3))
     verts = np.array([[float(x) for x in ln.split()[1:4]]
                       for ln in paths.g_sim.read_text().splitlines()
                       if ln.startswith('v ')])
-    buttons = sample_seats(verts, int(btn_cfg.get('count', 0)),
-                           float(btn_cfg.get('diameter', 1.3)))
+
+    placket_ids = []
+    if paths.g_vert_labels.exists():
+        labels = yaml.safe_load(paths.g_vert_labels.read_text()) or {}
+        placket_ids = [i for i in labels.get('button_placket', [])
+                       if 0 <= int(i) < len(verts)]
+
+    if count > 0 and placket_ids:
+        buttons = seats_along_line(verts[placket_ids], count, diameter)
+        btn_src = f'placket({len(placket_ids)} verts)'
+    else:
+        buttons = sample_seats(verts, count, diameter)
+        btn_src = 'front-centre heuristic'
+    print(f'ModalDrape::INFO::{len(buttons)} button seats via {btn_src}')
 
     return {
         'files': out_files,
         'fails': props['sim']['stats'].get('fails', {}),
         'sim_time': sim_time,
         'buttons': buttons,
+        'button_source': btn_src,
     }
 
 

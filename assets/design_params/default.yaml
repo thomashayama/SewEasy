@@ -382,7 +382,7 @@ design:
         - 3
         type: float
       cuff_len:
-        v: 0.08
+        v: 0.11
         range:
         - 0.05
         - 0.9

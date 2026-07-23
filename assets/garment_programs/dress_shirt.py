@@ -23,18 +23,27 @@ from assets.garment_programs import sleeves
 from assets.garment_programs import collars
 from assets.garment_programs.closures import pre_fold
 
-# Fold angles for the collar falls over the stand (degrees). Tuned so the
-# collar drapes down before the sim instead of standing straight up. See
-# closures.pre_fold. NOTE: a flat rectangular back fall still domes slightly
-# on the curved neckline (a truly flat lie needs a curve-cut fall panel).
-_COLLAR_FRONT_FOLD = 148
-_COLLAR_BACK_FOLD = 165
+# Fold angles for the collar falls over the stand (degrees). The fall is
+# pre-folded down-and-forward so it starts draped over the stand; the SOFT
+# fall stiffness (below) then lets it settle onto the chest/shoulders as a
+# real turndown instead of the rigid "wings" a stiff fall propped out at these
+# angles. The back needs a touch more fold to clear the neck. See
+# closures.pre_fold. NOTE: a flat rectangular fall still domes slightly on the
+# curved neckline (a truly flat lie needs a curve-cut fall panel).
+_COLLAR_FRONT_FOLD = 150
+_COLLAR_BACK_FOLD = 160
 
 # Edge label marking the center-front button placket (buttons placed along it)
 _BUTTON_PLACKET_LABEL = 'button_placket'
 
-# Default bending-stiffness multiplier for the collar panels (crisp collar)
-_COLLAR_STIFFNESS = 15.0
+# Default bending-stiffness multipliers (crisp, interfaced-fabric look).
+# The collar STAND is firm so the neck band holds its shape; the collar FALL
+# is only lightly stiffened so it drapes/rolls onto the chest as a turndown
+# (a fully-stiff fall props out rigidly as "wings"). The barrel cuff is firm
+# so it holds a clean cylinder instead of drooping into a soft tube.
+_COLLAR_STAND_STIFFNESS = 15.0
+_COLLAR_FALL_STIFFNESS = 6.0
+_CUFF_STIFFNESS = 12.0
 
 
 class DressShirtPanel(BaseBodicePanel):
@@ -431,11 +440,20 @@ class DressShirt(pyg.Component):
                 'diameter': float(b['diameter']['v']),
                 'placket_label': _BUTTON_PLACKET_LABEL,
             }
-        # A dress-shirt collar is interfaced (crisp): stiffen the collar
-        # panels by default so it holds its fold instead of drooping/doming.
-        # The user can override any panel's stiffness in the GUI.
-        stiff = {p: _COLLAR_STIFFNESS for p in spat.pattern['panels']
-                 if 'collar' in p or 'stand' in p}
+        # A dress-shirt collar and cuffs are interfaced (crisp): stiffen those
+        # panels by default. The stand is firm (holds the neck band), the fall
+        # only lightly (so it rolls onto the chest instead of propping out),
+        # and the cuff is firm (clean barrel). Panel names carry the role:
+        # '*_stand_*', '*_collar_*' (the fall), '*_cuff_*'. The user can
+        # override any panel's stiffness in the GUI.
+        stiff = {}
+        for p in spat.pattern['panels']:
+            if 'stand' in p:
+                stiff[p] = _COLLAR_STAND_STIFFNESS
+            elif 'collar' in p:
+                stiff[p] = _COLLAR_FALL_STIFFNESS
+            elif 'cuff' in p:
+                stiff[p] = _CUFF_STIFFNESS
         if stiff:
             spat.pattern.setdefault('panel_stiffness', {}).update(stiff)
         return spat
