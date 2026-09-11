@@ -1,0 +1,59 @@
+<!doctype html><meta charset="utf-8"><title>SewEasy simulator trials</title>
+<style>
+body{margin:0;background:#f4f3ef;color:#203338;font:15px system-ui}header{padding:18px 24px;background:white;border-bottom:1px solid #ddd}h1{font-size:22px;margin:0 0 10px}select,button,input{margin-right:12px;padding:6px}main{display:grid;grid-template-columns:1fr 320px;height:calc(100vh - 125px)}#stage{min-width:0}aside{padding:20px;background:#fff;overflow:auto}pre{white-space:pre-wrap;font:13px system-ui;line-height:1.6}#status{font-size:13px;color:#52666b}canvas{display:block}
+</style>
+<script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.180.0/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.180.0/examples/jsm/"}}</script>
+<header><h1>SewEasy · simulator trials</h1><label>Run <select id="run"></select></label><button id="play">Play recording</button><button id="initial">Initial</button><button id="final">Final</button><button id="front">Front</button><button id="side">Side</button><label>Frame <input id="frame" type="range" min="0" value="0"></label><span id="status">Loading…</span></header>
+<main><div id="stage"></div><aside><b>Measured GPU simulation</b><p><button id="live">Run live GPU · 300 frames</button><button id="wider" disabled>Widen 2% · 180 frames</button></p><p id="live-status">Live mode requires serve_live.py and a style3d-tuned recording.</p><pre id="live-metrics"></pre><pre id="metrics"></pre><p>The browser renders cloth positions. Recorded trials replay saved positions; live mode advances physics on the host RTX 3060 Ti over localhost. Physics does not run in this browser.</p><p>Drag to orbit · scroll to zoom</p></aside></main>
+<script type="module">
+import * as THREE from 'three';
+import {OrbitControls} from 'three/addons/controls/OrbitControls.js';
+const stage=document.querySelector('#stage'), status=document.querySelector('#status');
+const renderer=new THREE.WebGLRenderer({antialias:true});renderer.setPixelRatio(Math.min(devicePixelRatio,2));stage.append(renderer.domElement);
+const scene=new THREE.Scene();scene.background=new THREE.Color('#f4f3ef');
+const camera=new THREE.PerspectiveCamera(35,1,.01,100);camera.position.set(0,1.05,3.6);
+const controls=new OrbitControls(camera,renderer.domElement);controls.target.set(0,1.05,0);controls.update();
+scene.add(new THREE.HemisphereLight(0xffffff,0x737d83,2));
+for(const [x,y,z,power] of [[2,3,3,3],[-2,2,-2,2]]){const l=new THREE.DirectionalLight(0xffffff,power);l.position.set(x,y,z);scene.add(l);}
+const floor=new THREE.GridHelper(4,20,0x9aabaa,0xd7ddda);scene.add(floor);
+let cloth,body,data,playing=false,tick=0;
+const input=document.querySelector('#frame'), selector=document.querySelector('#run');
+function mesh(v,f,color){const g=new THREE.BufferGeometry();g.setAttribute('position',new THREE.Float32BufferAttribute(v.flat(),3));g.setIndex(f.flat());g.computeVertexNormals();return new THREE.Mesh(g,new THREE.MeshStandardMaterial({color,side:THREE.DoubleSide,roughness:.8}));}
+function show(i){if(!data)return;input.value=i;cloth.geometry.attributes.position.array.set(data.positions[i].flat());cloth.geometry.attributes.position.needsUpdate=true;cloth.geometry.computeVertexNormals();cloth.geometry.computeBoundingSphere();status.textContent=`${data.frame_indices[i]} simulated frames · ${data.vertices} cloth vertices`;}
+async function load(){playing=false;document.querySelector('#wider').disabled=true;document.querySelector('#live').disabled=true;status.textContent='Loading…';data=await (await fetch(selector.value)).json();for(const m of [cloth,body]){if(m){scene.remove(m);m.geometry.dispose();m.material.dispose();}}
+cloth=mesh(data.positions[0],data.faces,0x348fa7);body=mesh(data.body_vertices,data.body_faces,0xbca995);scene.add(cloth,body);input.max=data.positions.length-1;document.querySelector('#metrics').textContent=JSON.stringify(data.metrics,null,2);document.querySelector('#live-metrics').textContent='';document.querySelector('#live').disabled=!selector.value.endsWith('/style3d-tuned/playback.json');document.querySelector('#live-status').textContent='Live mode requires serve_live.py and a style3d-tuned recording.';show(data.positions.length-1);}
+selector.onchange=load;input.oninput=()=>{playing=false;show(+input.value)};
+document.querySelector('#play').onclick=()=>{playing=!playing;if(playing)show(0)};
+document.querySelector('#initial').onclick=()=>{playing=false;show(0)};
+document.querySelector('#final').onclick=()=>{playing=false;show(data.positions.length-1)};
+document.querySelector('#front').onclick=()=>{camera.position.set(0,1.05,3.6);controls.target.set(0,1.05,0);controls.update()};
+document.querySelector('#side').onclick=()=>{camera.position.set(3.6,1.05,0);controls.target.set(0,1.05,0);controls.update()};
+const liveStatus=document.querySelector('#live-status'), liveMetrics=document.querySelector('#live-metrics'), liveButton=document.querySelector('#live'), wider=document.querySelector('#wider');
+async function post(path,body={}){const r=await fetch(path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});const j=await r.json();if(!r.ok)throw Error(j.error||r.statusText);return j;}
+function percentile(a,p){const b=[...a].sort((x,y)=>x-y),x=(b.length-1)*p,i=Math.floor(x);return b[i]+(b[Math.min(i+1,b.length-1)]-b[i])*(x-i);}
+async function live(edit=false){
+  playing=false;let succeeded=false;const locked=[selector,input,...document.querySelectorAll('header button'),liveButton,wider];locked.forEach(e=>e.disabled=true);
+  try{
+    liveStatus.textContent=edit?'Rebuilding cloth with 2% wider rest panels…':'Starting persistent GPU solver…';
+    const setup=await post(edit?'/api/width':'/api/start',edit?{}:{run:selector.value});
+    const frames=edit?180:300, requests=[],gpu=[],tick=performance.now();
+    for(let i=0;i<frames;i++){
+      const t=performance.now(),r=await fetch('/api/step',{method:'POST'});
+      if(!r.ok)throw Error((await r.json()).error);
+      const positions=new Float32Array(await r.arrayBuffer());requests.push(performance.now()-t);gpu.push(+r.headers.get('X-GPU-ms'));
+      if(positions.length!==cloth.geometry.attributes.position.array.length)throw Error('Live vertex count mismatch');
+      cloth.geometry.attributes.position.array.set(positions);cloth.geometry.attributes.position.needsUpdate=true;cloth.geometry.computeVertexNormals();cloth.geometry.computeBoundingSphere();
+      status.textContent=`Live frame ${i+1} / ${frames} · ${data.vertices} vertices`;
+      liveStatus.textContent='Live CUDA simulation → localhost → browser';
+      await new Promise(requestAnimationFrame);
+    }
+    const wall=performance.now()-tick,report={frames,setup_ms:setup.setup_ms,wall_s:wall/1000,observed_updates_per_s:frames/(wall/1000),request_ms_median:percentile(requests,.5),request_ms_p95:percentile(requests,.95),gpu_ms_median:percentile(gpu,.5),gpu_ms_p95:percentile(gpu,.95),edit:edit?'2% wider rest UV, model rebuilt':'initial drape',transport:'HTTP binary Float32 on localhost, one request and one animation-frame wait per step'};
+    liveMetrics.textContent=JSON.stringify(report,null,2);liveStatus.textContent='Checking final geometry…';
+    const final=await post('/api/finish',report);document.querySelector('#metrics').textContent=JSON.stringify(final.quality,null,2);liveStatus.textContent=`Completed and saved ${final.saved}`;succeeded=true;
+  }catch(e){liveStatus.textContent='Live preview error: '+e.message;}
+  finally{locked.forEach(e=>e.disabled=false);wider.disabled=!succeeded;}
+}
+liveButton.onclick=()=>live();wider.onclick=()=>live(true);
+function animate(now){requestAnimationFrame(animate);const w=stage.clientWidth,h=stage.clientHeight;if(renderer.domElement.width!==w*renderer.getPixelRatio()||renderer.domElement.height!==h*renderer.getPixelRatio()){renderer.setSize(w,h);camera.aspect=w/h;camera.updateProjectionMatrix();}if(playing&&now-tick>167){show((+input.value+1)%data.positions.length);tick=now;}renderer.render(scene,camera)}requestAnimationFrame(animate);
+try{const manifest=await (await fetch('manifest.json')).json();for(const run of manifest){selector.add(new Option(run.label,run.path));}await load();}catch(e){status.textContent='Viewer error: '+e.message;throw e;}
+</script>
