@@ -1,5 +1,7 @@
 # Browser-only simulator evaluation — September 11, 2026
 
+Follow-up: [refined solver, placement, diagnostics and comparative results](WebGPU_refinement_2026-09-11.md).
+
 **A working SewEasy prototype now runs both cloth physics and rendering entirely
 in browser WebGPU, with no GPU backend.** Normal playback was observed at 59.9
 simulation updates per second on the RTX 3060 Ti. The page completed a full

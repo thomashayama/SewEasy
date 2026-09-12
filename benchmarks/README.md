@@ -2,7 +2,8 @@
 
 For the browser-only path with no GPU backend, see the
 [WebGPU prototype](webgpu/README.md) and its
-[evaluation](../docs/WebGPU_simulator_2026-09-11.md).
+[initial evaluation](../docs/WebGPU_simulator_2026-09-11.md) and
+[refinement results](../docs/WebGPU_refinement_2026-09-11.md).
 
 Real SewEasy patterns → panel-aware mesh → GPU cloth solver → GLB and browser
 recording, plus a live browser preview backed by a persistent local GPU session.

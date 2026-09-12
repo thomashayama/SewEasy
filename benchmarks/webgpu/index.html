@@ -7,20 +7,25 @@
 <div class="actions"><button id="run" class="primary" disabled>Run simulation</button><button id="reset" disabled>Reset</button></div>
 <label for="width">Pattern width <output id="width-value">100%</output></label><input id="width" type="range" min="90" max="110" value="100" step="1" disabled>
 <button id="widen" disabled>Widen 2%</button>
+<div id="support-option" hidden><label class="check"><input type="checkbox" id="hold-neckline"> Hold neckline for preview</label><p class="note">Fitting aid: holds the neckline height. Turn off to test the unsupported drape.</p></div>
 <label for="wind">Gentle movement <output id="wind-value">Off</output></label><input id="wind" type="range" min="0" max="4" step="0.5" value="0" disabled>
 <fieldset><legend>View</legend><button id="front">Front</button><button id="side">Side</button><button id="back">Back</button></fieldset>
+<div class="view-tools"><button id="focus-garment">Garment</button><button id="full-body">Full body</button></div>
+<label class="check"><input type="checkbox" id="show-strain"> Show stretch</label><p id="strain-legend" class="note" hidden>Blue: little stretch · amber: 10% · red: 20%+. Shows the largest stretch around each vertex.</p>
 <details><summary>Simulation settings</summary>
 <label for="substeps">Substeps per frame</label><select id="substeps"><option>4</option><option>8</option><option selected>12</option><option>16</option><option>24</option></select>
 <label class="check"><input type="checkbox" id="body-contact" checked> Body contact</label><label class="check"><input type="checkbox" id="self-contact" checked> Particle self-contact</label>
-<label for="stretch">Stretch compliance</label><input id="stretch" type="number" value="0.0001" step="0.0001" min="0">
+<label for="stretch">Stretch compliance</label><input id="stretch" type="number" value="0.00001" step="0.00001" min="0">
+<label for="strain-limit">Triangle stretch target (%)</label><input id="strain-limit" type="number" value="2" step="1" min="1" max="30">
 <label for="bend">Bend compliance</label><input id="bend" type="number" value="0.03" step="0.01" min="0">
 <label class="check"><input type="checkbox" id="continue"> Start from current drape</label>
+<label for="duration">Measured simulation time</label><select id="duration"><option value="300">5 seconds</option><option value="1800">30 seconds</option></select>
 </details>
-<button id="measure" class="measure" disabled>Measure 300 frames</button><button id="download" disabled>Save result &amp; geometry</button>
+<button id="measure" class="measure" disabled>Measure 300 frames</button><button id="report" disabled>View measurement</button><button id="download" disabled>Save result &amp; geometry</button>
 <p class="note">Physics and rendering run in WebGPU. No simulation server or GPU backend.</p>
 </aside><section class="workspace" aria-label="3D garment preview"><canvas id="canvas" aria-label="Interactive garment. Drag to orbit; scroll to zoom."></canvas>
 <div class="status"><span id="status" role="status">Loading garment assets…</span><span>Drag to orbit · scroll to zoom</span></div>
 <div class="readings"><div><strong id="fps">—</strong><span>updates / second</span></div><div><strong id="gpu-ms">—</strong><span>GPU physics / frame</span></div><div><strong id="elapsed">0.0 s</strong><span>simulated time</span></div><div><strong id="mesh-info">—</strong><span>cloth vertices</span></div></div>
 </section></main>
-<section class="results" id="results" hidden><h2>Measured on this device</h2><p id="result-summary"></p><pre id="result-json"></pre></section>
+<dialog class="results" id="results"><button id="close-report" aria-label="Close measurement">Close</button><h2>Measured on this device</h2><p id="result-summary"></p><pre id="result-json"></pre></dialog>
 <script type="module" src="app.js"></script></body></html>

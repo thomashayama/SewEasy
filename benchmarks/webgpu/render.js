@@ -1,4 +1,4 @@
-import {buffer} from './physics.js?v=7';
+import {buffer} from './physics.js?v=9';
 
 function normalize(v){const l=Math.hypot(...v)||1;return v.map(x=>x/l);}
 function cross(a,b){return [a[1]*b[2]-a[2]*b[1],a[2]*b[0]-a[0]*b[2],a[0]*b[1]-a[1]*b[0]];}
@@ -13,19 +13,22 @@ function cameraMatrix(eye,target,aspect){
 }
 const shader=`
 struct View { mvp: mat4x4<f32>, eye: vec4<f32>, color: vec4<f32> }
-struct Out { @builtin(position) clip: vec4<f32>, @location(0) world: vec3<f32>, @location(1) normal: vec3<f32> }
+struct Out { @builtin(position) clip: vec4<f32>, @location(0) world: vec3<f32>, @location(1) normal: vec3<f32>, @location(2) strain:f32 }
 @group(0) @binding(0) var<uniform> view: View;
 @group(0) @binding(1) var<storage, read> positions: array<vec4<f32>>;
 @group(0) @binding(2) var<storage, read> normals: array<vec4<f32>>;
 @vertex fn vertex(@builtin(vertex_index) id: u32) -> Out {
- var o:Out;o.world=positions[id].xyz;o.clip=view.mvp*vec4<f32>(o.world,1);o.normal=normals[id].xyz;return o;
+ var o:Out;o.world=positions[id].xyz;o.clip=view.mvp*vec4<f32>(o.world,1);o.normal=normals[id].xyz;o.strain=normals[id].w;return o;
 }
 @fragment fn fragment(o:Out,@builtin(front_facing) front:bool)->@location(0) vec4<f32>{
  let n=normalize(o.normal)*select(-1.0,1.0,front);let l=normalize(vec3<f32>(-0.4,1,0.8));
  let fill=max(dot(n,normalize(vec3<f32>(0.8,0.5,-1))),0.0);
  let light=0.32+0.63*max(dot(n,l),0.0)+0.18*fill;
  let v=normalize(view.eye.xyz-o.world);let rim=pow(1.0-max(dot(n,v),0.0),3.0)*0.07;
- return vec4<f32>(pow(view.color.rgb*light+rim,vec3<f32>(1.0/2.2)),1);
+ let t=clamp((o.strain-1.0)/.2,0.0,1.0);
+ let heat=select(mix(vec3<f32>(.03,.2,.5),vec3<f32>(.8,.38,.015),t*2.0),mix(vec3<f32>(.8,.38,.015),vec3<f32>(.65,.02,.015),(t-.5)*2.0),t>.5);
+ let color=select(view.color.rgb,heat,view.color.a>.5);
+ return vec4<f32>(pow(color*light+rim,vec3<f32>(1.0/2.2)),1);
 }`;
 const groundShader=`
 struct View { mvp: mat4x4<f32>, eye: vec4<f32>, color: vec4<f32> }
@@ -47,9 +50,9 @@ export class Renderer {
   this.device=device;this.canvas=canvas;this.cloth=cloth;this.format=format;this.dirty=true;
   this.resizeObserver=new ResizeObserver(()=>this.dirty=true);this.resizeObserver.observe(canvas);
   this.context=canvas.getContext('webgpu');this.context.configure({device,format,alphaMode:'opaque'});
-  this.camera={yaw:0,pitch:0,distance:3.6,target:[0,0.95,0]};this.buffers=[];
+  this.camera={yaw:0,pitch:0,distance:2.3,target:[0,1.2,0]};this.buffers=[];
   const makeUniform=color=>{const b=buffer(device,new Float32Array(24),GPUBufferUsage.UNIFORM);this.buffers.push(b);return {buffer:b,color};};
-  this.clothView=makeUniform([0.18,0.40,0.59,1]);this.bodyView=makeUniform([0.72,0.64,0.57,1]);
+  this.clothView=makeUniform([0.18,0.40,0.59,0]);this.bodyView=makeUniform([0.72,0.64,0.57,0]);
   const module=device.createShaderModule({code:shader});
   this.pipeline=device.createRenderPipeline({layout:'auto',vertex:{module,entryPoint:'vertex'},fragment:{module,entryPoint:'fragment',targets:[{format}]},primitive:{topology:'triangle-list',cullMode:'none'},depthStencil:{format:'depth24plus',depthWriteEnabled:true,depthCompare:'less'}});
   const bind=(uniform,q,n)=>device.createBindGroup({layout:this.pipeline.getBindGroupLayout(0),entries:[{binding:0,resource:{buffer:uniform}},{binding:1,resource:{buffer:q}},{binding:2,resource:{buffer:n}}]});

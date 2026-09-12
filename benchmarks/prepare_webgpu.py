@@ -65,6 +65,11 @@ def package(mesh, destination):
             neighbors[v].add(int(u))
         for u in (a, b, c):
             incident[u].append(fi)
+    vertex_panels = [''] * n
+    for f, panel in zip(faces, data['face_panels']):
+        for i in f:
+            assert vertex_panels[i] in ('', str(panel))
+            vertex_panels[i] = str(panel)
     constraints = []
     for (a, b), sides in edges.items():
         delta = uv[a] - uv[b]
@@ -75,6 +80,40 @@ def package(mesh, destination):
             panel = str(data['face_panels'][sides[0][1]])
             stiff = float(meta['panel_stiffness'].get(panel, 1))
             constraints.append([a, b, 1, float(delta[0]), float(delta[1]), 1/stiff, 0.0])
+    # Preserve the authored fold where the tube-top cuff joins its bodice.
+    # Stitches alone join points but provide no hinge resistance, allowing the
+    # cuff to flip above the neckline. Rest distances use the local seam frame
+    # and original panel-normal angle, independent of their unsewn separation.
+    sewn_edges = {}
+    for (a, b), sides in edges.items():
+        if len(sides) == 1:
+            if world_ids[a] > world_ids[b]:
+                a, b = b, a
+            sewn_edges.setdefault((world_ids[a], world_ids[b]), []).append((a, b, *sides[0]))
+    creases = 0
+    for sides in sewn_edges.values():
+        if len(sides) != 2:
+            continue
+        names = {str(data['face_panels'][side[3]]) for side in sides}
+        if names not in ({'front', 'fcuff'}, {'back', 'bcuff'}):
+            continue
+        along, heights, normals = [], [], []
+        for a, b, opposite, fi in sides:
+            axis = uv[b]-uv[a]
+            axis /= np.linalg.norm(axis)
+            offset = uv[opposite]-uv[a]
+            along.append(np.dot(offset, axis))
+            heights.append(abs(np.cross(axis, offset)))
+            tri = positions[faces[fi]]
+            normal = np.cross(tri[1]-tri[0], tri[2]-tri[0])
+            normals.append(normal/np.linalg.norm(normal))
+        across = np.sqrt(max(0, heights[0]**2+heights[1]**2+2*heights[0]*heights[1]*np.dot(*normals)))
+        a, b = sides[0][2], sides[1][2]
+        stiffness = max(float(meta['panel_stiffness'].get(name, 1)) for name in names)
+        constraints.append([a, b, 1, float(along[0]-along[1]), float(across), 1/stiffness, 0.])
+        neighbors[a].add(b)
+        neighbors[b].add(a)
+        creases += 1
     seam_count = 0
     for sewn in np.unique(world_ids):
         ids = np.flatnonzero(world_ids == sewn)
@@ -106,11 +145,11 @@ def package(mesh, destination):
     nodes, body_faces = bvh(body.vertices, body.faces)
     scene = dict(name=mesh.parent.name, garment=meta['garment'], resolution_cm=meta['resolution_cm'],
                  vertices=positions.tolist(), inverse_mass=(1 / mass).tolist(), uv=uv.tolist(),
-                 faces=faces.tolist(), sewn_ids=world_ids.tolist(), constraints=ordered, batches=batches,
+                 faces=faces.tolist(), vertex_panels=vertex_panels, sewn_ids=world_ids.tolist(), constraints=ordered, batches=batches,
                  incident_faces=incident, neighbors=[sorted(x) for x in neighbors],
                  body_vertices=body.vertices.tolist(), body_normals=body.vertex_normals.tolist(),
                  body_faces=body_faces.tolist(), body_bvh=nodes,
-                 seams=seam_count, panels=meta['panels'],
+                 seams=seam_count, crease_constraints=creases, panels=meta['panels'],
                  initialization='Unsewn original panel transforms; no precomputed drape',
                  preparation_seconds=time.perf_counter()-started)
     target = destination / f'{mesh.parent.name}.json'
