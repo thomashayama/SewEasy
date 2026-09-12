@@ -1,5 +1,9 @@
 # Simulator evaluation — September 11, 2026
 
+Subsequent work tested a [browser-only WebGPU implementation](WebGPU_simulator_2026-09-11.md)
+to meet the requirement of having no GPU backend. The measurements below describe
+the earlier CUDA experiments.
+
 **Newton's Style3D solver is the strongest candidate tested for SewEasy's live
 preview.** A working local browser prototype delivered 55.5 simulation updates
 per second for the T-shirt and 29.8 for the finer dress shirt. Physics ran on the

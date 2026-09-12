@@ -1,0 +1,15 @@
+# CPU-only drafting, mesh export and offline quality analysis. Python 3.11.
+# The browser viewer and static server need none of these packages at runtime.
+numpy==1.26.4
+trimesh==5.1.0
+scipy==1.17.1
+rtree==1.4.1
+matplotlib==3.11.1
+pyyaml==6.0.3
+svgwrite==1.4.3
+svgpathtools==1.8.0
+CairoSVG==2.9.1
+pypdf==6.18.0
+cgal==6.0.1.post202410241521
+libigl==2.6.3
+psutil==7.2.2
