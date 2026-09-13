@@ -65,5 +65,6 @@ def prepare_scene(pattern_state, target, resolution=1.5):
         if pattern.pattern.get('fabric'):
             scene['panel_fabrics'].update({p: pattern.pattern['fabric'] for p in box.panelNames
                                           if p not in pattern_state.panel_colors})
+        scene['panel_fabrics'].update(pattern_state.display_panel_fabrics())
         target.write_text(json.dumps(scene, separators=(',', ':'), allow_nan=False), encoding='utf-8')
     return target

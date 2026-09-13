@@ -40,6 +40,8 @@ class OutfitProgram:
             if raw.get('fabric'):
                 overrides = item.get('appearance', {}).get('panel_colors', {})
                 result.pattern['panel_fabrics'].update({names[name]: raw['fabric'] for name in names if name not in overrides})
+            result.pattern['panel_fabrics'].update({names[name]: deepcopy(spec) for name, spec in
+                item.get('appearance', {}).get('panel_fabrics', {}).items() if name in names})
             if raw.get('buttons'):
                 result.pattern['button_groups'].append({**raw['buttons'], 'panels': list(names.values())})
         return result

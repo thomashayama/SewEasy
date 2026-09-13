@@ -22,6 +22,7 @@ import seweasy as pyg
 from .gui_pattern import GUIPattern
 from . import theme
 from .browser_drape import BrowserDrape, prepare_scene
+from .pattern_canvas import PatternCanvas, FabricPanel
 from webapp import gui_widgets as account_widgets
 
 # Optional AI photo-to-design service (see chatgarment_modal.py); the GUI
@@ -114,6 +115,7 @@ class GUIState:
         self.ui_design_subtabs = {}
         self.ui_pattern_display = None
         self._async_executor = ThreadPoolExecutor(1)
+        self._fabric_edit_lock = asyncio.Lock()
 
         self.stylings()
         self.layout()
@@ -189,6 +191,7 @@ class GUIState:
                 self.pattern_state.fabric_color = snapshot['fabric']
             if snapshot.get('appearance'):
                 self.pattern_state.panel_colors = snapshot['appearance'].get('panel_colors', {})
+                self.pattern_state.panel_fabrics = snapshot['appearance'].get('panel_fabrics', {})
                 self.pattern_state.panel_stiffness = snapshot['appearance'].get('panel_stiffness', {})
             self._restored_skin = snapshot.get('skin')
         except Exception:
@@ -300,21 +303,18 @@ class GUIState:
                 self.ui_browser_drape.configure(active=self._view_3d_active)
                 await self.update_3d_scene()
 
-            ui.toggle(['Sewing pattern', '3D view'], value='Sewing pattern',
+            view_toggle = ui.toggle(['Sewing pattern', '3D view'], value='Sewing pattern',
                       on_change=switch_view) \
                 .props('no-caps unelevated rounded toggle-color=primary padding="2px 14px"') \
                 .classes('se-overlay-chip')
 
-            # Fabric color: applies to both the 2D pattern and the 3D drape
-            with ui.button(icon='palette') \
-                    .props('round unelevated size=sm aria-label="Fabric color"') \
-                    .classes('shadow-lg') \
-                    .tooltip('Fabric color') as self.ui_fabric_color_btn:
-                self.ui_fabric_color_picker = ui.color_picker(
-                    on_pick=lambda e: self.update_fabric_color(e.color))
-            self.ui_fabric_color_picker.set_color(self.pattern_state.fabric_color)
-            self.ui_fabric_color_btn.style(
-                f'background-color: {self.pattern_state.fabric_color} !important')
+            def show_fabric_panel():
+                tabs.set_value(self.ui_2d_tab)
+                view_toggle.set_value('Sewing pattern')
+                self.ui_fabric_panel.configure(open=True)
+            ui.button('Fabric', icon='palette', on_click=show_fabric_panel) \
+                .props('unelevated no-caps dense aria-label="Open fabric settings"') \
+                .classes('se-overlay-chip px-2')
 
         # Floating attribution
         with ui.row(wrap=False).classes(
@@ -486,7 +486,7 @@ class GUIState:
         # are visible (see _refresh_section_relevance)
         with ui.column().classes('w-full gap-2 mt-3'):
             for section in design_params:
-                if section == 'meta':
+                if section in ('meta', 'fabric'):
                     continue
                 expansion = ui.expansion(
                     self.SECTION_LABELS.get(section, section)
@@ -508,7 +508,7 @@ class GUIState:
         wb = design['meta']['wb']['v']
         bottom = design['meta']['bottom']['v']
 
-        relevant = {'fabric'}  # garment-wide fabric print always applies
+        relevant = set()  # Fabric editing lives beside the pattern canvas.
         if upper == 'DressShirt':
             # Self-contained: own section + sleeves + buttons (no generic
             # collar/asym)
@@ -543,63 +543,45 @@ class GUIState:
     def def_pattern_display(self):
         """Prepare pattern display area: a pannable drafting workspace
         with floating controls"""
-        with ui.column().classes('w-full h-full p-0 m-0 gap-0'):
-            with ui.element('div').classes('se-workspace w-full h-full'), ui.image(
-                    f'{self.path_static_img}/millimiter_paper_1500_900.png'
-                ).classes('w-[1400px] min-w-[1400px] h-[840px] min-h-[840px] m-auto p-0')  as self.ui_pattern_bg:
-                # NOTE: Positioning: https://github.com/zauberzeug/nicegui/discussions/957 
-                with ui.row().classes('w-full h-full p-0 m-0 bg-transparent relative top-[0%] left-[0%]'):
-                    self.body_outline_classes = 'bg-transparent h-full absolute top-[0%] left-[0%] p-0 m-0'
-                    self.ui_body_outline = ui.image(f'{self.path_static_img}/ggg_outline_mean_all.svg') \
-                        .props('alt="Body silhouette behind the pattern"') \
-                        .classes(self.body_outline_classes)
-                
-                # NOTE: ui.row allows for correct classes application (e.g. no padding on svg pattern)
-                with ui.row().classes('w-full h-full p-0 m-0 bg-transparent relative'):
-                    # Automatically updates from source; clicks select a panel
-                    # to recolor (see on_pattern_click)
-                    self.ui_pattern_display = ui.interactive_image(
-                        '', on_mouse=self.on_pattern_click, events=['click']
-                    ).classes('bg-transparent p-0 m-0 cursor-pointer')
+        self.selected_panels = []
+        with ui.element('div').classes('se-pattern-layout'):
+            with ui.element('div').classes('se-pattern-sheet'):
+                with ui.element('div').classes('se-workspace w-full h-full'), ui.image(
+                        f'{self.path_static_img}/millimiter_paper_1500_900.png'
+                    ).props('role=presentation').classes('w-[1400px] min-w-[1400px] h-[840px] min-h-[840px] m-auto p-0') as self.ui_pattern_bg:
+                    # NOTE: Positioning: https://github.com/zauberzeug/nicegui/discussions/957
+                    with ui.row().classes('w-full h-full p-0 m-0 bg-transparent relative top-[0%] left-[0%]'):
+                        self.body_outline_classes = 'bg-transparent h-full absolute top-[0%] left-[0%] p-0 m-0'
+                        self.ui_body_outline = ui.image(f'{self.path_static_img}/ggg_outline_mean_all.svg') \
+                            .props('alt="Body silhouette behind the pattern"') \
+                            .classes(self.body_outline_classes)
 
-            # Floating controls over the workspace
-            # NOTE: stacked vertically so they never collide with the
-            # centered view switcher on narrow windows
-            with ui.column().classes('absolute top-3 left-4 z-40 items-start gap-2'):
-                ui.switch(
-                    'Body Silhouette', value=True,
-                ).props('dense left-label').classes('se-overlay-chip text-stone-800 pl-2.5 pr-1.5 py-0.5') \
-                    .bind_value(self.ui_body_outline, 'visible')
-                self.ui_self_intersect = ui.label(
-                    'Garment panels are self-intersecting'
-                ).classes('se-warning-chip') \
-                    .bind_visibility(self.pattern_state, 'is_self_intersecting')
+                    # NOTE: ui.row allows for correct classes application (e.g. no padding on svg pattern)
+                    with ui.row().classes('w-full h-full p-0 m-0 bg-transparent relative'):
+                        self.ui_pattern_display = PatternCanvas().classes('bg-transparent p-0 m-0')
+                        self.ui_pattern_display.on('selection', self.on_pattern_selection)
 
-            # Per-panel color control (top-right of the 2D workspace)
-            self.selected_panel = None
-            self._suppress_color_change = False
-            with ui.column().classes('absolute top-3 right-4 z-40 items-end gap-2'):
-                with ui.row().classes('se-overlay-chip items-center gap-2 px-2 py-1'):
-                    self.ui_panel_color_label = ui.label('Click a panel to edit it') \
-                        .classes('text-stone-800 text-sm')
-                    self.ui_panel_color = ui.color_input(
-                        value=self.pattern_state.fabric_color,
-                        on_change=self.apply_panel_color) \
-                        .props('dense').classes('w-28')
-                    self.ui_panel_stiffness = ui.number(
-                        label='Stiffness', value=1.0, min=0.5, max=30, step=0.5,
-                        on_change=self.apply_panel_stiffness) \
-                        .props('dense').classes('w-24') \
-                        .tooltip('Bending stiffness of the selected panel '
-                                 '(applied on the next 3D drape)')
-                ui.button('Reset colors', on_click=self.reset_panel_colors) \
-                    .props('flat dense size=sm icon=format_color_reset') \
-                    .classes('se-overlay-chip text-stone-800')
+                # Floating controls over the workspace
+                # NOTE: stacked vertically so they never collide with the
+                # centered view switcher on narrow windows
+                with ui.column().classes('absolute top-3 left-4 z-40 items-start gap-2'):
+                    ui.switch(
+                        'Body Silhouette', value=True,
+                    ).props('dense left-label').classes('se-overlay-chip text-stone-800 pl-2.5 pr-1.5 py-0.5') \
+                        .bind_value(self.ui_body_outline, 'visible')
+                    self.ui_self_intersect = ui.label(
+                        'Garment panels are self-intersecting'
+                    ).classes('se-warning-chip') \
+                        .bind_visibility(self.pattern_state, 'is_self_intersecting')
 
-            # Floating primary action
-            ui.button('Download pattern', on_click=lambda: self.state_download()) \
-                .props('unelevated icon=download') \
-                .classes('absolute bottom-5 right-6 z-50 shadow-lg')
+                ui.button('Download pattern', on_click=lambda: self.state_download()) \
+                    .props('unelevated icon=download') \
+                    .classes('absolute bottom-10 right-5 z-40 shadow-lg')
+            self.ui_fabric_panel = FabricPanel()
+            self.ui_fabric_panel.on('close', lambda: self.ui_fabric_panel.configure(open=False))
+            self.ui_fabric_panel.on('clear', lambda: self.set_pattern_selection([]))
+            self.ui_fabric_panel.on('select-all', lambda: self.set_pattern_selection(list(self.pattern_state.panel_svg_paths)))
+            self.ui_fabric_panel.on('edit', self.edit_selected_fabric)
 
     # !SECTION
     # SECTION 3D view
@@ -938,6 +920,11 @@ class GUIState:
                 # New pattern image
                 self.ui_pattern_display.set_source(
                     str(self.pattern_state.svg_path()) if self.pattern_state.svg_filename else '')
+                self.ui_pattern_display.configure(
+                    viewbox=f'{p_bbox[0]} {p_bbox[2]} {p_bbox_size[0]} {p_bbox_size[1]}',
+                    pieces=[{'id':name, 'label':self.panel_label(name), 'path':path.d()+' Z'}
+                            for name,path in self.pattern_state.panel_svg_paths.items()])
+                self.set_pattern_selection(self.selected_panels, open_panel=False)
                 self.ui_pattern_display.classes(
                         replace=f"""bg-transparent p-0 m-0
                                 absolute 
@@ -950,64 +937,63 @@ class GUIState:
             else:
                 # Restore default state
                 self.ui_pattern_display.set_source('')
+                self.ui_pattern_display.configure(pieces=[], selected=[])
+                self.selected_panels = []
+                self.ui_fabric_panel.configure(selection=[], available=0)
                 self.ui_body_outline.classes(replace=self.body_outline_classes)
 
-    # --- Per-panel coloring (2D view) ---
-    # SVG units are cm; the <img> natural size renders 1cm as 96/2.54 px
-    _PX_PER_CM = 96 / 2.54
+    def panel_label(self, name):
+        prefix = ''
+        if self.pattern_state.outfit_items and '__' in name:
+            group, name = name.split('__', 1)
+            item = self.pattern_state.outfit_items[int(group[1:])]
+            prefix = item.get('name', 'Garment') + ' · '
+        name = name.removeprefix('sl_')
+        if name.endswith(('_f', '_b')):
+            name = name[:-2] + ('_front' if name.endswith('_f') else '_back')
+        words = name.replace('ftorso', 'front bodice').replace('btorso', 'back bodice').replace('_', ' ')
+        return prefix + words[:1].upper() + words[1:]
 
-    def on_pattern_click(self, e):
-        """Select the panel under the click for recoloring"""
-        if not self.pattern_state.svg_filename \
-                or e.image_x is None or e.image_y is None:
-            return
-        bbox = self.pattern_state.svg_bbox  # [minx, maxx, miny, maxy]
-        if not bbox:
-            return
-        sx = bbox[0] + e.image_x / self._PX_PER_CM
-        sy = bbox[2] + e.image_y / self._PX_PER_CM
-        panel = self.pattern_state.panel_at_svg_point(sx, sy)
-        if not panel:
-            return
-        self.selected_panel = panel
-        self.ui_panel_color_label.set_text(panel.replace('_', ' '))
-        # Reflect the panel's current color/stiffness without re-triggering apply
-        self._suppress_color_change = True
-        self.ui_panel_color.value = self.pattern_state.panel_color(panel)
-        self.ui_panel_stiffness.value = self.pattern_state.panel_stiffness_of(panel)
-        self._suppress_color_change = False
+    def on_pattern_selection(self, e):
+        self.set_pattern_selection(e.args.get('panels', []))
 
-    def apply_panel_color(self, e):
-        """Recolor the selected panel"""
-        if self._suppress_color_change or not self.selected_panel or not e.value:
-            return
-        self.pattern_state.set_panel_color(self.selected_panel, e.value)
-        self.ui_browser_drape.configure(panel_colors=self.pattern_state.display_panel_colors(),
-                                        panel_fabrics=self.pattern_state.display_panel_fabrics())
-        self.update_pattern_display()
+    def set_pattern_selection(self, panels, open_panel=True):
+        self.selected_panels = list(dict.fromkeys(p for p in panels if p in self.pattern_state.panel_svg_paths))
+        self.ui_pattern_display.configure(selected=self.selected_panels)
+        settings = self.pattern_state.panel_fabric_settings(self.selected_panels)
+        self.ui_fabric_panel.configure(
+            selection=[dict(id=p, label=self.panel_label(p), **settings[p]) for p in self.selected_panels],
+            available=len(self.pattern_state.panel_svg_paths),
+            **({'open': True} if open_panel and self.selected_panels else {}))
 
-    async def apply_panel_stiffness(self, e):
-        """Set the selected panel's bending stiffness (used on next drape)"""
-        if self._suppress_color_change or not self.selected_panel \
-                or e.value is None:
+    async def edit_selected_fabric(self, e):
+        data = e.args
+        panels = [p for p in data.get('panels', []) if p in self.pattern_state.panel_svg_paths]
+        if not panels:
             return
-        self.pattern_state.set_panel_stiffness(self.selected_panel, e.value)
-        self._preview_revision += 1
-        self.ui_browser_drape.configure(scene_url='', preparing=True)
-        await self.update_3d_scene()
-
-    def reset_panel_colors(self):
-        """Clear all per-panel color overrides"""
-        self.selected_panel = None
-        self.pattern_state.reset_panel_colors()
-        self.ui_browser_drape.configure(panel_colors=self.pattern_state.display_panel_colors(),
-                                        panel_fabrics=self.pattern_state.display_panel_fabrics())
-        self.ui_panel_color_label.set_text('Click a panel to edit it')
-        self.update_pattern_display()
+        async with self._fabric_edit_lock:
+            self.ui_fabric_panel.configure(busy=True)
+            try:
+                await asyncio.get_running_loop().run_in_executor(
+                    self._async_executor, self.pattern_state.edit_panel_fabrics,
+                    panels, data.get('field'), data.get('value'))
+                self.update_pattern_display()
+                self.ui_browser_drape.configure(panel_colors=self.pattern_state.display_panel_colors(),
+                                                panel_fabrics=self.pattern_state.display_panel_fabrics())
+                if data.get('field') in ('stiffness', 'reset'):
+                    self._preview_revision += 1
+                    self.ui_browser_drape.configure(scene_url='')
+                    await self.update_3d_scene()
+            except ValueError as error:
+                ui.notify(str(error), type='warning')
+            finally:
+                self.ui_fabric_panel.configure(busy=False)
 
     def update_design_params_ui_state(self, ui_elems, design_params):
         """Sync ui params with the current state of the design params"""
         for param in design_params: 
+            if param not in ui_elems:
+                continue
             if 'v' not in design_params[param]:
                 self.update_design_params_ui_state(ui_elems[param], design_params[param])
             else:
@@ -1088,7 +1074,6 @@ class GUIState:
             return
 
         print('INFO::Updating fabric color...')
-        self.ui_fabric_color_btn.style(f'background-color: {color} !important')
 
         self.loop = asyncio.get_event_loop()
 
@@ -1124,8 +1109,6 @@ class GUIState:
         if not color or color == self.pattern_state.fabric_color:
             return
         self.pattern_state.fabric_color = color
-        self.ui_fabric_color_btn.style(f'background-color: {color} !important')
-        self.ui_fabric_color_picker.set_color(color)
         self.ui_browser_drape.configure(fabric_color=color)
 
     def adopt_drape(self, glb_bytes):

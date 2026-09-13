@@ -25,8 +25,7 @@ def wardrobe_ui(state):
             if solo:
                 pattern.outfit_items = []
             state.update_design_params_ui_state(state.ui_design_refs, pattern.design_params)
-            state.ui_fabric_color_btn.style(f'background-color: {pattern.fabric_color} !important')
-            state.ui_fabric_color_picker.set_color(pattern.fabric_color)
+            state.set_pattern_selection([], open_panel=False)
             await state.update_pattern_ui_state()
             switching = True
             editing.set_options({i: label(g) for i, g in enumerate(items)}, value=active)

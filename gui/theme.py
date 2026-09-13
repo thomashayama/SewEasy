@@ -214,12 +214,13 @@ body {
 <script>
 document.addEventListener('pointerdown', (e) => {
     const ws = e.target.closest('.se-workspace');
-    if (!ws || e.button !== 0) return;
-    e.preventDefault();
-    ws.classList.add('se-dragging');
+    if (!ws || e.button !== 0 || e.pointerType === 'touch' || e.shiftKey || e.ctrlKey || e.metaKey) return;
     const sx = e.clientX, sy = e.clientY;
     const sl = ws.scrollLeft, st = ws.scrollTop;
     const move = (ev) => {
+        if (Math.hypot(ev.clientX - sx, ev.clientY - sy) < 5) return;
+        ev.preventDefault();
+        ws.classList.add('se-dragging');
         ws.scrollLeft = sl - (ev.clientX - sx);
         ws.scrollTop = st - (ev.clientY - sy);
     };
@@ -227,9 +228,11 @@ document.addEventListener('pointerdown', (e) => {
         ws.classList.remove('se-dragging');
         document.removeEventListener('pointermove', move);
         document.removeEventListener('pointerup', up);
+        document.removeEventListener('pointercancel', up);
     };
     document.addEventListener('pointermove', move);
     document.addEventListener('pointerup', up);
+    document.addEventListener('pointercancel', up);
 });
 </script>
 <style>
