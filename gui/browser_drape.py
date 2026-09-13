@@ -16,6 +16,7 @@ class BrowserDrape(Element, component='browser_drape.js'):
         ui.add_css((Path(__file__).with_suffix('.css')).read_text())
         self._props.update(scene_url='', active=False, preparing=True, error='',
                            fabric_color=fabric_color, panel_colors={},
+                           panel_fabrics=None,
                            body_color=body_color, show_body=True)
 
     def configure(self, **props):
@@ -35,7 +36,8 @@ def prepare_scene(pattern_state, target, resolution=1.5):
     from seweasy.pattern.core import BasicPattern
 
     pattern = pattern_state.sew_pattern.assembly()
-    pattern.pattern.setdefault('panel_stiffness', {}).update(pattern_state.panel_stiffness)
+    if not getattr(pattern_state, 'outfit_items', []):
+        pattern.pattern.setdefault('panel_stiffness', {}).update(pattern_state.panel_stiffness)
     target = Path(target)
     target.parent.mkdir(parents=True, exist_ok=True)
     with TemporaryDirectory(prefix='mesh-', dir=target.parent) as work:
@@ -44,12 +46,24 @@ def prepare_scene(pattern_state, target, resolution=1.5):
         box.load()
         body, fit = fit_body(pattern_state.body_params.params)
         data = panel_mesh_data(box, body)
+        from seweasy.meshgen.browser_hardware import button_attachments
+        buttons = button_attachments(box, pattern.pattern, data)
         upper = pattern_state.design_params['meta']['upper']['v']
-        meta = dict(garment='element-top' if upper == 'ElementTubeTop' else 'current-design',
+        garment_type = ('outfit' if getattr(pattern_state, 'outfit_items', []) else
+                        'element-top' if upper == 'ElementTubeTop' else 'current-design')
+        meta = dict(garment=garment_type,
                     resolution_cm=resolution, panels=len(box.panelNames),
                     panel_stiffness=pattern.pattern.get('panel_stiffness', {}))
         scene = build_scene(data, meta, target.stem)
+        scene['buttons'] = buttons
         scene['body_fit'] = fit
         scene['body_note'] = fit['note']
+        scene['panel_colors'] = pattern_state.display_panel_colors()
+        scene['garment_types'] = {f'g{i}__': item['params']['meta']['upper']['v']
+                                  for i, item in enumerate(getattr(pattern_state, 'outfit_items', []))}
+        scene['panel_fabrics'] = pattern.pattern.get('panel_fabrics', {})
+        if pattern.pattern.get('fabric'):
+            scene['panel_fabrics'].update({p: pattern.pattern['fabric'] for p in box.panelNames
+                                          if p not in pattern_state.panel_colors})
         target.write_text(json.dumps(scene, separators=(',', ':'), allow_nan=False), encoding='utf-8')
     return target

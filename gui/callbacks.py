@@ -156,10 +156,14 @@ class GUIState:
         try:
             from webapp.designs import snapshot_design_params
             from webapp.profiles import measurements_from_body
+            self.pattern_state.sync_outfit_garment()
             app.storage.user['pending_design'] = {
                 'design': snapshot_design_params(self.pattern_state.design_params),
                 'body': measurements_from_body(self.pattern_state.body_params),
                 'fabric': self.pattern_state.fabric_color,
+                'outfit': snapshot_design_params(self.pattern_state.outfit_items),
+                'active_garment': self.pattern_state.active_garment,
+                'appearance': self.pattern_state.garment_appearance(),
                 'skin': self.body_color
                         if self.body_color != DEFAULT_BODY_COLOR else None,
             }
@@ -175,12 +179,17 @@ class GUIState:
         if not snapshot:
             return
         try:
+            if snapshot.get('outfit'):
+                self.pattern_state.load_outfit(snapshot['outfit'], snapshot.get('active_garment', 0))
             if snapshot.get('design'):
                 self.pattern_state.set_new_design(snapshot['design'])
             if snapshot.get('body'):
                 self.pattern_state.set_new_body_params(snapshot['body'])
             if snapshot.get('fabric'):
                 self.pattern_state.fabric_color = snapshot['fabric']
+            if snapshot.get('appearance'):
+                self.pattern_state.panel_colors = snapshot['appearance'].get('panel_colors', {})
+                self.pattern_state.panel_stiffness = snapshot['appearance'].get('panel_stiffness', {})
             self._restored_skin = snapshot.get('skin')
         except Exception:
             traceback.print_exc()   # a broken snapshot falls back to defaults
@@ -470,8 +479,8 @@ class GUIState:
                 .props('outline size=sm icon=undo') \
                 .tooltip('Restore the design that was just replaced')
             self.ui_undo_design_btn.set_visibility(False)
-            if self.user:
-                account_widgets.designs_ui(self)
+            from webapp.wardrobe_ui import wardrobe_ui
+            wardrobe_ui(self)
 
         # Parameter sections -- only those the current composition reads
         # are visible (see _refresh_section_relevance)
@@ -973,7 +982,8 @@ class GUIState:
         if self._suppress_color_change or not self.selected_panel or not e.value:
             return
         self.pattern_state.set_panel_color(self.selected_panel, e.value)
-        self.ui_browser_drape.configure(panel_colors=dict(self.pattern_state.panel_colors))
+        self.ui_browser_drape.configure(panel_colors=self.pattern_state.display_panel_colors(),
+                                        panel_fabrics=self.pattern_state.display_panel_fabrics())
         self.update_pattern_display()
 
     async def apply_panel_stiffness(self, e):
@@ -990,7 +1000,8 @@ class GUIState:
         """Clear all per-panel color overrides"""
         self.selected_panel = None
         self.pattern_state.reset_panel_colors()
-        self.ui_browser_drape.configure(panel_colors={})
+        self.ui_browser_drape.configure(panel_colors=self.pattern_state.display_panel_colors(),
+                                        panel_fabrics=self.pattern_state.display_panel_fabrics())
         self.ui_panel_color_label.set_text('Click a panel to edit it')
         self.update_pattern_display()
 
@@ -1061,7 +1072,8 @@ class GUIState:
                 self.ui_browser_drape.configure(
                     scene_url=f'/geo/{self.pattern_state.id}/{target.name}',
                     preparing=False, error='', fabric_color=self.pattern_state.fabric_color,
-                    panel_colors=dict(self.pattern_state.panel_colors))
+                    panel_colors=self.pattern_state.display_panel_colors(),
+                    panel_fabrics=self.pattern_state.display_panel_fabrics())
                 # Each revision has an immutable URL; old scenes are no longer used.
                 for old in self.local_path_3d.glob('scene-*.json'):
                     if old != target:
@@ -1087,7 +1099,8 @@ class GUIState:
         self.update_pattern_display()
 
         self.ui_browser_drape.configure(fabric_color=color,
-                                        panel_colors=dict(self.pattern_state.panel_colors))
+                                        panel_colors=self.pattern_state.display_panel_colors(),
+                                        panel_fabrics=self.pattern_state.display_panel_fabrics())
 
     async def update_body_color(self, color):
         """Update the browser material without re-exporting a mannequin."""

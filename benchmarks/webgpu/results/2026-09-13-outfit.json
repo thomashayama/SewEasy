@@ -1,0 +1,198 @@
+{
+  "scene": "outfit-test",
+  "frames": 900,
+  "msPerFrame": 15.457833333313465,
+  "kernelChecks": {
+    "self_contact_separates": true,
+    "adjacent_vertices_excluded": true,
+    "xpbd_distance_matches_equation": true,
+    "collar_hinge_waits_for_seam": true,
+    "collar_hinge_preserves_fold_direction": true,
+    "collar_junction_preserves_center_of_mass": true,
+    "sewn_one_ring_excluded": true,
+    "principal_strain_limited": true,
+    "strain_preserves_center_of_mass": true,
+    "rigid_rotation_unchanged": true,
+    "positional_friction_reduces_slip": true,
+    "moving_body_friction_carries_cloth": true,
+    "rotating_collider_transforms_contact_normal": true,
+    "surface_contact_catches_between_vertices": true
+  },
+  "placement": [
+    {
+      "part": "panels",
+      "translation_m": [
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "prefix": "g0__",
+      "side": "left",
+      "translation_m": [
+        0,
+        -0.03217443838202649,
+        0.031748545435714315
+      ]
+    },
+    {
+      "prefix": "g0__",
+      "side": "right",
+      "translation_m": [
+        0,
+        -0.03863991958333246,
+        0.036082890885714314
+      ]
+    }
+  ],
+  "bodyYaw": 0,
+  "motionReport": {
+    "samples": [
+      {
+        "frame": 0,
+        "yaw": 0.0013541666666666667,
+        "nonRigidRms": 0.00020002294818640562,
+        "velocity": 0.02148643568457152
+      },
+      {
+        "frame": 30,
+        "yaw": 0.8954511743606897,
+        "nonRigidRms": 0.006349610710581121,
+        "velocity": 0.42542658439176523
+      },
+      {
+        "frame": 60,
+        "yaw": 1.1902997137771183,
+        "nonRigidRms": 0.004950389369785125,
+        "velocity": 0.030001453728922246
+      },
+      {
+        "frame": 90,
+        "yaw": 1.1997754376556558,
+        "nonRigidRms": 0.002882545110322263,
+        "velocity": 0.010742401358329932
+      },
+      {
+        "frame": 120,
+        "yaw": 1.2,
+        "nonRigidRms": 0.0016173298359566186,
+        "velocity": 0.005861158504197457
+      },
+      {
+        "frame": 150,
+        "yaw": 1.1986458333333334,
+        "nonRigidRms": 0.0014241887007102065,
+        "velocity": 0.021867885938663068
+      },
+      {
+        "frame": 180,
+        "yaw": 0.2783333333333365,
+        "nonRigidRms": 0.00821262299470998,
+        "velocity": 0.5271531320671289
+      },
+      {
+        "frame": 210,
+        "yaw": -0.8954511743606876,
+        "nonRigidRms": 0.005533252551401827,
+        "velocity": 0.41115288841882963
+      },
+      {
+        "frame": 240,
+        "yaw": -1.1902997137771183,
+        "nonRigidRms": 0.0030170460164593658,
+        "velocity": 0.02826936614221473
+      },
+      {
+        "frame": 270,
+        "yaw": -1.1997754376556558,
+        "nonRigidRms": 0.002444235654115917,
+        "velocity": 0.010456656018088747
+      },
+      {
+        "frame": 300,
+        "yaw": -1.1986458333333334,
+        "nonRigidRms": 0.002160734891225552,
+        "velocity": 0.022229999743629297
+      },
+      {
+        "frame": 330,
+        "yaw": -0.30454882563931324,
+        "nonRigidRms": 0.006753684568895624,
+        "velocity": 0.4241662696437633
+      },
+      {
+        "frame": 360,
+        "yaw": -0.009700286222881924,
+        "nonRigidRms": 0.005088664182594099,
+        "velocity": 0.02877291024560013
+      },
+      {
+        "frame": 390,
+        "yaw": -0.00022456234434392762,
+        "nonRigidRms": 0.003276027688421152,
+        "velocity": 0.012847169473775035
+      },
+      {
+        "frame": 420,
+        "yaw": 0,
+        "nonRigidRms": 0.0018037346329537647,
+        "velocity": 0.00600223930327253
+      },
+      {
+        "frame": 450,
+        "yaw": 0,
+        "nonRigidRms": 0.001742712367384794,
+        "velocity": 0.004021227871202342
+      },
+      {
+        "frame": 480,
+        "yaw": 0,
+        "nonRigidRms": 0.0017222377537376558,
+        "velocity": 0.002309158787457649
+      },
+      {
+        "frame": 510,
+        "yaw": 0,
+        "nonRigidRms": 0.0017230773623564553,
+        "velocity": 0.0020352615961158854
+      },
+      {
+        "frame": 540,
+        "yaw": 0,
+        "nonRigidRms": 0.0017106241639755152,
+        "velocity": 0.0019056587016112805
+      },
+      {
+        "frame": 570,
+        "yaw": 0,
+        "nonRigidRms": 0.001704711058333503,
+        "velocity": 0.0018905528828328515
+      }
+    ],
+    "allFinite": true,
+    "maxClothLag": 0.00821262299470998
+  },
+  "collarSeamMaxMm": 0.0,
+  "waistbandBoundsM": [
+    [
+      -0.17238199710845947,
+      0.9705648422241211,
+      -0.11963190883398056
+    ],
+    [
+      0.1724000722169876,
+      1.038705825805664,
+      0.1434503197669983
+    ]
+  ],
+  "buttons": 10,
+  "vertices": 9192,
+  "garments": 2,
+  "buttonRoles": {
+    "placket": 7,
+    "neck": 1,
+    "cuff": 2
+  },
+  "allPositionsFinite": true
+}

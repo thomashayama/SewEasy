@@ -2,6 +2,7 @@
 
 import os
 import secrets
+from pathlib import Path
 
 # --- Database ---
 # Default: local SQLite file for dependency-free development.
@@ -34,10 +35,15 @@ def google_configured() -> bool:
 # --- Session tokens ---
 JWT_SECRET = os.getenv('JWT_SECRET', '')
 if not JWT_SECRET:
-    # Ephemeral fallback keeps development friction-free; all sessions are
-    # invalidated on restart. Set JWT_SECRET in any real deployment.
-    JWT_SECRET = secrets.token_hex(32)
-    print('webapp::WARNING::JWT_SECRET is not set -- using an ephemeral '
-          'secret, sessions will not survive a restart')
+    # Keep guest libraries reachable across local server restarts. Deployments
+    # should still provide JWT_SECRET through their environment.
+    secret_path = Path(__file__).resolve().parents[1] / 'data' / '.session-secret'
+    secret_path.parent.mkdir(exist_ok=True)
+    try:
+        with secret_path.open('x', encoding='utf-8') as secret_file:
+            secret_file.write(secrets.token_hex(32))
+    except FileExistsError:
+        pass
+    JWT_SECRET = secret_path.read_text(encoding='utf-8').strip()
 JWT_ALGORITHM = 'HS256'
 JWT_EXPIRY_HOURS = 24 * 7

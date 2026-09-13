@@ -1,5 +1,5 @@
-import {Cloth} from '/webgpu/physics.js?v=13';
-import {Renderer} from '/webgpu/render.js?v=13';
+import {Cloth} from '/webgpu/physics.js?v=14';
+import {Renderer} from '/webgpu/render.js?v=15';
 
 // GPU objects live outside Vue's reactive graph. Each mounted stage owns one
 // device and one loop; a serialized loader discards obsolete scene requests.
@@ -49,7 +49,7 @@ export default {
     </details>
   </div>`,
   props: {scene_url:String, active:Boolean, preparing:Boolean, error:String,
-    fabric_color:String, panel_colors:Object, body_color:String, show_body:Boolean},
+    fabric_color:String, panel_colors:Object, panel_fabrics:Object, body_color:String, show_body:Boolean},
   data: () => ({ready:false, progress:'Choose a garment to preview.', failure:'', paused:false,
     fps:0, frames:0, loadedScene:'', hasSupport:false, support:false,
     bodyNote:'Default mannequin',fitRows:[]}),
@@ -72,6 +72,7 @@ export default {
     paused() {const e=engines.get(this);if(e?.cloth)this.frames=e.cloth.frame;if(e?.renderer)e.renderer.controls.viewOnly=this.paused;if(e){e.stats=performance.now();e.count=0;}},
     fabric_color() {this.appearance();},
     panel_colors: {deep:true, handler() {this.appearance();}},
+    panel_fabrics: {deep:true, handler() {this.appearance();}},
     body_color() {this.appearance();}, show_body() {this.appearance();},
   },
   methods: {
@@ -147,6 +148,7 @@ export default {
     appearance() {
       const e=engines.get(this);if(!e?.renderer)return;
       e.renderer.setFabricColors(this.fabric_color,this.panel_colors);
+      if(this.panel_fabrics)e.renderer.setFabricPrints(this.panel_fabrics);
       e.renderer.bodyView.color=[...linear(this.body_color),0];
       e.renderer.showBody=this.show_body;e.renderer.dirty=true;
     },

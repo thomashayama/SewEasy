@@ -41,7 +41,7 @@ class BrowserPreviewTest(unittest.IsolatedAsyncioTestCase):
         self.state.local_path_3d = Path(self.directory.name)
         self.state.ui_browser_drape = Preview()
         self.state.pattern_state = SimpleNamespace(svg_filename='pattern.svg',
-            id='TEST', fabric_color='#b7cde5', panel_colors={})
+            id='TEST', fabric_color='#b7cde5', panel_colors={}, display_panel_colors=lambda: {}, display_panel_fabrics=lambda: {})
 
     def tearDown(self):
         self.state._async_executor.shutdown(wait=True)

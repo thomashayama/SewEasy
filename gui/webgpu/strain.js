@@ -59,26 +59,32 @@ export function placePanels(scene) {
  // A collared shirt already has a drafted neck height. Raising it can sew
  // the stand around the jaw on larger profiles and trap the whole shirt.
  const lift=scene.garment==='element-top'||scene.hinges?.length?0:.06;
- const positions=scene.vertices.map(p=>[p[0],p[1]+lift,p[2]]),adjustments=[{part:'panels',translation_m:[0,lift,0]}];
+ const positions=scene.vertices.map((p,i)=>{
+  const name=scene.vertex_panels?.[i]||'',prefix=name.includes('__')?name.split('__')[0]+'__':'';
+  const type=scene.garment_types?.[prefix];
+  const height=Object.hasOwn(scene.garment_types||{},prefix)?(['DressShirt','ElementTubeTop'].includes(type)?0:.06):lift;
+  return [p[0],p[1]+height,p[2]];
+ }),adjustments=[{part:'panels',translation_m:[0,lift,0]}];
  // The upstream flat sleeve placements can close a cuff above the wrist.
  // Align each sleeve/cuff assembly with the mannequin at its cuff X position
  // before sewing. This is a rigid translation, not a pin or a stored drape.
- for(const side of ['left','right']){
-  const names=scene.vertex_panels||[],ids=names.flatMap((name,i)=>name.startsWith(`sl_${side}_cuff_`)?[i]:[]);
+ const names=scene.vertex_panels||[],prefixes=new Set(names.map(name=>name.includes('__')?name.split('__')[0]+'__':''));
+ for(const prefix of prefixes)for(const side of ['left','right']){
+  const ids=names.flatMap((name,i)=>name.startsWith(`${prefix}sl_${side}_cuff_`)?[i]:[]);
   if(!ids.length)continue;
   const center=[0,1,2].map(axis=>ids.reduce((sum,i)=>sum+positions[i][axis],0)/ids.length);
   const body=scene.body_vertices.filter(p=>Math.abs(p[0]-center[0])<.01&&p[1]>.5);
   if(body.length<8)continue;
   const target=[1,2].map(axis=>(Math.min(...body.map(p=>p[axis]))+Math.max(...body.map(p=>p[axis])))*.5);
   const delta=[0,target[0]-center[1],target[1]-center[2]];
-  for(let i=0;i<names.length;i++)if(names[i].startsWith(`${side}_sleeve_`)||names[i].startsWith(`sl_${side}_cuff_`))positions[i]=positions[i].map((v,j)=>v+delta[j]);
-  adjustments.push({side,translation_m:delta});
+  for(let i=0;i<names.length;i++)if(names[i].startsWith(`${prefix}${side}_sleeve_`)||names[i].startsWith(`${prefix}sl_${side}_cuff_`))positions[i]=positions[i].map((v,j)=>v+delta[j]);
+  adjustments.push({prefix,side,translation_m:delta});
  }
  const support=[];
- if(scene.garment==='element-top'&&scene.vertex_panels){
+ for(const prefix of prefixes)if((scene.garment==='element-top'||scene.garment_types?.[prefix]==='ElementTubeTop')&&scene.vertex_panels){
   const ring=new Map();
   for(const name of ['front','back']){
-   const ids=scene.vertex_panels.flatMap((p,i)=>p===name?[i]:[]),top=Math.max(...ids.map(i=>positions[i][1]));
+   const ids=scene.vertex_panels.flatMap((p,i)=>p===prefix+name?[i]:[]),top=Math.max(...ids.map(i=>positions[i][1]));
    for(const i of ids)if(top-positions[i][1]<.001)ring.set(scene.sewn_ids[i],positions[i][1]);
   }
   for(let i=0;i<positions.length;i++)if(ring.has(scene.sewn_ids[i]))support.push([i,ring.get(scene.sewn_ids[i]),0,0]);

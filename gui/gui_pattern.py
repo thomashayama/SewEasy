@@ -113,6 +113,8 @@ class GUIPattern:
         # Per-panel overrides of the fabric color (panel_name -> hex), set by
         # clicking a panel in the 2D view. Panels not listed use fabric_color.
         self.panel_colors = {}
+        self.outfit_items = []
+        self.active_garment = 0
         # Per-panel bending-stiffness multipliers (panel_name -> factor). User
         # overrides on top of any garment default; applied in the 3D drape.
         self.panel_stiffness = {}
@@ -203,10 +205,58 @@ class GUIPattern:
         
             NOTE: loading a pattern might be lagging, execute only when needed!
         """
-        self.sew_pattern = MetaGarment(
-            'Configured_design', self.body_params, self.design_params)
+        if self.outfit_items:
+            from gui.outfit import OutfitProgram
+            self.sync_outfit_garment()
+            self.sew_pattern = OutfitProgram(self.body_params, self.outfit_items)
+        else:
+            self.sew_pattern = MetaGarment(
+                'Configured_design', self.body_params, self.design_params)
         self.is_self_intersecting = self.sew_pattern.is_self_intersecting()
         self._view_serialize()
+
+    def garment_appearance(self):
+        return dict(fabric_color=self.fabric_color, panel_colors=dict(self.panel_colors),
+                    panel_stiffness=dict(self.panel_stiffness))
+
+    def sync_outfit_garment(self):
+        if self.outfit_items:
+            from copy import deepcopy
+            item = self.outfit_items[self.active_garment]
+            item['params'] = deepcopy(self.design_params)
+            item['appearance'] = self.garment_appearance()
+
+    def load_outfit(self, items, active=0):
+        from copy import deepcopy
+        self.outfit_items = deepcopy(items)
+        self.active_garment = active
+        item = self.outfit_items[active]
+        self.set_new_design(item['params'])
+        look = item.get('appearance', {})
+        self.fabric_color = look.get('fabric_color') or self.DEFAULT_FABRIC_COLOR
+        self.panel_colors = deepcopy(look.get('panel_colors', {}))
+        self.panel_stiffness = deepcopy(look.get('panel_stiffness', {}))
+
+    def display_panel_colors(self):
+        if not self.outfit_items:
+            return dict(self.panel_colors)
+        self.sync_outfit_garment()
+        colors = {}
+        for i, (item, garment) in enumerate(zip(self.outfit_items, self.sew_pattern.garments)):
+            look = item.get('appearance', {})
+            for panel in garment.assembly().pattern['panels']:
+                colors[f'g{i}__{panel}'] = look.get('panel_colors', {}).get(panel, look.get('fabric_color', self.DEFAULT_FABRIC_COLOR))
+        return colors
+
+    def display_panel_fabrics(self):
+        if self.sew_pattern is None:
+            return {}
+        if self.outfit_items:
+            self.sync_outfit_garment()
+            return self.sew_pattern.assembly().pattern.get('panel_fabrics', {})
+        spec = self._fabric_spec()
+        return {panel: spec for panel in self.sew_pattern.assembly().pattern['panels']
+                if panel not in self.panel_colors} if spec else {}
 
     @staticmethod
     def _nested_sync(s_from, s_to):
@@ -236,13 +286,21 @@ class GUIPattern:
 
     def set_panel_color(self, panel, color):
         """Override one panel's fabric color and refresh the 2D display"""
-        self.panel_colors[panel] = color
+        if self.outfit_items and '__' in panel:
+            prefix, local = panel.split('__', 1)
+            index = int(prefix[1:])
+            if index == self.active_garment:
+                self.panel_colors[local] = color
+            else:
+                self.outfit_items[index].setdefault('appearance', {}).setdefault('panel_colors', {})[local] = color
+        else:
+            self.panel_colors[panel] = color
         if self.sew_pattern is not None:
             self._view_serialize()
 
     def panel_color(self, panel):
         """Effective color of a panel (its override or the fabric color)"""
-        return self.panel_colors.get(panel, self.fabric_color)
+        return self.display_panel_colors().get(panel, self.fabric_color)
 
     def reset_panel_colors(self):
         """Clear all per-panel overrides (back to a single fabric color)"""
@@ -253,10 +311,23 @@ class GUIPattern:
     def set_panel_stiffness(self, panel, factor):
         """Override one panel's bending-stiffness multiplier (applied on the
         next 3D drape; does not change the 2D view)"""
-        self.panel_stiffness[panel] = float(factor)
+        if self.outfit_items and '__' in panel:
+            prefix, local = panel.split('__', 1)
+            index = int(prefix[1:])
+            if index == self.active_garment:
+                self.panel_stiffness[local] = float(factor)
+            else:
+                self.outfit_items[index].setdefault('appearance', {}).setdefault('panel_stiffness', {})[local] = float(factor)
+            self.sync_outfit_garment()
+        else:
+            self.panel_stiffness[panel] = float(factor)
 
     def panel_stiffness_of(self, panel):
         """The user's stiffness override for a panel (1.0 if unset)"""
+        if self.outfit_items and '__' in panel:
+            self.sync_outfit_garment()
+            prefix, local = panel.split('__', 1)
+            return self.outfit_items[int(prefix[1:])].get('appearance', {}).get('panel_stiffness', {}).get(local, 1.0)
         return self.panel_stiffness.get(panel, 1.0)
 
     def sync_left(self, with_check=False):
@@ -286,8 +357,9 @@ class GUIPattern:
                                   view_ids=False,
                                   flat=False,
                                   panel_fill_color=self.fabric_color,
-                                  panel_colors=self.panel_colors,
-                                  fabric=self._fabric_spec(),
+                                  panel_colors=self.display_panel_colors(),
+                                  fabric=None if self.outfit_items else self._fabric_spec(),
+                                  panel_fabrics=pattern.pattern.get('panel_fabrics'),
                                   margin=0
             )
             dwg.save()

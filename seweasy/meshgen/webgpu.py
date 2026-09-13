@@ -85,7 +85,8 @@ def build_scene(data, meta, name):
             continue
         names = {str(data['face_panels'][side[3]]) for side in sides}
         shirt_roll = any('stand_' in name for name in names) and any('collar_' in name for name in names)
-        if names not in ({'front', 'fcuff'}, {'back', 'bcuff'}) and not shirt_roll:
+        local_names = {name.split('__')[-1] for name in names}
+        if local_names not in ({'front', 'fcuff'}, {'back', 'bcuff'}) and not shirt_roll:
             continue
         if shirt_roll:
             (a0, b0, c, _), (a1, b1, d, _) = sides

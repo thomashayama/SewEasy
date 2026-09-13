@@ -34,6 +34,8 @@ class User(TimestampMixin, Base):
                                  cascade='all,delete')
     designs = relationship('Design', back_populates='owner',
                            cascade='all,delete')
+    wardrobe = relationship('WardrobeLibrary', back_populates='owner',
+                            cascade='all, delete-orphan', uselist=False)
 
 
 class OAuthState(Base):
@@ -111,6 +113,14 @@ class Design(TimestampMixin, Base):
     owner = relationship('User', back_populates='designs')
     shares = relationship('DesignShare', back_populates='design',
                           cascade='all, delete-orphan')
+
+
+class WardrobeLibrary(Base):
+    """Versioned garments and the outfits that reference their snapshots."""
+    __tablename__ = 'wardrobe_libraries'
+    owner_email = Column(String, ForeignKey('users.email', ondelete='CASCADE'), primary_key=True)
+    content = Column(JSON, nullable=False)
+    owner = relationship('User', back_populates='wardrobe')
 
 
 class BodyProfileShare(Base):

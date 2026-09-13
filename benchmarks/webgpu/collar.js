@@ -11,14 +11,14 @@ try {
  const cloth=await Cloth.create(device,scene,s=>{status.textContent=s;});
  const renderer=new Renderer(device,canvas,cloth,navigator.gpu.getPreferredCanvasFormat());
  const height=scene.body_fit?.measurements?.height?.actual_cm/100||1.72;
- Object.assign(renderer.camera,{yaw:0,pitch:.1,distance:height*.5,target:[0,height*.83,0]});
+ Object.assign(renderer.camera,Object.keys(scene.garment_types||{}).length>1?{yaw:0,pitch:0,distance:height*2.0,target:[...cloth.motion.center]}:{yaw:0,pitch:.1,distance:height*.5,target:[0,height*.83,0]});
  let positions,ms=0,colors=false,motionReport=null;
  const draw=()=>{const e=device.createCommandEncoder();renderer.render(e);device.queue.submit([e.finish()]);};
  const frame=()=>{if(renderer.dirty)draw();requestAnimationFrame(frame);};frame();
  const inspect=async()=>{
   positions=await cloth.readPositions();
   const panels={};
-  for(const name of new Set(scene.vertex_panels))if(/collar|stand/.test(name)){
+  for(const name of new Set(scene.vertex_panels))if(/collar|stand|wb_/.test(name)){
    const ids=scene.vertex_panels.flatMap((n,i)=>n===name?[i]:[]);
    panels[name]={vertices:ids.length,lo:[0,1,2].map(a=>Math.min(...ids.map(i=>positions[i][a]))),hi:[0,1,2].map(a=>Math.max(...ids.map(i=>positions[i][a])))};
   }

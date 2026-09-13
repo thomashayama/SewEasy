@@ -203,6 +203,7 @@ class VisPattern(core.ParametrizedPattern):
             panel_fill_color=None,
             panel_colors=None,
             fabric=None,
+            panel_fabrics=None,
             margin=2) -> sw.Drawing:
         """Convert pattern to writable svg representation"""
 
@@ -215,7 +216,14 @@ class VisPattern(core.ParametrizedPattern):
             self.pattern.get('fabric') or None)
         fabric_fill = None
         if fabric and fabric.get('kind', 'plain') != 'plain':
-            fabric_fill = f'url(#{_FABRIC_PATTERN_ID})'
+            fabric_fill = (fabric['bg'] if fabric.get('fg') == fabric.get('bg')
+                           else f'url(#{_FABRIC_PATTERN_ID})')
+        panel_fabrics = panel_fabrics or self.pattern.get('panel_fabrics') or {}
+        fabric_ids = {panel: f'{_FABRIC_PATTERN_ID}_{i}' for i, panel in enumerate(panel_fabrics)
+                      if panel_fabrics[panel].get('kind', 'plain') != 'plain'
+                      and panel_fabrics[panel].get('fg') != panel_fabrics[panel].get('bg')}
+        solid_prints = {p: spec['bg'] for p, spec in panel_fabrics.items()
+                        if spec.get('kind', 'plain') != 'plain' and spec.get('fg') == spec.get('bg')}
         
         # Get svg representation per panel
         # Order by depth (=> most front panels render in front)
@@ -236,7 +244,8 @@ class VisPattern(core.ParametrizedPattern):
                     panel,
                     apply_transform=not flat,
                     fill=fill_panels,
-                    fill_color=per_panel or fabric_fill or panel_fill_color
+                    fill_color=(f'url(#{fabric_ids[panel]})' if panel in fabric_ids else
+                                solid_prints.get(panel) or per_panel or fabric_fill or panel_fill_color)
                 )
                 if flat:
                     path = path.translated(list_to_c([
@@ -313,6 +322,14 @@ class VisPattern(core.ParametrizedPattern):
                 dwg.defs.add(pat)
 
         # text annotations
+        if fabric_ids:
+            from seweasy.pattern import fabrics
+            for panel, pattern_id in fabric_ids.items():
+                spec = panel_fabrics[panel]
+                pat, _ = fabrics.fabric_svg_pattern(dwg, spec['kind'], spec['fg'], spec['bg'],
+                    float(spec.get('scale') or fabrics.default_scale(spec['kind'])) * self.px_per_unit, pattern_id)
+                if pat is not None:
+                    dwg.defs.add(pat)
         panel_names = names_f + names_b
         if with_text or view_ids:
             for i, panel in enumerate(panel_names):
@@ -330,14 +347,23 @@ class VisPattern(core.ParametrizedPattern):
     def _add_button_markers(self, dwg, flat):
         """Draw button seats as circles evenly spaced along the panel edge
         tagged as the button placket (see pattern['buttons'])."""
-        buttons = self.pattern.get('buttons') or {}
+        groups = list(self.pattern.get('button_groups', []))
+        if self.pattern.get('buttons'):
+            groups.append(self.pattern['buttons'])
+        for buttons in groups:
+            self._add_button_group(dwg, buttons)
+        return dwg
+
+    def _add_button_group(self, dwg, buttons):
         count = int(buttons.get('count', 0))
-        if count <= 0 or flat:  # markers use the assembled (draped) layout
+        if count <= 0:
             return
         label = buttons.get('placket_label', 'button_placket')
         radius = buttons.get('diameter', 1.3) / 2 * self.px_per_unit
 
         for pname, panel in self.pattern['panels'].items():
+            if buttons.get('panels') and pname not in buttons['panels']:
+                continue
             seg_idx = next((i for i, e in enumerate(panel['edges'])
                             if e.get('label') == label), None)
             if seg_idx is None:

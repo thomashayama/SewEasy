@@ -1,0 +1,17 @@
+# Outfits and live shirt hardware
+
+An outfit is one or more saved garment versions. A version snapshots the full design parameters (including fabric print), base color, per-panel colors, and panel stiffness. Measurements remain separate. Saving the same garment name creates the next version; existing outfits retain their original snapshots. An outfit may contain multiple instances of the same garment. Its garments are drafted independently, with namespaced panels and no stitches between different garments.
+
+Use **Save garment** to create a version. **Outfits** opens the composer: add saved versions, preview the collection, then save it under a name. Reopening an outfit shows **Editing garment** so each piece can be adjusted separately. Saving an edited outfit first creates versions for any changed pieces. **Edit this garment alone** returns to a single-garment design. Earlier account design snapshots remain available in the composer.
+
+Signed-in libraries use the new `wardrobe_libraries` SQL table, scoped to their owner and removed with the account. Guest libraries use existing NiceGUI user storage. A generated local session secret is retained in ignored `data/.session-secret`, allowing the same browser to reopen its library after a server restart. Production can continue to provide `JWT_SECRET` through the environment.
+
+Each garment keeps its own solid colors and procedural fabric prints in both 2D and WebGPU. Prints use material coordinates so they deform with the cloth. Supported motifs are pinstripe, stripe, polka dot, gingham and windowpane. Per-panel solid color overrides replace that panel's print.
+
+The dress shirt now exports material-triangle anchors for its configured placket buttons, one smaller neck-band button and two cuff buttons. WebGPU draws beveled four-hole button caps directly from live cloth positions. No readback or backend rendering is required. Setting the button count to zero removes the hardware. The closed placket is still simulated as a continuous seam; individual button opening, buttonhole cutting and button mass/contact are not simulated.
+
+Validation: 21 Python and 9 Node tests passed, including snapshot immutability, one/multiple-garment rules, owner isolation, duplicate panel names, button count/diameter/attachment, and per-garment placement. Browser save/load of an Oxford-shirt outfit was verified across a server restart. A striped shirt plus a plain lower garment (9,192 cloth vertices, 10 buttons) passed 14 GPU kernel checks and a 900-frame settle/turn/reverse/settle sequence. Mean motion cost was 15.46 ms/frame, all positions stayed finite, collar seam gap was zero, and the waistband remained between 0.971 and 1.039 m. See `benchmarks/webgpu/results/2026-09-13-outfit.json`.
+
+That test exposed excessive waistband stretch in the general one-iteration solve. Six extra strain/contact iterations now apply only when waistband triangles exist. This keeps the waistband on the hips without adding a support pin. The preview remains an approximate cloth solver; it does not certify garment fit or model all fabric/closure behavior.
+
+Reproduce the browser fixture with `python benchmarks/prepare_outfit.py`, copy `gui/webgpu/*.js` and `benchmarks/webgpu/collar.js` into `output/webgpu`, run `python benchmarks/serve_webgpu.py`, and open `/collar.html?scene=outfit-test.json`. Click **Motion test**, then **Save geometry** to archive the resulting GPU positions.

@@ -1,6 +1,6 @@
 // SewEasy browser cloth experiment. Original WGSL implementation of small-step
 // XPBD distance constraints; see README.md for paper references and limits.
-import {strainShader, strainTopology, contactNeighbors, placePanels} from './strain.js?v=12';
+import {strainShader, strainTopology, contactNeighbors, placePanels} from './strain.js?v=13';
 import {hingeShader, collarWeldShader} from './bending.js?v=2';
 import {MannequinMotion,bodyMotionWGSL} from './motion.js?v=1';
 const common = `
@@ -340,6 +340,17 @@ export class Cloth {
     this.strainTriangles.forEach((t,i)=>{tu.set([...t.ids,0],i*8);tf.set(t.inverse,i*8+4);});
     this.triangles=this.make(new Uint8Array(tr));this.strainSolve=await this.pipeline(common+strainShader,[...base,[2,this.triangles]],'Principal triangle strain');
     let triangleOffset=0;this.strainBatches=triangleColors.map(color=>{const batch={count:color.length,bind:d.createBindGroup({layout:this.strainSolve.pipeline.getBindGroupLayout(1),entries:[{binding:0,resource:{buffer:this.make(new Uint32Array([triangleOffset,color.length,0,0]),GPUBufferUsage.UNIFORM)}}]})};triangleOffset+=color.length;return batch;});
+    // A closed waistband carries the whole lower garment. Give this small
+    // region additional coupled strain/contact iterations so it cannot stretch
+    // over the hips simply because the global one-iteration solve is soft.
+    const waistColors=triangleColors.map(color=>color.filter(t=>t.ids.every(i=>/(^|__)wb_/.test(s.vertex_panels?.[i]||''))));
+    const waist=waistColors.flat();this.waistBatches=[];
+    if(waist.length){
+      const raw=new ArrayBuffer(waist.length*32),u=new Uint32Array(raw),f=new Float32Array(raw);
+      waist.forEach((t,i)=>{u.set([...t.ids,0],i*8);f.set(t.inverse,i*8+4);});
+      this.waistSolve=await this.pipeline(common+strainShader,[...base,[2,this.make(new Uint8Array(raw))]],'Waistband strain');
+      let offset=0;for(const color of waistColors){if(color.length)this.waistBatches.push({count:color.length,bind:d.createBindGroup({layout:this.waistSolve.pipeline.getBindGroupLayout(1),entries:[{binding:0,resource:{buffer:this.make(new Uint32Array([offset,color.length,0,0]),GPUBufferUsage.UNIFORM)}}]})});offset+=color.length;}
+    }
     this.collide=await this.pipeline(bodyCollision,[...base,[2,this.nodes],[3,this.body],[4,this.bodyFaces],[5,this.bodyNormals],[6,this.previous]],'Mannequin BVH contact',7);
     // Resolve stitches again after other projections; these batches are also
     // graph-colored, so their endpoint writes cannot race.
@@ -530,6 +541,10 @@ export class Cloth {
       if(this.collarWeld)this.dispatch(encoder,this.collarWeld,this.collarWeldCount);
       if(this.settings.holdNeckline&&this.supportPass)this.dispatch(encoder,this.supportPass,this.supportTargets.length);
       if(this.settings.bodyCollision)this.dispatch(encoder,this.settings.bodyMethod==='sdf'?this.sdfCollide:this.collide);
+      if(this.waistBatches.length)for(let iteration=0;iteration<6;iteration++){
+        for(const batch of this.waistBatches)this.dispatch(encoder,this.waistSolve,batch.count,batch.bind);
+        if(this.settings.bodyCollision)this.dispatch(encoder,this.settings.bodyMethod==='sdf'?this.sdfCollide:this.collide);
+      }
       this.dispatch(encoder,this.velocityPass);
     }
     this.motionStep=0;
