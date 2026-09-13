@@ -13,7 +13,12 @@ try {
  const renderer=new Renderer(device,canvas,cloth,navigator.gpu.getPreferredCanvasFormat());
  const height=scene.body_fit?.measurements?.height?.actual_cm/100||1.72;
  Object.assign(renderer.camera,Object.keys(scene.garment_types||{}).length>1?{yaw:0,pitch:0,distance:height*2.0,target:[...cloth.motion.center]}:{yaw:0,pitch:.1,distance:height*.5,target:[0,height*.83,0]});
- let positions,ms=0,colors=false,motionReport=null;
+ let positions,ms=0,colors=false,motionReport=null,fastenerReport=null;
+ const closureGaps=()=>cloth.scene.buttons?.filter(b=>b.hole).map(b=>{
+  const seat=s=>[0,1,2].map(k=>s.ids.reduce((sum,id,j)=>sum+positions[id][k]*s.weights[j],0));
+  const a=seat(b),h=seat(b.hole);
+  return {id:b.id,role:b.role,distanceMm:Math.hypot(...a.map((v,k)=>v-h[k]))*1000};
+ })||[];
  const draw=()=>{const e=device.createCommandEncoder();renderer.render(e);device.queue.submit([e.finish()]);};
  const frame=()=>{if(renderer.dirty)draw();requestAnimationFrame(frame);};frame();
  const inspect=async()=>{
@@ -24,7 +29,7 @@ try {
    panels[name]={vertices:ids.length,lo:[0,1,2].map(a=>Math.min(...ids.map(i=>positions[i][a]))),hi:[0,1,2].map(a=>Math.max(...ids.map(i=>positions[i][a])))};
   }
   const seams=scene.constraints.filter(c=>c[2]===2),gap=c=>Math.hypot(...positions[c[0]].map((v,j)=>v-positions[c[1]][j]));
-  status.textContent=JSON.stringify({frame:cloth.frame,simulationHz,simulationTime:cloth.time,msPerFrame:ms,bodyYaw:cloth.motion.yaw,motionReport,creases:scene.crease_constraints,seamMax:Math.max(...seams.map(gap)),kernelChecks:cloth.kernelChecks,panels},null,2);
+  status.textContent=JSON.stringify({frame:cloth.frame,simulationHz,simulationTime:cloth.time,msPerFrame:ms,bodyYaw:cloth.motion.yaw,motionReport,fastenerReport,closureGaps:closureGaps(),creases:scene.crease_constraints,seamMax:Math.max(...seams.map(gap)),kernelChecks:cloth.kernelChecks,panels},null,2);
  };
  const run=async(n)=>{
   for(const b of document.querySelectorAll('button'))b.disabled=true;
@@ -36,6 +41,20 @@ try {
  document.querySelector('#reset').onclick=async()=>{cloth.reset();draw();await inspect();};
  for(const [id,n] of [['step',60],['settle',300],['long',1800]])document.querySelector('#'+id).onclick=()=>run(n);
  const motionButton=document.createElement('button');motionButton.textContent='Motion test';document.querySelector('nav').append(motionButton);
+ const fastenerButton=document.createElement('button');fastenerButton.textContent='Fastener test';document.querySelector('nav').append(fastenerButton);
+ const openButton=document.createElement('button');openButton.textContent='Unbutton';document.querySelector('nav').append(openButton);
+ openButton.onclick=()=>{const closed=openButton.textContent==='Button';cloth.scene.buttons?.forEach((_,i)=>cloth.setButton(i,closed));openButton.textContent=closed?'Unbutton':'Button';};
+ fastenerButton.onclick=async()=>{
+  cloth.scene.buttons?.forEach((_,i)=>cloth.setButton(i,true));cloth.reset();await run(300);
+  const closed=closureGaps();cloth.motion.turn(1.2);await run(90);cloth.motion.turn(-2.4);await run(120);
+  const loaded=closureGaps();
+  const top=(cloth.scene.buttons||[]).flatMap((b,i)=>b.role==='neck'||b.id.endsWith('front_1')?[i]:[]);
+  top.forEach(i=>cloth.setButton(i,false));await run(180);const releasedTop=closureGaps();
+  top.forEach(i=>cloth.setButton(i,true));await run(180);const reclosedTop=closureGaps();
+  cloth.scene.buttons?.forEach((_,i)=>cloth.setButton(i,false));openButton.textContent='Button';
+  cloth.motion.turn(2.4);await run(120);cloth.motion.front();await run(180);
+  fastenerReport={closed,loaded,releasedTop,reclosedTop,released:closureGaps(),allFinite:positions.every(p=>p.every(Number.isFinite))};await inspect();
+ };
  motionButton.onclick=async()=>{
   cloth.reset();await run(300);
   for(const b of document.querySelectorAll('button'))b.disabled=true;
@@ -56,7 +75,7 @@ try {
  for(const [id,yaw] of [['front',0],['back',Math.PI],['side',Math.PI/2]])document.querySelector('#'+id).onclick=()=>{renderer.camera.yaw=yaw;renderer.dirty=true;};
  document.querySelector('#body').onclick=()=>{renderer.showBody=!renderer.showBody;renderer.dirty=true;};
  document.querySelector('#colors').onclick=()=>{colors=!colors;const mapping={};for(const name of new Set(scene.vertex_panels))mapping[name]=/collar/.test(name)?'#f0ad65':/stand/.test(name)?'#93c9a3':'#b7cde5';renderer.setFabricColors('#b7cde5',colors?mapping:{});renderer.dirty=true;};
- document.querySelector('#save').onclick=async()=>{await inspect();const response=await fetch('/__results',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({report:{scene:scene.name,frames:cloth.frame,simulationHz,simulationTime:cloth.time,msPerFrame:ms,kernelChecks:cloth.kernelChecks,placement:cloth.placement,bodyYaw:cloth.motion.yaw,motionReport},positions})});status.textContent+='\n'+await response.text();};
+ document.querySelector('#save').onclick=async()=>{await inspect();const response=await fetch('/__results',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({report:{scene:scene.name,frames:cloth.frame,simulationHz,simulationTime:cloth.time,msPerFrame:ms,kernelChecks:cloth.kernelChecks,placement:cloth.placement,bodyYaw:cloth.motion.yaw,motionReport,fastenerReport,closureGaps:closureGaps()},positions})});status.textContent+='\n'+await response.text();};
  draw();await inspect();
  for(const b of document.querySelectorAll('button'))b.disabled=false;
 }catch(error){status.textContent=error.stack;}

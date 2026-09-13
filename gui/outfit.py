@@ -29,6 +29,12 @@ class OutfitProgram:
                 for end in seam[:2]:
                     end['panel'] = names[end['panel']]
             result.pattern['stitches'].extend(raw['stitches'])
+            if 'fasteners' in raw:
+                for fastener in raw['fasteners']:
+                    fastener['id'] = f'g{i}__{fastener["id"]}'
+                    for side in ('button', 'buttonhole'):
+                        fastener[side]['panel'] = names[fastener[side]['panel']]
+                result.pattern.setdefault('fasteners', []).extend(raw['fasteners'])
             stiff = {**raw.get('panel_stiffness', {}), **item.get('appearance', {}).get('panel_stiffness', {})}
             result.pattern.setdefault('panel_stiffness', {}).update({names[k]: v for k, v in stiff.items() if k in names})
             if raw.get('fabric'):

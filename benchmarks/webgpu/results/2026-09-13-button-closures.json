@@ -1,0 +1,634 @@
+{
+  "date": "2026-09-13",
+  "implementation": "Overlapping plackets with discrete WebGPU button-to-buttonhole attachments, 3 mm shank clearance, synchronized assembly and permanent construction seam welds.",
+  "environment": "Local Windows browser WebGPU; CPU-generated scenes; harness driven at 30 simulation Hz. Timings include harness rendering/readback and are not isolated GPU timings.",
+  "runs": [
+    {
+      "capture": "outfit-test_20260913_135830_547311.json",
+      "clothVertices": 9210,
+      "geometryChecks": {
+        "allPositionsFinite": true,
+        "permanentSeamCount": 713,
+        "maxPermanentSeamGapMm": 0.0,
+        "waistHeightRangeM": [
+          0.9767197966575623,
+          1.0440233945846558
+        ],
+        "maxButtonSeatDistanceMm": 3.200558560306294
+      },
+      "scene": "outfit-test",
+      "frames": 900,
+      "simulationHz": 30,
+      "simulationTime": 30.00000000000065,
+      "msPerFrame": 20.4663333333532,
+      "kernelChecks": {
+        "button_shank_retains_separate_layers": true,
+        "button_transfers_load_to_both_panels": true,
+        "button_preserves_center_of_mass": true,
+        "unbuttoning_removes_attachment_force": true,
+        "self_contact_separates": true,
+        "adjacent_vertices_excluded": true,
+        "xpbd_distance_matches_equation": true,
+        "collar_hinge_waits_for_seam": true,
+        "collar_hinge_preserves_fold_direction": true,
+        "collar_junction_preserves_center_of_mass": true,
+        "sewn_one_ring_excluded": true,
+        "principal_strain_limited": true,
+        "strain_preserves_center_of_mass": true,
+        "rigid_rotation_unchanged": true,
+        "positional_friction_reduces_slip": true,
+        "moving_body_friction_carries_cloth": true,
+        "rotating_collider_transforms_contact_normal": true,
+        "surface_contact_catches_between_vertices": true
+      },
+      "placement": [
+        {
+          "part": "panels",
+          "translation_m": [
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "prefix": "g0__",
+          "side": "left",
+          "translation_m": [
+            0,
+            -0.021192755161774768,
+            0.012470925509493698
+          ]
+        },
+        {
+          "prefix": "g0__",
+          "side": "right",
+          "translation_m": [
+            0,
+            -0.027481730300191964,
+            0.016608523509493704
+          ]
+        }
+      ],
+      "bodyYaw": 0,
+      "motionReport": {
+        "samples": [
+          {
+            "frame": 0,
+            "yaw": 0.06944444444444445,
+            "nonRigidRms": 0.009397496746415813,
+            "velocity": 0.6213749893322085
+          },
+          {
+            "frame": 30,
+            "yaw": 1.2,
+            "nonRigidRms": 0.011886763980671382,
+            "velocity": 0.036958934429981605
+          },
+          {
+            "frame": 60,
+            "yaw": 1.2,
+            "nonRigidRms": 0.011937832673875126,
+            "velocity": 0.008834222976676428
+          },
+          {
+            "frame": 90,
+            "yaw": 1.2,
+            "nonRigidRms": 0.01196666810770551,
+            "velocity": 0.005011360748164256
+          },
+          {
+            "frame": 120,
+            "yaw": 1.2,
+            "nonRigidRms": 0.01195107057376833,
+            "velocity": 0.00212395319632062
+          },
+          {
+            "frame": 150,
+            "yaw": 1.1305555555555553,
+            "nonRigidRms": 0.018773225131240932,
+            "velocity": 0.6185237166369137
+          },
+          {
+            "frame": 180,
+            "yaw": -1.2,
+            "nonRigidRms": 0.0071579667823971176,
+            "velocity": 0.0645960027548675
+          },
+          {
+            "frame": 210,
+            "yaw": -1.2,
+            "nonRigidRms": 0.0073418894310395225,
+            "velocity": 0.010172287579483952
+          },
+          {
+            "frame": 240,
+            "yaw": -1.2,
+            "nonRigidRms": 0.0072761192123258055,
+            "velocity": 0.003532671662431045
+          },
+          {
+            "frame": 270,
+            "yaw": -1.2,
+            "nonRigidRms": 0.007272660073170067,
+            "velocity": 0.002654737980133138
+          },
+          {
+            "frame": 300,
+            "yaw": -1.1305555555555553,
+            "nonRigidRms": 0.012341569050891897,
+            "velocity": 0.6189065768859476
+          },
+          {
+            "frame": 330,
+            "yaw": 0,
+            "nonRigidRms": 0.011417755800577387,
+            "velocity": 0.040082539561707035
+          },
+          {
+            "frame": 360,
+            "yaw": 0,
+            "nonRigidRms": 0.01126782783463952,
+            "velocity": 0.006566296130129753
+          },
+          {
+            "frame": 390,
+            "yaw": 0,
+            "nonRigidRms": 0.0112451047875201,
+            "velocity": 0.0021606250585695258
+          },
+          {
+            "frame": 420,
+            "yaw": 0,
+            "nonRigidRms": 0.01124019159436115,
+            "velocity": 0.0026214075225664316
+          },
+          {
+            "frame": 450,
+            "yaw": 0,
+            "nonRigidRms": 0.011238145549760064,
+            "velocity": 0.0020773626892267084
+          },
+          {
+            "frame": 480,
+            "yaw": 0,
+            "nonRigidRms": 0.011238109341951989,
+            "velocity": 0.0011161737261969197
+          },
+          {
+            "frame": 510,
+            "yaw": 0,
+            "nonRigidRms": 0.011237499386501796,
+            "velocity": 0.002108086559156812
+          },
+          {
+            "frame": 540,
+            "yaw": 0,
+            "nonRigidRms": 0.011239140676229782,
+            "velocity": 0.001882599189693062
+          },
+          {
+            "frame": 570,
+            "yaw": 0,
+            "nonRigidRms": 0.01123974611882677,
+            "velocity": 0.0025309309845201553
+          }
+        ],
+        "allFinite": true,
+        "maxClothLag": 0.018773225131240932
+      },
+      "fastenerReport": null,
+      "closureGaps": [
+        {
+          "id": "g0__front_1",
+          "role": "placket",
+          "distanceMm": 2.832235770499336
+        },
+        {
+          "id": "g0__front_2",
+          "role": "placket",
+          "distanceMm": 3.000047439342126
+        },
+        {
+          "id": "g0__front_3",
+          "role": "placket",
+          "distanceMm": 2.999988942569602
+        },
+        {
+          "id": "g0__front_4",
+          "role": "placket",
+          "distanceMm": 3.0000458621479096
+        },
+        {
+          "id": "g0__front_5",
+          "role": "placket",
+          "distanceMm": 3.0000006958439287
+        },
+        {
+          "id": "g0__front_6",
+          "role": "placket",
+          "distanceMm": 3.0000522231975735
+        },
+        {
+          "id": "g0__front_7",
+          "role": "placket",
+          "distanceMm": 2.999994542286083
+        },
+        {
+          "id": "g0__neck",
+          "role": "neck",
+          "distanceMm": 2.8215640148843333
+        },
+        {
+          "id": "g0__cuff_1",
+          "role": "cuff",
+          "distanceMm": 3.200558560306294
+        },
+        {
+          "id": "g0__cuff_2",
+          "role": "cuff",
+          "distanceMm": 2.862625344897982
+        }
+      ]
+    },
+    {
+      "capture": "button-custom_20260913_140031_394321.json",
+      "clothVertices": 7554,
+      "geometryChecks": {
+        "allPositionsFinite": true,
+        "permanentSeamCount": 491,
+        "maxPermanentSeamGapMm": 0.0,
+        "independentReleaseAndReclosurePassed": true
+      },
+      "scene": "button-custom",
+      "frames": 1170,
+      "simulationHz": 30,
+      "simulationTime": 39.00000000000035,
+      "msPerFrame": 20.487222222155996,
+      "kernelChecks": {
+        "button_shank_retains_separate_layers": true,
+        "button_transfers_load_to_both_panels": true,
+        "button_preserves_center_of_mass": true,
+        "unbuttoning_removes_attachment_force": true,
+        "self_contact_separates": true,
+        "adjacent_vertices_excluded": true,
+        "xpbd_distance_matches_equation": true,
+        "collar_hinge_waits_for_seam": true,
+        "collar_hinge_preserves_fold_direction": true,
+        "collar_junction_preserves_center_of_mass": true,
+        "sewn_one_ring_excluded": true,
+        "principal_strain_limited": true,
+        "strain_preserves_center_of_mass": true,
+        "rigid_rotation_unchanged": true,
+        "positional_friction_reduces_slip": true,
+        "moving_body_friction_carries_cloth": true,
+        "rotating_collider_transforms_contact_normal": true,
+        "surface_contact_catches_between_vertices": true
+      },
+      "placement": [
+        {
+          "part": "panels",
+          "translation_m": [
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "prefix": "",
+          "side": "left",
+          "translation_m": [
+            0,
+            -0.03518941786264218,
+            0.024628591974946018
+          ]
+        },
+        {
+          "prefix": "",
+          "side": "right",
+          "translation_m": [
+            0,
+            -0.04147259612473464,
+            0.02715547428770502
+          ]
+        }
+      ],
+      "bodyYaw": 0,
+      "motionReport": null,
+      "fastenerReport": {
+        "closed": [
+          {
+            "id": "front_1",
+            "role": "placket",
+            "distanceMm": 2.832482745101577
+          },
+          {
+            "id": "front_2",
+            "role": "placket",
+            "distanceMm": 2.999978020863316
+          },
+          {
+            "id": "front_3",
+            "role": "placket",
+            "distanceMm": 2.9907501096477263
+          },
+          {
+            "id": "front_4",
+            "role": "placket",
+            "distanceMm": 3.000001645819566
+          },
+          {
+            "id": "front_5",
+            "role": "placket",
+            "distanceMm": 2.9999757555722932
+          },
+          {
+            "id": "front_6",
+            "role": "placket",
+            "distanceMm": 2.9999998633354417
+          },
+          {
+            "id": "front_7",
+            "role": "placket",
+            "distanceMm": 2.999982469598716
+          },
+          {
+            "id": "neck",
+            "role": "neck",
+            "distanceMm": 2.912367887503395
+          },
+          {
+            "id": "cuff_1",
+            "role": "cuff",
+            "distanceMm": 3.469669574510025
+          },
+          {
+            "id": "cuff_2",
+            "role": "cuff",
+            "distanceMm": 1.8205448180933055
+          }
+        ],
+        "loaded": [
+          {
+            "id": "front_1",
+            "role": "placket",
+            "distanceMm": 2.8186676219622284
+          },
+          {
+            "id": "front_2",
+            "role": "placket",
+            "distanceMm": 3.000024721141276
+          },
+          {
+            "id": "front_3",
+            "role": "placket",
+            "distanceMm": 2.994265693200602
+          },
+          {
+            "id": "front_4",
+            "role": "placket",
+            "distanceMm": 2.9999461739252746
+          },
+          {
+            "id": "front_5",
+            "role": "placket",
+            "distanceMm": 2.9999998504558527
+          },
+          {
+            "id": "front_6",
+            "role": "placket",
+            "distanceMm": 2.999975920026256
+          },
+          {
+            "id": "front_7",
+            "role": "placket",
+            "distanceMm": 2.999990247598932
+          },
+          {
+            "id": "neck",
+            "role": "neck",
+            "distanceMm": 3.000010111262843
+          },
+          {
+            "id": "cuff_1",
+            "role": "cuff",
+            "distanceMm": 3.388541007678626
+          },
+          {
+            "id": "cuff_2",
+            "role": "cuff",
+            "distanceMm": 1.9118380617401565
+          }
+        ],
+        "releasedTop": [
+          {
+            "id": "front_1",
+            "role": "placket",
+            "distanceMm": 43.758017119593674
+          },
+          {
+            "id": "front_2",
+            "role": "placket",
+            "distanceMm": 3.000029974621717
+          },
+          {
+            "id": "front_3",
+            "role": "placket",
+            "distanceMm": 2.9999532709092462
+          },
+          {
+            "id": "front_4",
+            "role": "placket",
+            "distanceMm": 3.0000287619874886
+          },
+          {
+            "id": "front_5",
+            "role": "placket",
+            "distanceMm": 2.99997890117747
+          },
+          {
+            "id": "front_6",
+            "role": "placket",
+            "distanceMm": 2.9999959801502887
+          },
+          {
+            "id": "front_7",
+            "role": "placket",
+            "distanceMm": 2.99997893919227
+          },
+          {
+            "id": "neck",
+            "role": "neck",
+            "distanceMm": 66.43470171647407
+          },
+          {
+            "id": "cuff_1",
+            "role": "cuff",
+            "distanceMm": 3.4218518495111176
+          },
+          {
+            "id": "cuff_2",
+            "role": "cuff",
+            "distanceMm": 2.0942657040110504
+          }
+        ],
+        "reclosedTop": [
+          {
+            "id": "front_1",
+            "role": "placket",
+            "distanceMm": 3.000050457357486
+          },
+          {
+            "id": "front_2",
+            "role": "placket",
+            "distanceMm": 3.0000128710803007
+          },
+          {
+            "id": "front_3",
+            "role": "placket",
+            "distanceMm": 2.995961144585092
+          },
+          {
+            "id": "front_4",
+            "role": "placket",
+            "distanceMm": 3.0000771605756307
+          },
+          {
+            "id": "front_5",
+            "role": "placket",
+            "distanceMm": 2.9999888917207547
+          },
+          {
+            "id": "front_6",
+            "role": "placket",
+            "distanceMm": 2.999994437410806
+          },
+          {
+            "id": "front_7",
+            "role": "placket",
+            "distanceMm": 3.0000070315882645
+          },
+          {
+            "id": "neck",
+            "role": "neck",
+            "distanceMm": 2.9795658163030136
+          },
+          {
+            "id": "cuff_1",
+            "role": "cuff",
+            "distanceMm": 3.4615960009946076
+          },
+          {
+            "id": "cuff_2",
+            "role": "cuff",
+            "distanceMm": 2.1472134590142566
+          }
+        ],
+        "released": [
+          {
+            "id": "front_1",
+            "role": "placket",
+            "distanceMm": 637.9671044170036
+          },
+          {
+            "id": "front_2",
+            "role": "placket",
+            "distanceMm": 780.54566710525
+          },
+          {
+            "id": "front_3",
+            "role": "placket",
+            "distanceMm": 890.2964812238247
+          },
+          {
+            "id": "front_4",
+            "role": "placket",
+            "distanceMm": 966.6850973635038
+          },
+          {
+            "id": "front_5",
+            "role": "placket",
+            "distanceMm": 995.6190960565576
+          },
+          {
+            "id": "front_6",
+            "role": "placket",
+            "distanceMm": 1006.1642747114439
+          },
+          {
+            "id": "front_7",
+            "role": "placket",
+            "distanceMm": 1007.0181333960651
+          },
+          {
+            "id": "neck",
+            "role": "neck",
+            "distanceMm": 608.1977277253362
+          },
+          {
+            "id": "cuff_1",
+            "role": "cuff",
+            "distanceMm": 57.67522813828358
+          },
+          {
+            "id": "cuff_2",
+            "role": "cuff",
+            "distanceMm": 47.51813210522989
+          }
+        ],
+        "allFinite": true
+      },
+      "closureGaps": [
+        {
+          "id": "front_1",
+          "role": "placket",
+          "distanceMm": 637.9671044170036
+        },
+        {
+          "id": "front_2",
+          "role": "placket",
+          "distanceMm": 780.54566710525
+        },
+        {
+          "id": "front_3",
+          "role": "placket",
+          "distanceMm": 890.2964812238247
+        },
+        {
+          "id": "front_4",
+          "role": "placket",
+          "distanceMm": 966.6850973635038
+        },
+        {
+          "id": "front_5",
+          "role": "placket",
+          "distanceMm": 995.6190960565576
+        },
+        {
+          "id": "front_6",
+          "role": "placket",
+          "distanceMm": 1006.1642747114439
+        },
+        {
+          "id": "front_7",
+          "role": "placket",
+          "distanceMm": 1007.0181333960651
+        },
+        {
+          "id": "neck",
+          "role": "neck",
+          "distanceMm": 608.1977277253362
+        },
+        {
+          "id": "cuff_1",
+          "role": "cuff",
+          "distanceMm": 57.67522813828358
+        },
+        {
+          "id": "cuff_2",
+          "role": "cuff",
+          "distanceMm": 47.51813210522989
+        }
+      ]
+    }
+  ]
+}

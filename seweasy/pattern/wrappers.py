@@ -347,11 +347,42 @@ class VisPattern(core.ParametrizedPattern):
     def _add_button_markers(self, dwg, flat):
         """Draw button seats as circles evenly spaced along the panel edge
         tagged as the button placket (see pattern['buttons'])."""
+        if 'fasteners' in self.pattern:
+            return self._add_fastener_markers(dwg)
         groups = list(self.pattern.get('button_groups', []))
         if self.pattern.get('buttons'):
             groups.append(self.pattern['buttons'])
         for buttons in groups:
             self._add_button_group(dwg, buttons)
+        return dwg
+
+    def _add_fastener_markers(self, dwg):
+        """Project the same material-space button/hole seats used by physics."""
+        transforms = {}
+        for name, panel in self.pattern['panels'].items():
+            path = (getattr(self, 'last_panel_svg_paths', None) or {}).get(name)
+            if path is None:
+                continue
+            source, target = [], []
+            for edge, curve in zip(panel['edges'], path):
+                source.append([*panel['vertices'][edge['endpoints'][0]], 1])
+                target.append([curve.start.real, curve.start.imag])
+            transforms[name] = np.linalg.lstsq(source, target, rcond=None)[0]
+        for f in self.pattern.get('fasteners', []):
+            for kind in ('button', 'buttonhole'):
+                seat=f[kind]; transform=transforms.get(seat['panel'])
+                if transform is None:
+                    continue
+                p=np.array([*seat['position'],1])@transform
+                if kind=='button':
+                    dwg.add(dwg.circle(center=p.tolist(),r=f['diameter_cm']/2*self.px_per_unit,
+                                       fill='none',stroke='rgb(80,80,80)',stroke_width=.3))
+                    dwg.add(dwg.circle(center=p.tolist(),r=.35,fill='rgb(80,80,80)'))
+                else:
+                    axis=np.asarray(seat['direction'])@transform[:2]
+                    axis=axis/(np.linalg.norm(axis) or 1)*f['diameter_cm']*.6*self.px_per_unit
+                    dwg.add(dwg.line(start=(p-axis).tolist(),end=(p+axis).tolist(),
+                                    stroke='rgb(80,80,80)',stroke_width=.7))
         return dwg
 
     def _add_button_group(self, dwg, buttons):

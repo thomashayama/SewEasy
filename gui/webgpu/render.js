@@ -1,6 +1,6 @@
-import {buffer} from './physics.js?v=15';
+import {buffer} from './physics.js?v=17';
 import {cameraControls} from './camera.js?v=14';
-import {Buttons} from './buttons.js?v=1';
+import {Buttons} from './buttons.js?v=3';
 
 function normalize(v){const l=Math.hypot(...v)||1;return v.map(x=>x/l);}
 function cross(a,b){return [a[1]*b[2]-a[2]*b[1],a[2]*b[0]-a[0]*b[2],a[0]*b[1]-a[1]*b[0]];}
@@ -18,19 +18,30 @@ export function cameraMatrix(eye,target,aspect,pan=[0,0]){
 }
 const shader=`
 struct View { mvp: mat4x4<f32>, eye: vec4<f32>, color: vec4<f32>, angle:vec4<f32>, center:vec4<f32> }
-struct Out { @builtin(position) clip: vec4<f32>, @location(0) world: vec3<f32>, @location(1) normal: vec3<f32>, @location(2) strain:f32, @location(3) color:vec3<f32>, @location(4) uv:vec2<f32>, @location(5) motif:vec2<f32>, @location(6) fg:vec3<f32>, @location(7) bg:vec3<f32> }
+struct Out { @builtin(position) clip: vec4<f32>, @location(0) world: vec3<f32>, @location(1) normal: vec3<f32>, @location(2) strain:f32, @location(3) color:vec3<f32>, @location(4) uv:vec2<f32>, @location(5) motif:vec2<f32>, @location(6) fg:vec3<f32>, @location(7) bg:vec3<f32>, @location(8) @interpolate(flat) panel:u32 }
+struct Hole { seat:vec4<f32>, shape:vec4<f32> }
 @group(0) @binding(0) var<uniform> view: View;
 @group(0) @binding(1) var<storage, read> positions: array<vec4<f32>>;
 @group(0) @binding(2) var<storage, read> normals: array<vec4<f32>>;
 @group(0) @binding(3) var<storage, read> colors: array<vec4<f32>>;
 @group(0) @binding(4) var<storage, read> uv: array<vec2<f32>>;
 @group(0) @binding(5) var<storage, read> fabrics: array<vec4<f32>>;
+@group(0) @binding(6) var<storage, read> panels: array<u32>;
+@group(0) @binding(7) var<storage, read> holes: array<Hole>;
 fn turn(v:vec3<f32>)->vec3<f32>{let cs=view.angle.xy;return vec3<f32>(cs.x*v.x+cs.y*v.z,v.y,-cs.y*v.x+cs.x*v.z);}
 @vertex fn vertex(@builtin(vertex_index) id: u32) -> Out {
  var o:Out;o.world=view.center.xyz+turn(positions[id].xyz-view.center.xyz);o.clip=view.mvp*vec4<f32>(o.world,1);o.normal=turn(normals[id].xyz);o.strain=normals[id].w;o.color=colors[id].rgb;
- let fi=min(id,arrayLength(&fabrics)/3u-1u)*3u;o.motif=fabrics[fi].xy;o.fg=fabrics[fi+1u].rgb;o.bg=fabrics[fi+2u].rgb;o.uv=uv[min(id,arrayLength(&uv)-1u)];return o;
+ let fi=min(id,arrayLength(&fabrics)/3u-1u)*3u;o.motif=fabrics[fi].xy;o.fg=fabrics[fi+1u].rgb;o.bg=fabrics[fi+2u].rgb;o.uv=uv[min(id,arrayLength(&uv)-1u)];o.panel=panels[min(id,arrayLength(&panels)-1u)];return o;
 }
 @fragment fn fragment(o:Out,@builtin(front_facing) front:bool)->@location(0) vec4<f32>{
+ var stitching=0.0;
+ for(var i=0u;i<arrayLength(&holes);i++){
+  let h=holes[i];if(o.panel==0u||o.panel!=u32(h.shape.z)){continue;}
+  let d=o.uv-h.seat.xy;let along=abs(dot(d,h.seat.zw));let across=dot(d,vec2<f32>(-h.seat.w,h.seat.z));
+  let distance=length(vec2<f32>(max(along-h.shape.x,0.0),across));
+  if(distance<h.shape.y){discard;}
+  stitching=max(stitching,1.0-smoothstep(h.shape.y,h.shape.y+.0008,distance));
+ }
  let n=normalize(o.normal)*select(-1.0,1.0,front);let l=normalize(vec3<f32>(-0.4,1,0.8));
  let fill=max(dot(n,normalize(vec3<f32>(0.8,0.5,-1))),0.0);
  let light=0.32+0.63*max(dot(n,l),0.0)+0.18*fill;
@@ -45,7 +56,7 @@ fn turn(v:vec3<f32>)->vec3<f32>{let cs=view.angle.xy;return vec3<f32>(cs.x*v.x+c
  if(kind==4u){ink=(1.0-smoothstep(.5-aa.x,.5+aa.x,f.x)+1.0-smoothstep(.5-aa.y,.5+aa.y,f.y))*.5;}
  if(kind==5u){let lines=vec2<f32>(1)-smoothstep(vec2<f32>(.045)-aa,vec2<f32>(.045)+aa,f);ink=max(lines.x,lines.y);}
  let printed=select(view.color.rgb*o.color,mix(o.bg,o.fg,ink),kind>0u);
- let color=select(printed,heat,view.color.a>.5);
+ let color=select(printed*(1.0-.45*stitching),heat,view.color.a>.5);
  return vec4<f32>(pow(color*light+rim,vec3<f32>(1.0/2.2)),1);
 }`;
 export class Renderer {
@@ -61,13 +72,19 @@ export class Renderer {
   this.emptyFabric=buffer(device,new Float32Array(12),GPUBufferUsage.STORAGE);
   this.emptyUV=buffer(device,new Float32Array(4),GPUBufferUsage.STORAGE);
   this.buffers.push(this.fabricData,this.emptyFabric,this.emptyUV);
+  const panelNames=[...new Set(cloth.scene.vertex_panels)],panelIds=new Map(panelNames.map((p,i)=>[p,i+1]));
+  this.panelIds=buffer(device,Uint32Array.from(cloth.scene.vertex_panels,p=>panelIds.get(p)),GPUBufferUsage.STORAGE);
+  this.emptyPanels=buffer(device,new Uint32Array(1),GPUBufferUsage.STORAGE);
+  const holeData=(cloth.scene.buttons||[]).filter(b=>b.hole?.uv_center).flatMap(b=>[...b.hole.uv_center,...b.hole.uv_direction,b.radius_m*.95,.00065,panelIds.get(b.hole.panel),0]);
+  this.holes=buffer(device,new Float32Array(holeData.length?holeData:new Array(8).fill(0)),GPUBufferUsage.STORAGE);
+  this.buffers.push(this.panelIds,this.emptyPanels,this.holes);
   const makeUniform=color=>{const b=buffer(device,new Float32Array(32),GPUBufferUsage.UNIFORM);this.buffers.push(b);return {buffer:b,color};};
   this.clothView=makeUniform([0.18,0.40,0.59,0]);this.bodyView=makeUniform([0.72,0.64,0.57,0]);
   this.buttons=new Buttons(device,cloth,this.clothView.buffer,format);
   const module=device.createShaderModule({code:shader});
   this.pipeline=device.createRenderPipeline({layout:'auto',vertex:{module,entryPoint:'vertex'},fragment:{module,entryPoint:'fragment',targets:[{format}]},primitive:{topology:'triangle-list',cullMode:'none'},depthStencil:{format:'depth24plus',depthWriteEnabled:true,depthCompare:'less'}});
-  const bind=(uniform,q,n,color,uv,fabric)=>device.createBindGroup({layout:this.pipeline.getBindGroupLayout(0),entries:[{binding:0,resource:{buffer:uniform}},{binding:1,resource:{buffer:q}},{binding:2,resource:{buffer:n}},{binding:3,resource:{buffer:color}},{binding:4,resource:{buffer:uv}},{binding:5,resource:{buffer:fabric}}]});
-  this.clothBind=bind(this.clothView.buffer,cloth.q,cloth.normals,this.clothColors,cloth.uv,this.fabricData);this.bodyBind=bind(this.bodyView.buffer,cloth.body,cloth.bodyNormals,this.bodyColors,this.emptyUV,this.emptyFabric);
+  const bind=(uniform,q,n,color,uv,fabric,panels)=>device.createBindGroup({layout:this.pipeline.getBindGroupLayout(0),entries:[{binding:0,resource:{buffer:uniform}},{binding:1,resource:{buffer:q}},{binding:2,resource:{buffer:n}},{binding:3,resource:{buffer:color}},{binding:4,resource:{buffer:uv}},{binding:5,resource:{buffer:fabric}},{binding:6,resource:{buffer:panels}},{binding:7,resource:{buffer:this.holes}}]});
+  this.clothBind=bind(this.clothView.buffer,cloth.q,cloth.normals,this.clothColors,cloth.uv,this.fabricData,this.panelIds);this.bodyBind=bind(this.bodyView.buffer,cloth.body,cloth.bodyNormals,this.bodyColors,this.emptyUV,this.emptyFabric,this.emptyPanels);
   canvas.tabIndex=0;
   this.controls=cameraControls(this.camera,canvas,()=>this.dirty=true,cloth.motion);
   this.setFabricPrints();

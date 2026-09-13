@@ -3,10 +3,9 @@ collar, curved shirttail hem, barrel cuffs, and parametric waist shaping
 that follows the wearer's measurements — one block drafts for any body.
 
 Construction notes:
-* The button stand is drafted as a center-front extension on both fronts
-  (`placket_width` per side). For draping, the two front edges are stitched
-  together along the button line — a buttoned-closed shirt — which adds the
-  stand width as front ease.
+* Both fronts extend past center front (`placket_width` per side). Permanent
+  stitching never crosses the opening. Discrete button/buttonhole fasteners
+  connect material points inside the overlap, including the neck band and cuffs.
 * No back yoke: the armhole is cut into the side/shoulder corner of one
   panel (see pyg.ops.cut_corner), and a yoke seam would cross that cut.
 * Sleeves reuse the standard Sleeve component; a barrel cuff is a CuffBand.
@@ -50,6 +49,36 @@ _BUTTON_PLACKET_LABEL = 'button_placket'
 _COLLAR_STAND_STIFFNESS = 15.0
 _COLLAR_FALL_STIFFNESS = 6.0
 _CUFF_STIFFNESS = 12.0
+
+
+def extend_button_tab(panel, interface, width):
+    """Add an unsewn extension to a straight opening edge, preserving its base."""
+    edge = interface.edges[0]
+    a, b = np.asarray(edge.start), np.asarray(edge.end)
+    direction = np.array([-(b-a)[1], (b-a)[0]])
+    direction /= np.linalg.norm(direction)
+    if np.dot(direction, panel._center_2D()-(a+b)/2) > 0:
+        direction *= -1
+    inner = pyg.Edge(edge.start, (a+width*direction).tolist())
+    opening = pyg.Edge(inner.end, (b+width*direction).tolist())
+    outer = pyg.Edge(opening.end, edge.end)
+    panel.edges.substitute(edge, pyg.EdgeSequence(inner, opening, outer))
+    interface.substitute(edge, opening, [panel])
+    return inner, outer
+
+
+def button_seat(panel, interface, fraction, inset):
+    """A material-space seat, inset from the free edge rather than on a seam."""
+    edge = interface.edges[0]
+    a, b = np.asarray(edge.start), np.asarray(edge.end)
+    if panel.point_to_3D(a)[1] < panel.point_to_3D(b)[1]:
+        a, b = b, a
+    direction = (b-a)/np.linalg.norm(b-a)
+    inward = np.array([-direction[1], direction[0]])
+    if np.dot(inward, panel._center_2D()-(a+b)/2) < 0:
+        inward *= -1
+    return dict(panel=panel.name, position=((1-fraction)*a+fraction*b+inset*inward).tolist(),
+                direction=direction.tolist())
 
 
 class DressShirtPanel(BaseBodicePanel):
@@ -223,6 +252,12 @@ class ShirtCollar(pyg.Component):
         # --Projected neckline shapes--
         f_collar = collars.CircleNeckHalf(fc_depth, width)
         b_collar = collars.CircleNeckHalf(bc_depth, width)
+        # Continue the neckline over the center-front extension. The neck arc
+        # itself retains the requested neck size instead of absorbing overlap.
+        length_f = f_collar.length()
+        extension = d['placket_width']['v']
+        end = f_collar[-1].end
+        f_collar.append(pyg.Edge(end, [end[0]+extension, end[1]]))
 
         self.interfaces = {
             'front_proj': pyg.Interface(self, f_collar),
@@ -237,7 +272,7 @@ class ShirtCollar(pyg.Component):
         # are flipped about X so the smaller (inner) arc sits at the bottom --
         # the stand's neckline seam -- matching the flat-band orientation the
         # rest of the collar plumbing expects.
-        length_f, length_b = f_collar.length(), b_collar.length()
+        length_b = b_collar.length()
         neck_y = body['height'] - body['head_l']
         R1 = _COLLAR_ROLL_RADIUS
         R2 = R1 + stand_h
@@ -261,6 +296,9 @@ class ShirtCollar(pyg.Component):
         # chord is ABOVE its inner chord by stand_h*cos(halfarc), which sets
         # the fall's translation before folding.
         self.stand_f = CircleArcPanel(f'{tag}_stand_front', R1, stand_h, af)
+        tab_inner, _ = extend_button_tab(self.stand_f, self.stand_f.interfaces['left'], extension)
+        self.stand_f.interfaces['top'] = pyg.Interface.from_multiple(
+            pyg.Interface(self.stand_f, tab_inner).reverse(True), self.stand_f.interfaces['top'])
         self.stand_f.rotate_by(flipX)
         self.stand_f.translate_by([-R1 * np.sin(af / 2), neck_y, 12])
         self.stand_b = CircleArcPanel(f'{tag}_stand_back', R1, stand_h, ab)
@@ -438,6 +476,10 @@ class DressShirt(pyg.Component):
 
         self.right = DressShirtHalf('right', body, design)
         self.left = DressShirtHalf('left', body, design).mirror()
+        # Translate before folding: Panel.translate_by normalizes winding.
+        self.left.ftorso.translate_by([0, 0, .3])
+        self.left.collar_comp.stand_f.translate_by([0, 0, .3])
+        self.left.collar_comp.leaf_f.translate_by([0, 0, .3])
 
         # Mirror while the panels are still unfolded. Panel.mirror autonorms
         # each surface; doing that after a fold reverses only the left leaf's
@@ -446,9 +488,7 @@ class DressShirt(pyg.Component):
             leaf = half.collar_comp.leaf_f
             pre_fold(leaf, leaf.interfaces['top'].edges[0], _COLLAR_FRONT_FOLD)
 
-        # Button line: the placket extensions are stitched shut
-        self.stitching_rules.append((self.right.interfaces['front_in'],
-                                     self.left.interfaces['front_in']))
+        # Front and neck-band openings have no permanent cross-front stitches.
         self.stitching_rules.append((self.right.interfaces['back_in'],
                                      self.left.interfaces['back_in']))
 
@@ -459,6 +499,18 @@ class DressShirt(pyg.Component):
         # pattern renderer and the drape can place buttons along it
         self.right.ftorso.interfaces['inside'].edges.propagate_label(
             _BUTTON_PLACKET_LABEL)
+        self.left.ftorso.interfaces['inside'].edges.propagate_label('buttonhole_placket')
+        # Seed the intended layer ordering, not a settled drape or body pin.
+        self.cuff_openings = []
+        for half in (self.right, self.left):
+            cuff = getattr(half.sleeve, 'cuff', None)
+            if cuff is None or not hasattr(cuff, 'front'):
+                continue
+            # Keep one construction seam; the other end closes through a tab.
+            closure = cuff.stitching_rules.rules.pop()
+            under, over = closure.int2, closure.int1
+            extend_button_tab(over.panel[0], over, 1.6)
+            self.cuff_openings.append((under, over))
 
         self.interfaces = {
             'bottom': pyg.Interface.from_multiple(
@@ -480,6 +532,24 @@ class DressShirt(pyg.Component):
                 'diameter': float(b['diameter']['v']),
                 'placket_label': _BUTTON_PLACKET_LABEL,
             }
+        spat.pattern['fasteners'] = []
+        def add(name, button, hole, diameter, role):
+            spat.pattern['fasteners'].append(dict(id=name, kind='button', button=button,
+                buttonhole=hole, diameter_cm=diameter, clearance_m=.003,
+                compliance=1e-8, role=role, closed=True))
+        if count > 0:
+            diameter = float(b['diameter']['v'])
+            inset = float(self.design['dress_shirt']['placket_width']['v'])
+            for i, t in enumerate(np.linspace(.06, .94, count)):
+                add(f'front_{i+1}',
+                    button_seat(self.right.ftorso, self.right.ftorso.interfaces['inside'], t, inset),
+                    button_seat(self.left.ftorso, self.left.ftorso.interfaces['inside'], t, inset), diameter, 'placket')
+            add('neck',
+                button_seat(self.right.collar_comp.stand_f, self.right.interfaces['front_collar'], .5, inset),
+                button_seat(self.left.collar_comp.stand_f, self.left.interfaces['front_collar'], .5, inset), min(diameter,1.1), 'neck')
+            for i, (under, over) in enumerate(self.cuff_openings):
+                add(f'cuff_{i+1}', button_seat(under.panel[0], under, .5, .8),
+                    button_seat(over.panel[0], over, .5, .8), min(diameter,1.1), 'cuff')
         # A dress-shirt collar and cuffs are interfaced (crisp): stiffen those
         # panels by default. The stand is firm (holds the neck band), the fall
         # only lightly (so it rolls onto the chest instead of propping out),

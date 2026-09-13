@@ -111,6 +111,8 @@ class Component(BaseComponent):
             # of optional button config (a single dict; last non-empty wins)
             if sub_raw.get('buttons'):
                 spattern.pattern['buttons'] = sub_raw['buttons']
+            if 'fasteners' in sub_raw:
+                spattern.pattern.setdefault('fasteners', []).extend(sub_raw['fasteners'])
 
             # of optional zipper hardware (a list; concatenated across subs)
             if sub_raw.get('zippers'):
@@ -170,4 +172,3 @@ class Component(BaseComponent):
         for att in self.subs:
             subs[id(att)] = att
         return list(subs.values())
-

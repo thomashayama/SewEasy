@@ -1,5 +1,6 @@
 // Small rigid attachments read the current cloth positions directly on GPU.
-// The continuous sewn placket remains the solver's closed-shirt approximation.
+// Each working button is sewn to the underlap; its shank enters the other
+// panel's buttonhole. The same two material seats drive the physics attachment.
 const shader=`
 struct View { mvp:mat4x4<f32>, eye:vec4<f32>, color:vec4<f32>, angle:vec4<f32>, center:vec4<f32> }
 struct Button { ids:vec4<u32>, weights:vec4<f32>, style:vec4<f32> }
@@ -12,7 +13,8 @@ struct Out { @builtin(position) clip:vec4<f32>, @location(0) normal:vec3<f32>, @
  let edge=c-a;let crossn=cross(edge,d-a);let normal=crossn/max(length(crossn),1e-9)*b.style.x;
  let tangent=edge/max(length(edge),1e-9);let across=cross(normal,tangent);
  let center=a*b.weights.x+c*b.weights.y+d*b.weights.z;
- let world=center+(tangent*p.x+across*p.y+normal*p.z)*b.weights.w+normal*.0007;
+ let axial=select(p.z*b.weights.w,p.z*b.style.y,p.z<0.0);
+ let world=center+(tangent*p.x+across*p.y)*b.weights.w+normal*(axial+b.style.y);
  var o:Out;o.clip=view.mvp*vec4<f32>(world,1);o.normal=tangent*n.x+across*n.y+normal*n.z;o.local=p.xy;return o;
 }
 @fragment fn fragment(o:Out)->@location(0) vec4<f32>{
@@ -30,7 +32,7 @@ export class Buttons {
   this.count=cloth.scene.buttons?.length||0;this.buffers=[];if(!this.count)return;
   const make=(array,usage)=>{const b=device.createBuffer({size:array.byteLength,usage:usage|GPUBufferUsage.COPY_DST});device.queue.writeBuffer(b,0,array);this.buffers.push(b);return b;};
   const raw=new ArrayBuffer(this.count*48),u=new Uint32Array(raw),f=new Float32Array(raw);
-  cloth.scene.buttons.forEach((b,i)=>{u.set([...b.ids,0],i*12);f.set([...b.weights,b.radius_m],i*12+4);f.set([b.normal_sign,0,0,0],i*12+8);});
+  cloth.scene.buttons.forEach((b,i)=>{u.set([...b.ids,0],i*12);f.set([...b.weights,b.radius_m],i*12+4);f.set([b.normal_sign,(b.clearance_m||0)+.0007,0,0],i*12+8);});
   const anchors=make(new Uint8Array(raw),GPUBufferUsage.STORAGE);
   const vertices=[],segments=24;
   const vertex=(angle,r,z,nr,nz)=>[Math.cos(angle)*r,Math.sin(angle)*r,z,Math.cos(angle)*nr,Math.sin(angle)*nr,nz];
@@ -41,6 +43,8 @@ export class Buttons {
     const p=vertex(a,r0,z0,nr,nz),q=vertex(b,r0,z0,nr,nz),r=vertex(a,r1,z1,nr,nz),s=vertex(b,r1,z1,nr,nz);
     vertices.push(...p,...r,...q,...q,...r,...s);
    }
+   const p=vertex(a,.10,-1,1,0),q=vertex(b,.10,-1,1,0),r=vertex(a,.10,0,1,0),s=vertex(b,.10,0,1,0);
+   vertices.push(...p,...r,...q,...q,...r,...s);
   }
   this.vertexCount=vertices.length/6;this.vertices=make(new Float32Array(vertices),GPUBufferUsage.VERTEX);
   const module=device.createShaderModule({code:shader});

@@ -11,7 +11,7 @@ function clock() {
     settings:{substeps:12,sewDuration:1.6,strainPasses:0},
     motion:new MannequinMotion([[-1,0,-1],[1,2,1]]),motionStride:256,motionRaw:new Float32Array(64*64),
     motionBuffer:{},params:{},device:{queue:{writeBuffer(buffer,_offset,data){if(buffer===cloth.params)writes.push(new Float32Array(data).slice());}}},
-    batches:[],seamBatches:[],hingeBatches:[],waistBatches:[],integrate:{},
+    batches:[],seamBatches:[],hingeBatches:[],waistBatches:[],buttonBatches:[],integrate:{},
     dispatchInPass(_pass,stage){if(stage===this.integrate)steps.push(this.motionStep);}});
   let passes=0,ends=0;
   const encoder={beginComputePass(){passes++;return {end(){ends++;}};}};

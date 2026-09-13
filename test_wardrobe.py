@@ -46,5 +46,10 @@ class WardrobeTest(unittest.TestCase):
             names=outfit['panels'];self.assertTrue(any(n.startswith('g1__') for n in names))
             self.assertTrue(outfit['panel_fabrics']);self.assertEqual(len(outfit['button_groups']),2)
             for seam in outfit['stitches']:self.assertEqual(seam[0]['panel'].split('__')[0],seam[1]['panel'].split('__')[0])
+            self.assertEqual(len(outfit['fasteners']),20)
+            for fastener in outfit['fasteners']:
+                prefix=fastener['id'].split('__')[0]
+                for side in ('button','buttonhole'):
+                    self.assertEqual(fastener[side]['panel'].split('__')[0],prefix)
         finally:p.release()
 if __name__=='__main__':unittest.main()

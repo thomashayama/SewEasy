@@ -13,6 +13,7 @@ from assets.garment_programs.dress_shirt import DressShirt
 from seweasy.meshgen.body_fit import fit_body
 from seweasy.meshgen.boxmeshgen import BoxMesh
 from seweasy.meshgen.webgpu import build_scene, panel_mesh_data
+from seweasy.meshgen.browser_hardware import button_attachments
 from seweasy.pattern.core import BasicPattern
 from webapp.measurement_guide import scale_coupled
 
@@ -31,9 +32,11 @@ def prepare(name, edits, point=3, resolution=1.5):
         box = BoxMesh(Path(work)/'DressShirt_specification.json', resolution)
         box.load()
         mesh, fit = fit_body(values)
-        scene = build_scene(panel_mesh_data(box, mesh), dict(garment='dress-shirt',
+        data = panel_mesh_data(box, mesh)
+        scene = build_scene(data, dict(garment='dress-shirt',
             resolution_cm=resolution, panels=len(box.panelNames),
             panel_stiffness=pattern.pattern['panel_stiffness']), name)
+        scene['buttons'] = button_attachments(box, pattern.pattern, data)
     scene['body_fit'] = fit
     out = ROOT/'output/webgpu'
     out.mkdir(parents=True, exist_ok=True)

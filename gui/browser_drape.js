@@ -1,5 +1,5 @@
-import {Cloth} from '/webgpu/physics.js?v=15';
-import {Renderer} from '/webgpu/render.js?v=16';
+import {Cloth} from '/webgpu/physics.js?v=17';
+import {Renderer} from '/webgpu/render.js?v=18';
 
 // GPU objects live outside Vue's reactive graph. Each mounted stage owns one
 // device and one loop; a serialized loader discards obsolete scene requests.
@@ -33,6 +33,7 @@ export default {
         <div class="se-drape-menu">
           <span class="se-drape-live" role="status">{{ paused ? 'Paused' : 'Live drape · ' + fps + ' fps' }}</span>
           <button @click="front">Front view</button>
+          <button v-if="hasButtons" @click="toggleButtons">{{buttonsClosed ? 'Unbutton shirt' : 'Button shirt'}}</button>
           <label v-if="hasSupport"><input type="checkbox" v-model="support" @change="setSupport"> Hold neckline <small>(fitting aid)</small></label>
           <small>{{paused ? 'Drag to inspect the paused drape' : 'Drag left / right to turn the mannequin'}}<br>Drag up / down to change view<br>Shift-drag or right-drag to pan · Scroll to zoom<br>Touch: two fingers to pan or pinch to zoom</small>
         </div>
@@ -52,7 +53,7 @@ export default {
     fabric_color:String, panel_colors:Object, panel_fabrics:Object, body_color:String, show_body:Boolean},
   data: () => ({ready:false, progress:'Choose a garment to preview.', failure:'', paused:false,
     fps:0, frames:0, loadedScene:'', hasSupport:false, support:false,
-    bodyNote:'Default mannequin',fitRows:[]}),
+    bodyNote:'Default mannequin',fitRows:[],hasButtons:false,buttonsClosed:true}),
   computed: {
     state() {return this.error || this.failure ? 'error' : !this.preparing && !this.scene_url ? 'empty' : this.preparing || !this.ready ? 'preparing' :
       !this.active || this.paused ? 'paused' : 'running';},
@@ -117,6 +118,7 @@ export default {
         this.fitRows=Object.entries(scene.body_fit?.measurements || {}).map(([key,r])=>({key,label:labels[key]||key,target:r.target_cm,actual:r.actual_cm}));
         e.url=url;this.loadedScene=scene.name;this.frames=0;this.fps=0;
         this.hasSupport=e.cloth.supportTargets.length>0;this.support=e.cloth.settings.holdNeckline;
+        this.hasButtons=scene.buttons?.some(b=>b.hole)||false;this.buttonsClosed=true;
         this.appearance();this.paused=false;this.ready=true;
         this.$emit('ready',{scene:scene.name});
       } catch(error) {
@@ -153,10 +155,11 @@ export default {
       e.renderer.bodyView.color=[...linear(this.body_color),0];
       e.renderer.showBody=this.show_body;e.renderer.dirty=true;
     },
-    reset() {const e=engines.get(this);e.cloth?.reset();e.last=null;this.frames=0;this.paused=false;},
+    reset() {const e=engines.get(this);e.cloth?.reset();e.last=null;this.frames=0;this.paused=false;this.buttonsClosed=true;},
     front() {const e=engines.get(this);if(!this.paused)e.cloth.motion.front();e.renderer.camera.yaw=this.paused?e.cloth.motion.yaw:0;e.renderer.camera.pitch=0;e.renderer.dirty=true;},
     center() {const e=engines.get(this);Object.assign(e.renderer.camera,{...e.defaultCamera,target:[...e.defaultCamera.target],pan:[0,0]});e.renderer.dirty=true;},
     setSupport() {engines.get(this).cloth.settings.holdNeckline=this.support;},
+    toggleButtons() {const e=engines.get(this);this.buttonsClosed=!this.buttonsClosed;e.cloth.scene.buttons.forEach((_,i)=>e.cloth.setButton(i,this.buttonsClosed));this.paused=false;},
     retry() {const e=engines.get(this);e.url='';this.failure='';if(this.error)this.$emit('retry');else this.load();},
   },
 };

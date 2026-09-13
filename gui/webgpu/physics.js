@@ -3,6 +3,7 @@
 import {strainShader, strainTopology, contactNeighbors, placePanels} from './strain.js?v=13';
 import {hingeShader, collarWeldShader} from './bending.js?v=2';
 import {MannequinMotion,bodyMotionWGSL} from './motion.js?v=2';
+import {buttonClosureShader,closureColors,closureRest} from './closures.js?v=2';
 const common = `
 struct Params { motion: vec4<f32>, material: vec4<f32>, counts: vec4<u32>, contact: vec4<f32>, limits:vec4<f32> }
 @group(0) @binding(0) var<storage, read_write> q: array<vec4<f32>>;
@@ -282,6 +283,7 @@ export class Cloth {
     const placement=placePanels(scene);this.initialPositions=placement.positions;this.placement=placement.adjustments;this.supportTargets=placement.support;
     this.settings={substeps:12,width:1,wind:0,stretch:0.00001,bend:0.03,seam:0.0000001,thickness:0.004,gravity:9.81,damping:2,friction:0.4,sewDuration:1.6,selfCollision:true,bodyCollision:true,bodyMethod:'sdf',strainLimit:1.02,strainPasses:2,surfaceContact:true};
     this.settings.holdNeckline=this.supportTargets.length>0;
+    this.buttonStates=Uint32Array.from(scene.buttons||[],b=>b.closed!==false?1:0);
   }
   make(array,usage=GPUBufferUsage.STORAGE,label=''){const b=buffer(this.device,array,usage,label);this.owned.push(b);return b;}
   async pipeline(code,resources,label,motionBinding=null){
@@ -322,6 +324,15 @@ export class Cloth {
     this.integrate=await this.pipeline(integrate,[...base,[2,this.previous],[3,this.velocity]],'Integrate');
     if(this.supportTargets.length){this.supportBuffer=this.make(new Float32Array(this.supportTargets.flat()));this.supportPass=await this.pipeline(necklineSupport,[[0,this.q],[2,this.supportBuffer],[3,this.previous]],'Optional neckline fitting support');}
     this.solve=await this.pipeline(constraints,[...base,[2,this.edges]],'Colored XPBD');
+    this.buttonBatches=[];
+    const buttonColors=closureColors(s.buttons),closures=buttonColors.flat();
+    if(closures.length){
+      const raw=new ArrayBuffer(closures.length*80),u=new Uint32Array(raw),f=new Float32Array(raw);
+      closures.forEach((b,i)=>{u.set([...b.ids,b.index],i*20);u.set([...b.hole.ids,0],i*20+4);f.set([...b.weights,b.normal_sign],i*20+8);f.set([...b.hole.weights,b.clearance_m],i*20+12);f.set([b.compliance,...closureRest(b,this.initialPositions)],i*20+16);});
+      this.buttonBuffer=this.make(new Uint8Array(raw));this.buttonStateBuffer=this.make(this.buttonStates);
+      this.buttonSolve=await this.pipeline(common+buttonClosureShader,[...base,[2,this.buttonBuffer],[3,this.buttonStateBuffer]],'Button and buttonhole attachments');
+      let offset=0;for(const color of buttonColors){this.buttonBatches.push({count:color.length,bind:d.createBindGroup({layout:this.buttonSolve.pipeline.getBindGroupLayout(1),entries:[{binding:0,resource:{buffer:this.make(new Uint32Array([offset,color.length,0,0]),GPUBufferUsage.UNIFORM)}}]})});offset+=color.length;}
+    }
     this.hingeBatches=[];
     if(s.hinges?.length){
       const raw=new ArrayBuffer(s.hinges.length*48),u=new Uint32Array(raw),f=new Float32Array(raw);
@@ -331,9 +342,11 @@ export class Cloth {
       this.hingeBatches=s.hinge_batches.map(([start,count])=>({count,bind:d.createBindGroup({layout:this.hingeSolve.pipeline.getBindGroupLayout(1),entries:[{binding:0,resource:{buffer:this.make(new Uint32Array([start,count,0,0]),GPUBufferUsage.UNIFORM)}}]})}));
       const groups=new Map();
       s.sewn_ids.forEach((id,i)=>{if(!groups.has(id))groups.set(id,[]);groups.get(id).push(i);});
-      const welds=[...groups.values()].filter(ids=>ids.length>1&&ids.some(i=>/collar|stand/.test(s.vertex_panels[i])));
+      // A buttoned garment must carry tension through its construction seams,
+      // not relieve that tension by opening an unrelated side/shoulder seam.
+      const welds=[...groups.values()].filter(ids=>ids.length>1);
       const [ranges,ids]=csr(welds);this.collarWeldCount=welds.length;
-      this.collarWeld=await this.pipeline(common+collarWeldShader,[...base,[2,this.make(ranges)],[3,this.make(ids)],[4,this.previous]],'Close collar junctions');
+      this.collarWeld=await this.pipeline(common+collarWeldShader,[...base,[2,this.make(ranges)],[3,this.make(ids)],[4,this.previous]],'Close permanent sewing junctions');
     }
     this.batches=s.batches.map(([start,count])=>({count,bind:d.createBindGroup({layout:this.solve.pipeline.getBindGroupLayout(1),entries:[{binding:0,resource:{buffer:this.make(new Uint32Array([start,count,0,0]),GPUBufferUsage.UNIFORM)}}]})}));
     const triangleColors=strainTopology(s);this.strainTriangles=triangleColors.flat();
@@ -388,6 +401,25 @@ export class Cloth {
     await this.checkKernels();
   }
   async checkKernels(){
+    if(this.buttonSolve){
+      const d=this.device,raw=new ArrayBuffer(80),u=new Uint32Array(raw),f=new Float32Array(raw);
+      u.set([0,1,2,0]);u.set([3,4,5,0],4);f.set([1/3,1/3,1/3,1],8);f.set([1/3,1/3,1/3,.003],12);
+      const state=this.make(new Uint32Array([1]));
+      const fixture={...this.buttonSolve,bind:d.createBindGroup({layout:this.buttonSolve.pipeline.getBindGroupLayout(0),entries:
+        [[0,this.q],[1,this.params],[2,this.make(new Uint8Array(raw))],[3,state]].map(([binding,buffer])=>({binding,resource:{buffer}}))})};
+      const batch=d.createBindGroup({layout:this.buttonSolve.pipeline.getBindGroupLayout(1),entries:[{binding:0,resource:{buffer:this.make(new Uint32Array([0,1,0,0]),GPUBufferUsage.UNIFORM)}}]});
+      const points=[[0,1,0],[.1,1,0],[0,1.1,0],[0,1,.06],[.1,1,.06],[0,1.1,.06]],mass=[1,1,1,.5,.5,.5];
+      this.time=2;this.updateParams();d.queue.writeBuffer(this.q,0,vec4(points,mass));
+      const encoder=d.createCommandEncoder();for(let i=0;i<30;i++)this.dispatch(encoder,fixture,1,batch);d.queue.submit([encoder.finish()]);
+      const result=(await this.readPositions()).slice(0,6),mean=(p,start)=>p.slice(start,start+3).reduce((s,v)=>s+v[2],0)/3;
+      this.kernelChecks={button_shank_retains_separate_layers:Math.abs(mean(result,3)-mean(result,0)-.003)<1e-6,
+        button_transfers_load_to_both_panels:mean(result,0)>.03&&mean(result,3)<.05,
+        button_preserves_center_of_mass:[0,1,2].every(k=>Math.abs(result.reduce((s,p,i)=>s+(p[k]-points[i][k])/mass[i],0))<1e-5)};
+      d.queue.writeBuffer(state,0,new Uint32Array([0]));d.queue.writeBuffer(this.q,0,vec4(points,mass));
+      const released=d.createCommandEncoder();this.dispatch(released,fixture,1,batch);d.queue.submit([released.finish()]);const open=await this.readPositions();
+      this.kernelChecks.unbuttoning_removes_attachment_force=points.every((p,i)=>p.every((v,k)=>Math.abs(open[i][k]-v)<1e-7));
+      this.time=0;this.updateParams();
+    }
     const s=this.scene,d=this.device,fixture=vec4(s.vertices,s.inverse_mass);
     const place=(a,b,distance)=>{
       for(let i=0;i<this.n;i++)fixture.set([10+i*.03,10,10,s.inverse_mass[i]],i*4);
@@ -410,7 +442,7 @@ export class Cloth {
     const distance=gap(await this.readPositions(),c[0],c[1]);
     const alpha=this.settings.stretch/(1/(60*this.settings.substeps))**2;
     const expected=rest+rest*alpha/(s.inverse_mass[c[0]]+s.inverse_mass[c[1]]+alpha);
-    this.kernelChecks={self_contact_separates:Math.abs(separated-.008)<1e-5,adjacent_vertices_excluded:Math.abs(excluded-.003)<1e-5,xpbd_distance_matches_equation:Math.abs(distance-expected)<1e-5};
+    this.kernelChecks={...this.kernelChecks,self_contact_separates:Math.abs(separated-.008)<1e-5,adjacent_vertices_excluded:Math.abs(excluded-.003)<1e-5,xpbd_distance_matches_equation:Math.abs(distance-expected)<1e-5};
     if(this.hingeSolve){
       const raw=new ArrayBuffer(48),u=new Uint32Array(raw),f=new Float32Array(raw);
       u.set([0,1,2,0,3,4,5,0]);f.set([-2.18,0,0,0],8);d.queue.writeBuffer(this.hinges,0,raw);
@@ -552,11 +584,20 @@ export class Cloth {
       }
       for(const batch of this.seamBatches)this.dispatchInPass(pass,this.seamSolve,batch.count,batch.bind);
       for(const batch of this.hingeBatches)this.dispatchInPass(pass,this.hingeSolve,batch.count,batch.bind);
-      if(this.collarWeld)this.dispatchInPass(pass,this.collarWeld,this.collarWeldCount);
+      // Button seats can share a triangle corner with a permanent seam.
+      // Couple the solves so the button cannot pull that construction seam apart.
+      for(let iteration=0;iteration<(this.buttonBatches.length?3:1);iteration++){
+        for(const batch of this.buttonBatches)this.dispatchInPass(pass,this.buttonSolve,batch.count,batch.bind);
+        if(this.collarWeld)this.dispatchInPass(pass,this.collarWeld,this.collarWeldCount);
+      }
       if(this.settings.holdNeckline&&this.supportPass)this.dispatchInPass(pass,this.supportPass,this.supportTargets.length);
       if(this.settings.bodyCollision)this.dispatchInPass(pass,this.settings.bodyMethod==='sdf'?this.sdfCollide:this.collide);
       if(this.waistBatches.length)for(let iteration=0;iteration<6;iteration++){
         for(const batch of this.waistBatches)this.dispatchInPass(pass,this.waistSolve,batch.count,batch.bind);
+        if(this.settings.bodyCollision)this.dispatchInPass(pass,this.settings.bodyMethod==='sdf'?this.sdfCollide:this.collide);
+      }
+      if(this.buttonBatches.length&&this.collarWeld){
+        this.dispatchInPass(pass,this.collarWeld,this.collarWeldCount);
         if(this.settings.bodyCollision)this.dispatchInPass(pass,this.settings.bodyMethod==='sdf'?this.sdfCollide:this.collide);
       }
       this.dispatchInPass(pass,this.velocityPass);
@@ -566,11 +607,17 @@ export class Cloth {
   }
   reset(){
     this.time=0;this.frameDt=1/60;this.frameSubsteps=this.settings.substeps;
+    if(this.buttonStateBuffer){this.buttonStates.set((this.scene.buttons||[]).map(b=>b.closed!==false?1:0));this.device.queue.writeBuffer(this.buttonStateBuffer,0,this.buttonStates);}
     this.motion.reset();this.motionStep=0;this.writeMotion(false);
     this.frame=0;this.device.queue.writeBuffer(this.q,0,vec4(this.initialPositions,this.scene.inverse_mass));
     this.device.queue.writeBuffer(this.previous,0,vec4(this.initialPositions,this.scene.inverse_mass));
     this.device.queue.writeBuffer(this.velocity,0,new Float32Array(this.n*4));this.updateParams();
     const encoder=this.device.createCommandEncoder();this.dispatch(encoder,this.normalPass);this.device.queue.submit([encoder.finish()]);
+  }
+  setButton(index,closed){
+    if(!this.scene.buttons?.[index]?.hole)return;
+    this.buttonStates[index]=closed?1:0;
+    this.device.queue.writeBuffer(this.buttonStateBuffer,index*4,this.buttonStates,index,1);
   }
   async readPositions(){
     const b=this.device.createBuffer({size:this.n*32,usage:GPUBufferUsage.COPY_DST|GPUBufferUsage.MAP_READ});
