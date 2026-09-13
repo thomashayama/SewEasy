@@ -3,7 +3,9 @@
 An experimental cloth solver and renderer running entirely in browser WebGPU.
 No Modal, CUDA, Newton, server GPU, or precomputed drape is required. The Python
 pattern DSL and triangulation stay on the CPU; their output is ordinary static
-mesh data. This is a standalone experiment, not yet the NiceGUI draping path.
+mesh data. The NiceGUI studio now uses this same solver automatically when its
+3D view opens. Shared engine modules live in `gui/webgpu/`; this directory holds
+the standalone benchmark UI. See `docs/Browser_preview.md` for studio setup.
 
 ## Run
 

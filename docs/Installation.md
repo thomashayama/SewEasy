@@ -14,9 +14,15 @@ Create system.json file in the root of this directory with your machine's file p
     * path to folder containing datasets of body shape samples (`'body_samples_path'`)
     
 
-## Installing simulator
+## Browser preview
 
-We use our own version of the [NVIDIA warp](https://github.com/maria-korosteleva/NvidiaWarp-GarmentCode) simulator. It should be installed manually to use our library correctly.
+The GUI's 3D view simulates and renders with WebGPU in the browser. Its server
+needs only CPU pattern drafting and mesh preparation. See [Browser preview](Browser_preview.md)
+for a minimal environment and current limitations.
+
+## Installing the legacy dataset simulator
+
+The offline dataset pipeline uses our own version of the [NVIDIA warp](https://github.com/maria-korosteleva/NvidiaWarp-GarmentCode) simulator. Install it manually to run that pipeline; the browser preview does not require it.
 
 See the instructions in the [NvidiaWarp-GarmentCode](https://github.com/maria-korosteleva/NvidiaWarp-GarmentCode) repo. 
 

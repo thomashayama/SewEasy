@@ -1,0 +1,16 @@
+.se-browser-drape { position:relative; width:100%; height:100%; min-height:360px; background:#e8f0f5; color:#1d2b42; }
+.se-browser-drape canvas { width:100%; height:100%; display:block; touch-action:none; }
+.se-drape-message { position:absolute; inset:20%; display:flex; align-items:center; justify-content:center; flex-direction:column; gap:12px; text-align:center; }
+.se-drape-message strong { font-size:1.1rem; font-weight:500; }
+.se-drape-message span { color:#5a6270; font-size:.85rem; }
+.se-drape-loader { width:26px; height:26px; border:2px solid #c5ccd8; border-top-color:#35558a; border-radius:50%; animation:se-drape-spin 1s linear infinite; }
+@keyframes se-drape-spin { to { transform:rotate(360deg); } }
+.se-drape-controls { position:absolute; bottom:55px; left:50%; transform:translateX(-50%); width:max-content; max-width:95%; display:flex; align-items:center; justify-content:center; flex-wrap:wrap; gap:8px; padding:9px 12px; border:1px solid #c5ccd8; border-radius:16px; background:#fafaf7ed; box-shadow:0 3px 12px #1d2b4210; font-size:.8rem; }
+.se-drape-controls button, .se-drape-message button { border:1px solid #c5ccd8; border-radius:7px; background:#fff; padding:5px 10px; cursor:pointer; }
+.se-drape-controls button:hover, .se-drape-message button:hover { background:#e4ebf6; }
+.se-browser-drape button:focus-visible { outline:2px solid #35558a; outline-offset:2px; }
+.se-drape-controls label { display:flex; align-items:center; gap:4px; }
+.se-drape-controls small { color:#5a6270; }
+.se-drape-live { font-variant-numeric:tabular-nums; padding:0 4px; }
+.se-drape-body-note { position:absolute; bottom:33px; left:50%; transform:translateX(-50%); width:max-content; max-width:95%; text-align:center; font-size:.7rem; color:#5a6270; }
+@media (max-width:700px) { .se-drape-controls { bottom:75px; } .se-drape-body-note { bottom:43px; } }

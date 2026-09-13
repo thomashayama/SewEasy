@@ -1,6 +1,6 @@
 // SewEasy browser cloth experiment. Original WGSL implementation of small-step
 // XPBD distance constraints; see README.md for paper references and limits.
-import {strainShader, strainTopology, contactNeighbors, placePanels} from './strain.js?v=9';
+import {strainShader, strainTopology, contactNeighbors, placePanels} from './strain.js?v=10';
 const common = `
 struct Params { motion: vec4<f32>, material: vec4<f32>, counts: vec4<u32>, contact: vec4<f32>, limits:vec4<f32> }
 @group(0) @binding(0) var<storage, read_write> q: array<vec4<f32>>;
@@ -269,7 +269,7 @@ export function vec4(values, w=0) {return new Float32Array(values.flatMap((p,i)=
 function csr(rows) {const values=[],ranges=[];for(const row of rows){ranges.push(values.length,row.length);values.push(...row);}return [new Uint32Array(ranges),new Uint32Array(values)];}
 
 export class Cloth {
-  static async create(device, scene,progress=()=>{}) {const c=new Cloth(device,scene);c.progress=progress;await c.initialize();return c;}
+  static async create(device, scene,progress=()=>{}) {const c=new Cloth(device,scene);c.progress=progress;try{await c.initialize();return c;}catch(error){c.destroy();throw error;}}
   constructor(device,scene) {
     this.device=device;this.scene=scene;this.n=scene.vertices.length;this.frame=0;this.owned=[];
     const placement=placePanels(scene);this.initialPositions=placement.positions;this.placement=placement.adjustments;this.supportTargets=placement.support;

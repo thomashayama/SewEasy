@@ -17,10 +17,8 @@ import seweasy.data_config as data_config
 from seweasy.meshgen.sim_config import PathCofig
 from seweasy.pattern.print_export import save_print_pdf
 
-# NOTE: the simulation stack (seweasy.meshgen.boxmeshgen / .simulation)
-# pulls in NVIDIA Warp, pyrender and libigl — seconds of import time and
-# hundreds of MB of RAM. It is only needed when a design is draped without
-# the Modal service, so it is imported lazily inside drape_3d().
+# The legacy simulation stack is imported lazily in drape_3d(). The studio's
+# live 3D view instead uses gui.browser_drape (CPU meshing + browser WebGPU).
 
 verbose = False
 
@@ -324,7 +322,7 @@ class GUIPattern:
 
     # 3D
     def drape_3d(self):
-        """Run the draping of the current frame"""
+        """Legacy offline/server drape; not called by the browser 3D view."""
 
         # Config setup 
         props = data_config.Properties('./assets/Sim_props/gui_sim_props.yaml')   # TODOLOW Parameter?
@@ -649,4 +647,3 @@ class GUIPattern:
 
         print(f'Success! {self.sew_pattern.name} saved to {self.saved_garment_folder}')
         return self.saved_garment_folder
-

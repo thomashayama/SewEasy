@@ -39,43 +39,10 @@ def prepare(name, resolution, output):
     box = BoxMesh(directory / f'{name}_specification.json', resolution)
     box.load()
     mesh_s = time.perf_counter() - start
-    vertices = np.asarray(box.vertices, dtype=np.float64) * 0.01
-    faces = np.asarray(box.faces, dtype=np.int32)
-    uv = np.asarray(box.vertex_texture, dtype=np.float64) * 0.01
-    uv_faces = np.asarray(box.faces_with_texture, dtype=np.int32)[:, [1, 3, 5]]
-    rest = uv[uv_faces]
-    dm = np.stack([rest[:, 1] - rest[:, 0], rest[:, 2] - rest[:, 0]], axis=-1)
-    if np.any(np.abs(np.linalg.det(dm)) < 1e-12):
-        raise ValueError('Degenerate 2D rest triangle')
-    body_mesh = trimesh.load(ROOT / 'assets/bodies/mean_all.obj', process=False)
-    # Both original body and pattern positions share the same origin.
-    # Apply the original draper's ground shift, after converting to metres.
-    body_v = np.array(body_mesh.vertices)
-    shift = max(0.0, -body_v[:, 1].min())
-    body_v[:, 1] += shift
-    vertices[:, 1] += shift
-    # Face ownership is needed for per-panel stiffness and garment diagnostics.
-    texture_panel = []
-    unsewn = []
-    for panel_name in box.panelNames:
-        texture_panel.extend([panel_name] * len(box.panels[panel_name].panel_vertices))
-        panel = box.panels[panel_name]
-        unsewn.extend(panel.rot_trans_panel(panel.panel_vertices))
-    face_panels = np.asarray(texture_panel)[uv_faces[:, 0]]
-    # Newton's panel helper requires positive 2D winding. Reflect the local
-    # x axis of reversed panels, leaving the world-space surface unchanged.
-    for panel_name in box.panelNames:
-        ids = np.flatnonzero(face_panels == panel_name)
-        signed = np.linalg.det(dm[ids])
-        if np.all(signed < 0):
-            uv[np.unique(uv_faces[ids]), 0] *= -1
-        elif not np.all(signed > 0):
-            raise ValueError(f'Inconsistent rest winding in {panel_name}')
-    np.savez_compressed(directory / 'mesh.npz', vertices=vertices, faces=faces,
-                        uv=uv, uv_faces=uv_faces, body_vertices=body_v,
-                        body_faces=np.asarray(body_mesh.faces, dtype=np.int32),
-                        face_panels=face_panels,
-                        unsewn_vertices=np.asarray(unsewn) * 0.01 + [0, shift, 0])
+    from seweasy.meshgen.webgpu import panel_mesh_data
+    data = panel_mesh_data(box, trimesh.load(ROOT / 'assets/bodies/mean_all.obj', process=False))
+    np.savez_compressed(directory / 'mesh.npz', **data)
+    vertices, faces = data['vertices'], data['faces']
     initial = trimesh.Trimesh(vertices, faces, process=False)
     initial.export(directory / 'initial.obj')
     metadata = dict(garment=name, resolution_cm=resolution, vertices=len(vertices),

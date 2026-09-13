@@ -21,6 +21,7 @@ import asyncio
 import seweasy as pyg
 from .gui_pattern import GUIPattern
 from . import theme
+from .browser_drape import BrowserDrape, prepare_scene
 from webapp import gui_widgets as account_widgets
 
 # Optional AI photo-to-design service (see chatgarment_modal.py); the GUI
@@ -54,8 +55,6 @@ DEFAULT_BODY_COLOR = '#f9f2e4'
 
 # Skin tone ramp + helpers live with the rest of the body knowledge
 from webapp.measurement_guide import skin_tone_hex, skin_tone_t
-# Skin-tinted mannequin exports, cached by tone across sessions
-from webapp import body_display
 
 # Static mounts are app-wide: registering them per connection only bloats
 # the router. Session-specific files under /geo get unique names, so long
@@ -96,9 +95,15 @@ class GUIState:
 
         # Paths setup (static mounts are registered once at module scope)
         self.path_static_img = PATH_STATIC_IMG
-        self.garm_3d_filename = f'garm_3d_{self.pattern_state.id}.glb'
         self.body_color = DEFAULT_BODY_COLOR
-        self.local_path_3d = LOCAL_PATH_3D
+        self.local_path_3d = LOCAL_PATH_3D / self.pattern_state.id
+        self._view_3d_active = False
+        self._preview_revision = 0
+        self._prepared_revision = -1
+        self._draft_pending = 1
+        self._draft_failed = False
+        self._preparing_3d = False
+        self._released = False
 
         # A design stashed before an auth/account navigation survives the
         # round trip (signing in must not discard the work being saved)
@@ -116,16 +121,32 @@ class GUIState:
 
     def release(self):
         """Clean-up after the sesssion"""
+        self._released = True
+        # A disconnect must not remove files under an in-flight CPU mesh job.
+        self._async_executor.submit(self._release_files)
+        self._async_executor.shutdown(wait=False)
+
+    def _release_files(self):
         self.pattern_state.release()
-        (self.local_path_3d / self.garm_3d_filename).unlink(missing_ok=True)
+        if self.local_path_3d.resolve().parent == LOCAL_PATH_3D.resolve():
+            shutil.rmtree(self.local_path_3d, ignore_errors=True)
 
     async def initial_draft(self):
         """Draft and show the starting garment; call once the page is
         delivered, so the first paint never waits on pattern assembly"""
-        await asyncio.get_event_loop().run_in_executor(
-            self._async_executor, self._sync_update_state)
+        try:
+            await asyncio.get_event_loop().run_in_executor(
+                self._async_executor, self._sync_update_state)
+        except Exception:
+            traceback.print_exc()
+            self._draft_failed = True
+            self.ui_browser_drape.configure(preparing=False, error='Could not draft the starting design. Adjust its parameters to try again.')
+            return
+        finally:
+            self._draft_pending -= 1
         if self._restored_skin:
             await self.apply_skin_color(self._restored_skin)
+        await self.update_3d_scene()
 
     # --- Design persistence across navigation ---
 
@@ -255,7 +276,7 @@ class GUIState:
             self.ui_2d_tab = ui.tab('Sewing pattern')
             self.ui_3d_tab = ui.tab('3D view')
         with ui.tab_panels(tabs, value=self.ui_2d_tab, animated=False) \
-                .classes('w-full h-full p-0 m-0'):
+                .classes('w-full h-full p-0 m-0').props('keep-alive'):
             with ui.tab_panel(self.ui_2d_tab).classes('w-full h-full p-0 m-0 relative'):
                 self.def_pattern_display()
             with ui.tab_panel(self.ui_3d_tab).classes('w-full h-full p-0 m-0 relative'):
@@ -264,8 +285,14 @@ class GUIState:
         # Floating view switcher + fabric color picker
         with ui.row(wrap=False).classes(
                 'absolute top-3 left-1/2 -translate-x-1/2 z-50 items-center gap-2'):
+            async def switch_view(e):
+                tabs.set_value(e.value)
+                self._view_3d_active = e.value == '3D view'
+                self.ui_browser_drape.configure(active=self._view_3d_active)
+                await self.update_3d_scene()
+
             ui.toggle(['Sewing pattern', '3D view'], value='Sewing pattern',
-                      on_change=lambda e: tabs.set_value(e.value)) \
+                      on_change=switch_view) \
                 .props('no-caps unelevated rounded toggle-color=primary padding="2px 14px"') \
                 .classes('se-overlay-chip')
 
@@ -567,78 +594,19 @@ class GUIState:
 
     # !SECTION
     # SECTION 3D view
-    def create_lights(self, scene:ui.scene, intensity=30.0):
-        light_positions = np.array([
-            [1.60614, 1.23701, 1.5341,],
-            [1.31844, -2.52238, 1.92831],
-            [-2.80522, 2.34624, 1.2594],
-            [0.160261, 3.52215, 1.81789],
-            [-2.65752, -1.26328, 1.41194]
-        ])
-        light_colors = [
-            '#ffffff',
-            '#ffffff',
-            '#ffffff',
-            '#ffffff',
-            '#ffffff'
-        ]
-        z_dirs = np.arctan2(light_positions[:, 1], light_positions[:, 0])
-
-        # Add lights to the scene
-        for i in range(len(light_positions)):
-            scene.spot_light(
-                color=light_colors[i], intensity=intensity,
-                angle=np.pi,
-                ).rotate(0., 0., -z_dirs[i]).move(light_positions[i][0], light_positions[i][1], light_positions[i][2])
-
-    def create_camera(self, cam_location, fov, scale=1.):
-        camera = ui.scene.perspective_camera(fov=fov)
-        camera.x = cam_location[0] * scale
-        camera.y = cam_location[1] * scale
-        camera.z = cam_location[2] * scale
-
-        # direction
-        camera.look_at_x = 0
-        camera.look_at_y = 0
-        camera.look_at_z = cam_location[2] * scale * 2/3
-
-        return camera
-
     def def_3d_scene(self):
-        y_fov = 30   # Degrees == np.pi / 6. rad FOV
-        camera_location = [0, -4.15, 1.25]
-        bg_color = '#f7f5f0'  # pattern paper
-
-        def body_visibility(value):
-            self.ui_body_3d.visible(value)
-
-        camera = self.create_camera(camera_location, y_fov)
-        with ui.scene(
-            width=self.scene_base_resoltion[0],
-            height=self.scene_base_resoltion[1],
-            camera=camera,
-            grid=False,
-            background_color=bg_color
-            ).classes('w-full h-full p-0 m-0') as self.ui_3d_scene:
-            # Lights setup
-            self.create_lights(self.ui_3d_scene, intensity=10.)
-            # NOTE: texture is there, just needs a better setup
-            self.ui_garment_3d = None
-            # TODOLOW Update body model to a correct shape
-            # NOTE: decimated GLB (9k faces, ~180KB vs the 2.3MB full STL)
-            # with the muslin color baked in — loads much faster
-            self.ui_body_3d = self.ui_3d_scene.gltf(
-                    '/body/mean_all_display.glb'
-                ).rotate(np.pi / 2, 0., 0.)
+        self.ui_browser_drape = BrowserDrape(self.pattern_state.fabric_color, self.body_color) \
+            .classes('w-full h-full p-0 m-0')
+        self.ui_browser_drape.on('retry', self.retry_3d_scene)
 
         # Floating controls over the 3D stage
         # NOTE: stacked vertically so they never collide with the
         # centered view switcher on narrow windows
-        with ui.column().classes('absolute top-3 left-4 z-40 items-start gap-2'):
+        with ui.column().classes('absolute top-14 left-4 z-40 items-start gap-2'):
             self.ui_body_3d_switch = ui.switch(
                 'Body Silhouette',
                 value=True,
-                on_change=lambda e: body_visibility(e.value)
+                on_change=lambda e: self.ui_browser_drape.configure(show_body=e.value)
             ).props('dense left-label').classes('se-overlay-chip text-stone-800 pl-2.5 pr-1.5 py-0.5')
 
             # Mannequin skin tone
@@ -653,19 +621,6 @@ class GUIState:
                     .on('change',
                         lambda e: self.update_body_color(skin_tone_hex(e.args))) \
                     .tooltip('Mannequin skin tone')
-
-            # The 3D result goes stale as soon as the design changes;
-            # make the required re-drape step visible instead of implied
-            self.ui_3d_stale = ui.label(
-                'Press "Drape current design" to see this design in 3D'
-            ).classes('se-warning-chip') \
-                .bind_visibility_from(self.pattern_state, 'is_in_3D',
-                                      backward=lambda in_3d: not in_3d)
-
-        # Floating primary action
-        ui.button('Drape current design', on_click=lambda: self.update_3d_scene()) \
-            .props('unelevated icon=checkroom').classes('absolute bottom-5 right-6 z-50 shadow-lg') \
-            .tooltip('The first drape can take a couple of minutes')
 
     # !SECTION
     # SECTION -- Other UI details
@@ -852,6 +807,11 @@ class GUIState:
         # https://github.com/zauberzeug/nicegui/wiki/FAQs#why-have-all-my-elements-the-same-value
    
         print('INFO::Updating pattern...')
+        self._preview_revision += 1
+        self._draft_pending += 1
+        self._draft_failed = True
+        self.pattern_state.is_in_3D = False
+        self.ui_browser_drape.configure(scene_url='', preparing=True, error='')
 
         # Update the values
         if param_dict is not None:
@@ -876,6 +836,7 @@ class GUIState:
 
             self.loop = asyncio.get_event_loop()
             await self.loop.run_in_executor(self._async_executor, self._sync_update_state)
+            self._draft_failed = False
 
         except Exception as e:
             traceback.print_exc()
@@ -887,8 +848,12 @@ class GUIState:
                 close_button=True,
                 position='center'
             )
+            self.ui_browser_drape.configure(preparing=False, error='This design could not be drafted. Adjust its parameters to preview it.')
+            return
         finally:
             self.spin_dialog.close()  # If open
+            self._draft_pending -= 1
+        await self.update_3d_scene()
 
     def _sync_update_state(self):
         # Update derivative body values (just in case)
@@ -1007,19 +972,24 @@ class GUIState:
         if self._suppress_color_change or not self.selected_panel or not e.value:
             return
         self.pattern_state.set_panel_color(self.selected_panel, e.value)
+        self.ui_browser_drape.configure(panel_colors=dict(self.pattern_state.panel_colors))
         self.update_pattern_display()
 
-    def apply_panel_stiffness(self, e):
+    async def apply_panel_stiffness(self, e):
         """Set the selected panel's bending stiffness (used on next drape)"""
         if self._suppress_color_change or not self.selected_panel \
                 or e.value is None:
             return
         self.pattern_state.set_panel_stiffness(self.selected_panel, e.value)
+        self._preview_revision += 1
+        self.ui_browser_drape.configure(scene_url='', preparing=True)
+        await self.update_3d_scene()
 
     def reset_panel_colors(self):
         """Clear all per-panel color overrides"""
         self.selected_panel = None
         self.pattern_state.reset_panel_colors()
+        self.ui_browser_drape.configure(panel_colors={})
         self.ui_panel_color_label.set_text('Click a panel to edit it')
         self.update_pattern_display()
 
@@ -1047,71 +1017,57 @@ class GUIState:
         for param in ui_body_refs: 
             ui_body_refs[param].value = self.pattern_state.body_params[param]
 
+    async def retry_3d_scene(self):
+        if self._draft_failed:
+            await self.update_pattern_ui_state()
+        else:
+            await self.update_3d_scene()
+
     async def update_3d_scene(self):
-        """According the whatever pattern current state"""
-
-        print('INFO::Updating 3D...')
-
-        # Cleanup 
-        if self.ui_garment_3d is not None:
-            self.ui_garment_3d.delete()
-            self.ui_garment_3d = None
-        
-        if not self.pattern_state.svg_filename:
-            print('INFO::Current garment is empty, skipped 3D update')
-            ui.notify('Current garment is empty. Chose a design to start simulating!')
-            self.ui_body_3d.visible(True)
-            self.ui_body_3d_switch.set_value(True)
+        """Prepare only the newest design, lazily when its 3D stage is open."""
+        if self._released or not self._view_3d_active or self._draft_pending or self._draft_failed or self._preparing_3d:
             return
-
+        if self._prepared_revision == self._preview_revision:
+            return
+        self._preparing_3d = True
         try:
-            # Display waiting spinner untill getting the result
-            # NOTE Splashscreen solution to block users from modifying params while updating
-            # https://github.com/zauberzeug/nicegui/discussions/1988
-
-            self.open_spinner('Simulating the 3D drape — this can take '
-                              'a couple of minutes on the first run')
-            # NOTE: Using threads for async call
-            # https://stackoverflow.com/questions/49822552/python-asyncio-typeerror-object-dict-cant-be-used-in-await-expression
-            self.loop = asyncio.get_event_loop()
-            await self.loop.run_in_executor(self._async_executor, self._sync_update_3d)
-
-            # Update ui
-            # https://github.com/zauberzeug/nicegui/discussions/1269
-            with self.ui_3d_scene:
-                # NOTE: material is defined in the glb file
-                self.ui_garment_3d = self.ui_3d_scene.gltf(
-                            f'geo/{self.garm_3d_filename}',
-                        ).scale(0.01).rotate(np.pi / 2, 0., 0.)
-
-        except Exception as e:
-            traceback.print_exc()
-            print(e)
-            self.ui_3d_scene.set_visibility(True)
-            ui.notify(
-                'The drape simulation failed — this is usually on our side, '
-                'not your design. Try again, or adjust the parameters if it persists',
-                type='negative',
-                close_button=True,
-                position='center'
-            )
+            while not self._released and self._view_3d_active and not self._draft_pending and not self._draft_failed:
+                revision = self._preview_revision
+                if not self.pattern_state.svg_filename:
+                    self.ui_browser_drape.configure(scene_url='', preparing=False, error='')
+                    return
+                self.ui_browser_drape.configure(preparing=True, error='')
+                target = self.local_path_3d / f'scene-{revision}.json'
+                try:
+                    await asyncio.get_running_loop().run_in_executor(
+                        self._async_executor, prepare_scene, self.pattern_state, target)
+                except Exception:
+                    traceback.print_exc()
+                    if revision != self._preview_revision and not self._released:
+                        continue
+                    if revision == self._preview_revision and not self._released:
+                        self.ui_browser_drape.configure(preparing=False,
+                            error='Could not prepare this pattern for 3D. Retry or adjust the design.')
+                    return
+                if self._released:
+                    return
+                if revision != self._preview_revision:
+                    target.unlink(missing_ok=True)
+                    if not self._view_3d_active:
+                        return
+                    continue
+                self._prepared_revision = revision
+                self.ui_browser_drape.configure(
+                    scene_url=f'/geo/{self.pattern_state.id}/{target.name}',
+                    preparing=False, error='', fabric_color=self.pattern_state.fabric_color,
+                    panel_colors=dict(self.pattern_state.panel_colors))
+                # Each revision has an immutable URL; old scenes are no longer used.
+                for old in self.local_path_3d.glob('scene-*.json'):
+                    if old != target:
+                        old.unlink(missing_ok=True)
+                return
         finally:
-            self.spin_dialog.close()  # If open
-    
-    def _sync_update_3d(self):
-        """Update 3d model"""
-
-        # Run simulation
-        path, filename = self.pattern_state.drape_3d()
-
-        # NOTE: The files will be available publically at the static point
-        # However, we cannot do much about it, since it won't be available for the interface otherwise
-        
-        # Delete previous file
-        (self.local_path_3d / self.garm_3d_filename).unlink(missing_ok=True)
-        # Put the new one for display
-        self.garm_3d_filename = f'garm_3d_{self.pattern_state.id}_{time.time()}.glb'
-        shutil.copy2(path / filename, self.local_path_3d / self.garm_3d_filename)
+            self._preparing_3d = False
 
     async def update_fabric_color(self, color):
         """Apply a new fabric color to the 2D pattern and the draped 3D garment"""
@@ -1129,65 +1085,16 @@ class GUIState:
             self._async_executor, self.pattern_state.set_fabric_color, color)
         self.update_pattern_display()
 
-        # 3D: re-tint the existing drape -- material re-export only,
-        # no re-simulation needed (covers fresh sims and adopted drapes)
-        if self.ui_garment_3d is None:
-            return
-        try:
-            self.open_spinner('Applying the fabric color to the 3D drape…')
-            updated = await self.loop.run_in_executor(
-                self._async_executor, self._sync_recolor_3d)
-
-            if updated:
-                self.ui_garment_3d.delete()
-                with self.ui_3d_scene:
-                    self.ui_garment_3d = self.ui_3d_scene.gltf(
-                                f'geo/{self.garm_3d_filename}',
-                            ).scale(0.01).rotate(np.pi / 2, 0., 0.)
-        except Exception as e:
-            traceback.print_exc()
-            print(e)
-            ui.notify(
-                'Failed to apply the fabric color to the 3D view',
-                type='negative',
-                close_button=True,
-                position='center'
-            )
-        finally:
-            self.spin_dialog.close()  # If open
+        self.ui_browser_drape.configure(fabric_color=color,
+                                        panel_colors=dict(self.pattern_state.panel_colors))
 
     async def update_body_color(self, color):
-        """Re-tint the 3D mannequin with the chosen skin tone"""
+        """Update the browser material without re-exporting a mannequin."""
         if not color or color == self.body_color:
             return
-
-        print('INFO::Updating mannequin color...')
         self.body_color = color
-        self.ui_skin_slider.style(f'color: {color}')   # thumb shows the tone
-
-        try:
-            # Tinted exports are cached by tone and shared across sessions
-            # (see webapp.body_display); only a cache miss does mesh work
-            self.loop = asyncio.get_event_loop()
-            url = await self.loop.run_in_executor(
-                self._async_executor, body_display.tinted_body_glb_url, color)
-
-            # Swap the body model in the scene, preserving visibility
-            visible = self.ui_body_3d_switch.value
-            self.ui_body_3d.delete()
-            with self.ui_3d_scene:
-                self.ui_body_3d = self.ui_3d_scene.gltf(url) \
-                    .rotate(np.pi / 2, 0., 0.)
-            self.ui_body_3d.visible(visible)
-        except Exception as e:
-            traceback.print_exc()
-            print(e)
-            ui.notify(
-                'Failed to apply the mannequin color',
-                type='negative',
-                close_button=True,
-                position='center'
-            )
+        self.ui_skin_slider.style(f'color: {color}')
+        self.ui_browser_drape.configure(body_color=color)
 
     async def apply_skin_color(self, color):
         """Apply a stored skin tone (None -> default muslin) and sync the
@@ -1197,20 +1104,6 @@ class GUIState:
         self.ui_skin_slider.style(f'color: {color}')
         await self.update_body_color(color)
 
-    def _sync_recolor_3d(self):
-        """Re-export the draped garment GLB in the current fabric color"""
-        res = self.pattern_state.recolor_3d()
-        if res is None:
-            return False
-        path, filename = res
-
-        # Delete previous file
-        (self.local_path_3d / self.garm_3d_filename).unlink(missing_ok=True)
-        # Put the new one for display
-        self.garm_3d_filename = f'garm_3d_{self.pattern_state.id}_{time.time()}.glb'
-        shutil.copy2(path / filename, self.local_path_3d / self.garm_3d_filename)
-        return True
-
     def apply_fabric_color_visuals(self, color):
         """Set the fabric color state + 2D display (no 3D export) —
         used when a saved outfit restores its color"""
@@ -1219,23 +1112,11 @@ class GUIState:
         self.pattern_state.fabric_color = color
         self.ui_fabric_color_btn.style(f'background-color: {color} !important')
         self.ui_fabric_color_picker.set_color(color)
+        self.ui_browser_drape.configure(fabric_color=color)
 
     def adopt_drape(self, glb_bytes):
-        """Show a stored drape in the 3D scene without re-simulating"""
+        """Retain an outfit's stored export; the live preview uses its design."""
         self.pattern_state.adopt_drape_glb(glb_bytes)
-
-        # Delete previous file
-        (self.local_path_3d / self.garm_3d_filename).unlink(missing_ok=True)
-        # Put the new one for display
-        self.garm_3d_filename = f'garm_3d_{self.pattern_state.id}_{time.time()}.glb'
-        (self.local_path_3d / self.garm_3d_filename).write_bytes(glb_bytes)
-
-        if self.ui_garment_3d is not None:
-            self.ui_garment_3d.delete()
-        with self.ui_3d_scene:
-            self.ui_garment_3d = self.ui_3d_scene.gltf(
-                        f'geo/{self.garm_3d_filename}',
-                    ).scale(0.01).rotate(np.pi / 2, 0., 0.)
 
     # Design buttons updates
     async def design_sample(self):
