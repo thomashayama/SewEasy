@@ -8,16 +8,16 @@ const source=readFileSync(new URL('../gui/browser_drape.js',import.meta.url),'ut
   .replace(/^import .*;$/gm,'').replace('export default {','globalThis.component = {');
 
 function setup({gpu,fetch}={}) {
-  const emitted=[],destroyed=[];
-  const device={queue:{onSubmittedWorkDone:async()=>{}},lost:new Promise(()=>{}),
+  const emitted=[],destroyed=[],elapsed=[],renderers=[];
+  const device={queue:{onSubmittedWorkDone:async()=>{},submit(){}},createCommandEncoder:()=>({finish(){}}),lost:new Promise(()=>{}),
     addEventListener(){},destroy(){destroyed.push('device');}};
   const context=vm.createContext({navigator:gpu===false?{}:{gpu:{
     requestAdapter:async()=>({requestDevice:async()=>device}),getPreferredCanvasFormat:()=> 'bgra8unorm'}},
     fetch,performance:{now:()=>1000},AbortController,document:{hidden:false},
     requestAnimationFrame:()=>1,cancelAnimationFrame(){},
     Cloth:{create:async(_device,scene)=>({scene,frame:0,motion:{center:[0,.86,0]},supportTargets:[],settings:{holdNeckline:false},
-      destroy(){destroyed.push(scene.name);}})},
-    Renderer:class {constructor(){this.bodyView={};this.controls={};this.camera={target:[0,1,0]};}setFabricColors(){}destroy(){}}
+      encode(_encoder,_queries,dt){elapsed.push(dt);this.frame++;},destroy(){destroyed.push(scene.name);}})},
+    Renderer:class {constructor(){this.bodyView={};this.controls={};this.camera={target:[0,1,0],pan:[0,0]};renderers.push(this);}render(){this.dirty=false;}setFabricColors(){}destroy(){}}
   });
   vm.runInContext(source,context);
   const component=context.component;
@@ -25,7 +25,7 @@ function setup({gpu,fetch}={}) {
     fabric_color:'#ffffff',body_color:'#ffffff',panel_colors:{},show_body:true,
     $refs:{canvas:{}},$el:{getClientRects:()=>[{}]},$emit:(...event)=>emitted.push(event)};
   for(const [key,fn] of Object.entries(component.methods))instance[key]=fn.bind(instance);
-  return {instance,component,emitted,destroyed};
+  return {instance,component,emitted,destroyed,elapsed,renderers,context};
 }
 
 async function until(predicate) {
@@ -64,4 +64,30 @@ test('unmount during loading never creates a renderer or publishes ready',async(
   await new Promise(setImmediate);
   assert.equal(s.instance.ready,false);assert.equal(s.emitted.length,0);
   assert.deepEqual(s.destroyed,['device']);
+});
+
+test('simulation uses elapsed time and discards time spent paused or hidden',async()=>{
+  const s=setup({fetch:async()=>({ok:true,json:async()=>({name:'clock'})})});
+  s.component.mounted.call(s.instance);await until(()=>s.instance.ready);
+  await s.instance.tick(1000);await s.instance.tick(1033);
+  assert.deepEqual(s.elapsed,[1/60,.033]);assert.equal(s.instance.failure,'');
+  s.instance.paused=true;s.component.watch.paused.call(s.instance);await s.instance.tick(2000);
+  assert.equal(s.elapsed.length,2);assert.equal(s.renderers[0].controls.viewOnly,true);
+  s.instance.paused=false;s.component.watch.paused.call(s.instance);await s.instance.tick(3000);
+  assert.equal(s.elapsed.at(-1),1/60);
+  s.context.document.hidden=true;await s.instance.tick(4000);
+  s.context.document.hidden=false;await s.instance.tick(5000);
+  assert.equal(s.elapsed.at(-1),1/60);assert.equal(s.elapsed.length,4);
+  s.component.beforeUnmount.call(s.instance);
+});
+
+test('scene replacement preserves framing and recenter clears pan without changing the body pivot',async()=>{
+  const s=setup({fetch:async()=>({ok:true,json:async()=>({name:'pan'})})});
+  s.component.mounted.call(s.instance);await until(()=>s.instance.ready);
+  const first=s.renderers[0];first.camera.pan=[.25,-.1];first.camera.distance=1;
+  s.instance.scene_url='/geo/test/scene-1.json';s.component.watch.scene_url.call(s.instance);await until(()=>s.instance.ready);
+  const next=s.renderers[1];assert.deepEqual([...next.camera.pan],[.25,-.1]);assert.equal(next.camera.distance,1);
+  assert.notEqual(next.camera.pan,first.camera.pan);assert.deepEqual([...next.camera.target],[0,.86,0]);
+  s.instance.center();assert.deepEqual([...next.camera.pan],[0,0]);assert.deepEqual([...next.camera.target],[0,.86,0]);
+  s.component.beforeUnmount.call(s.instance);
 });

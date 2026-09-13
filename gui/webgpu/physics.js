@@ -2,7 +2,7 @@
 // XPBD distance constraints; see README.md for paper references and limits.
 import {strainShader, strainTopology, contactNeighbors, placePanels} from './strain.js?v=13';
 import {hingeShader, collarWeldShader} from './bending.js?v=2';
-import {MannequinMotion,bodyMotionWGSL} from './motion.js?v=1';
+import {MannequinMotion,bodyMotionWGSL} from './motion.js?v=2';
 const common = `
 struct Params { motion: vec4<f32>, material: vec4<f32>, counts: vec4<u32>, contact: vec4<f32>, limits:vec4<f32> }
 @group(0) @binding(0) var<storage, read_write> q: array<vec4<f32>>;
@@ -277,6 +277,7 @@ export class Cloth {
   static async create(device, scene,progress=()=>{}) {const c=new Cloth(device,scene);c.progress=progress;try{await c.initialize();return c;}catch(error){c.destroy();throw error;}}
   constructor(device,scene) {
     this.device=device;this.scene=scene;this.n=scene.vertices.length;this.frame=0;this.owned=[];
+    this.time=0;this.frameDt=1/60;
     this.motion=new MannequinMotion(scene.body_vertices);
     const placement=placePanels(scene);this.initialPositions=placement.positions;this.placement=placement.adjustments;this.supportTargets=placement.support;
     this.settings={substeps:12,width:1,wind:0,stretch:0.00001,bend:0.03,seam:0.0000001,thickness:0.004,gravity:9.81,damping:2,friction:0.4,sewDuration:1.6,selfCollision:true,bodyCollision:true,bodyMethod:'sdf',strainLimit:1.02,strainPasses:2,surfaceContact:true};
@@ -431,11 +432,11 @@ export class Cloth {
         [[0,this.q],[1,this.params],[2,this.make(new Uint32Array([0,3]))],[3,this.make(new Uint32Array([0,1,2]))],[4,this.previous]].map(([binding,buffer])=>({binding,resource:{buffer}}))})};
       const junction=vec4([[0,1,0],[.01,1,0],[.02,1,0]],[1,.5,1/3]);
       d.queue.writeBuffer(this.q,0,junction);d.queue.writeBuffer(this.previous,0,junction);
-      this.frame=120;this.updateParams();
+      this.time=2;this.updateParams();
       const close=d.createCommandEncoder();this.dispatch(close,weld,1);d.queue.submit([close.finish()]);
       const closed=(await this.readPositions()).slice(0,3);
       this.kernelChecks.collar_junction_preserves_center_of_mass=closed.every(p=>Math.abs(p[0]-.08/6)<1e-6&&Math.abs(p[1]-1)<1e-6);
-      this.frame=0;this.updateParams();
+      this.time=0;this.updateParams();
     }
     let seamPair=null;
     for(let i=0;i<this.n&&!seamPair;i++){
@@ -504,53 +505,67 @@ export class Cloth {
     if(!Object.values(this.kernelChecks).every(Boolean))throw Error('GPU kernel checks failed: '+JSON.stringify(this.kernelChecks));
   }
   updateParams(){
-    const s=this.settings,raw=new ArrayBuffer(80),f=new Float32Array(raw),u=new Uint32Array(raw);
-    f.set([1/(60*s.substeps),this.frame/60,s.width,s.wind,s.stretch,s.bend,s.seam,s.thickness]);
-    u.set([this.n,s.substeps,+s.selfCollision,this.hashSize],8);
+    const s=this.settings,count=this.frameSubsteps||s.substeps,raw=new ArrayBuffer(80),f=new Float32Array(raw),u=new Uint32Array(raw);
+    f.set([this.frameDt/count,this.time,s.width,s.wind,s.stretch,s.bend,s.seam,s.thickness]);
+    u.set([this.n,count,+s.selfCollision,this.hashSize],8);
     f.set([s.gravity,s.damping,s.friction,s.sewDuration],12);f.set([s.strainLimit,0,0,0],16);this.device.queue.writeBuffer(this.params,0,raw);
   }
   writeMotion(advance){
-    const count=this.settings.substeps;
+    const count=this.frameSubsteps||this.settings.substeps;
     if(!Number.isInteger(count)||count<1||count>64)throw Error('Substeps must be between 1 and 64.');
     for(let step=0;step<count;step++){
       const previous=this.motion.yaw;
-      if(advance)this.motion.advance(1/(60*count));
+      if(advance)this.motion.advance(this.frameDt/count);
       this.motionRaw.set(this.motion.uniform(previous),step*this.motionStride/4);
     }
     this.device.queue.writeBuffer(this.motionBuffer,0,this.motionRaw,0,count*this.motionStride/4);
   }
   dispatch(encoder,stage,count=this.n,extra=null,timestamps=null){
     const pass=encoder.beginComputePass({label:stage.label,...(timestamps?{timestampWrites:timestamps}:{})});
-    pass.setPipeline(stage.pipeline);pass.setBindGroup(0,stage.moving?.[this.motionStep||0]||stage.bind);if(extra)pass.setBindGroup(1,extra);
-    pass.dispatchWorkgroups(Math.ceil(count/64));pass.end();
+    this.dispatchInPass(pass,stage,count,extra);pass.end();
   }
-  encode(encoder,querySet=null){
-    this.frame++;this.updateParams();this.writeMotion(this.frame/60>this.settings.sewDuration);
-    for(let step=0;step<this.settings.substeps;step++){
+  dispatchInPass(pass,stage,count=this.n,extra=null){
+    pass.setPipeline(stage.pipeline);pass.setBindGroup(0,stage.moving?.[this.motionStep||0]||stage.bind);if(extra)pass.setBindGroup(1,extra);
+    pass.dispatchWorkgroups(Math.ceil(count/64));
+  }
+  encode(encoder,querySet=null,elapsed=1/60){
+    // Advance body and cloth on the same clock. A 30/45 Hz display must not
+    // turn the mannequin at half/three-quarter speed. Bound long stalls.
+    this.frameDt=Number.isFinite(elapsed)?Math.max(1/240,Math.min(1/30,elapsed)):1/60;
+    // Preserve the small solver step at lower refresh rates: larger steps let
+    // fitted waistbands stretch over the hips. Bound the total work per frame.
+    this.frameSubsteps=Math.min(64,Math.max(1,Math.ceil(this.settings.substeps*this.frameDt*60-1e-6)));
+    this.time+=this.frameDt;
+    this.frame++;this.updateParams();this.writeMotion(this.time>this.settings.sewDuration);
+    // Dispatches remain ordered in one pass, avoiding thousands of separate
+    // compute-pass begin/end commands per frame.
+    const pass=encoder.beginComputePass({label:'cloth step',...(querySet?{timestampWrites:{querySet,beginningOfPassWriteIndex:0,endOfPassWriteIndex:1}}:{})});
+    for(let step=0;step<this.frameSubsteps;step++){
       this.motionStep=step;
-      this.dispatch(encoder,this.integrate,this.n,null,querySet&&step===0?{querySet,beginningOfPassWriteIndex:0}:null);
-      for(const batch of this.batches)this.dispatch(encoder,this.solve,batch.count,batch.bind);
-      if(this.settings.bodyCollision&&this.settings.surfaceContact)for(const batch of this.surfaceBatches)this.dispatch(encoder,this.surfaceCollide,batch.count,batch.bind);
-      for(let iteration=0;iteration<this.settings.strainPasses;iteration++)for(const batch of this.strainBatches)this.dispatch(encoder,this.strainSolve,batch.count,batch.bind);
+      this.dispatchInPass(pass,this.integrate);
+      for(const batch of this.batches)this.dispatchInPass(pass,this.solve,batch.count,batch.bind);
+      if(this.settings.bodyCollision&&this.settings.surfaceContact)for(const batch of this.surfaceBatches)this.dispatchInPass(pass,this.surfaceCollide,batch.count,batch.bind);
+      for(let iteration=0;iteration<this.settings.strainPasses;iteration++)for(const batch of this.strainBatches)this.dispatchInPass(pass,this.strainSolve,batch.count,batch.bind);
       if(this.settings.selfCollision){
-        this.dispatch(encoder,this.clearHash,this.hashSize/4);this.dispatch(encoder,this.fillHash);
-        this.dispatch(encoder,this.self);this.dispatch(encoder,this.applySelf);
+        this.dispatchInPass(pass,this.clearHash,this.hashSize/4);this.dispatchInPass(pass,this.fillHash);
+        this.dispatchInPass(pass,this.self);this.dispatchInPass(pass,this.applySelf);
       }
-      for(const batch of this.seamBatches)this.dispatch(encoder,this.seamSolve,batch.count,batch.bind);
-      for(const batch of this.hingeBatches)this.dispatch(encoder,this.hingeSolve,batch.count,batch.bind);
-      if(this.collarWeld)this.dispatch(encoder,this.collarWeld,this.collarWeldCount);
-      if(this.settings.holdNeckline&&this.supportPass)this.dispatch(encoder,this.supportPass,this.supportTargets.length);
-      if(this.settings.bodyCollision)this.dispatch(encoder,this.settings.bodyMethod==='sdf'?this.sdfCollide:this.collide);
+      for(const batch of this.seamBatches)this.dispatchInPass(pass,this.seamSolve,batch.count,batch.bind);
+      for(const batch of this.hingeBatches)this.dispatchInPass(pass,this.hingeSolve,batch.count,batch.bind);
+      if(this.collarWeld)this.dispatchInPass(pass,this.collarWeld,this.collarWeldCount);
+      if(this.settings.holdNeckline&&this.supportPass)this.dispatchInPass(pass,this.supportPass,this.supportTargets.length);
+      if(this.settings.bodyCollision)this.dispatchInPass(pass,this.settings.bodyMethod==='sdf'?this.sdfCollide:this.collide);
       if(this.waistBatches.length)for(let iteration=0;iteration<6;iteration++){
-        for(const batch of this.waistBatches)this.dispatch(encoder,this.waistSolve,batch.count,batch.bind);
-        if(this.settings.bodyCollision)this.dispatch(encoder,this.settings.bodyMethod==='sdf'?this.sdfCollide:this.collide);
+        for(const batch of this.waistBatches)this.dispatchInPass(pass,this.waistSolve,batch.count,batch.bind);
+        if(this.settings.bodyCollision)this.dispatchInPass(pass,this.settings.bodyMethod==='sdf'?this.sdfCollide:this.collide);
       }
-      this.dispatch(encoder,this.velocityPass);
+      this.dispatchInPass(pass,this.velocityPass);
     }
     this.motionStep=0;
-    this.dispatch(encoder,this.normalPass,this.n,null,querySet?{querySet,endOfPassWriteIndex:1}:null);
+    this.dispatchInPass(pass,this.normalPass);pass.end();
   }
   reset(){
+    this.time=0;this.frameDt=1/60;this.frameSubsteps=this.settings.substeps;
     this.motion.reset();this.motionStep=0;this.writeMotion(false);
     this.frame=0;this.device.queue.writeBuffer(this.q,0,vec4(this.initialPositions,this.scene.inverse_mass));
     this.device.queue.writeBuffer(this.previous,0,vec4(this.initialPositions,this.scene.inverse_mass));

@@ -13,10 +13,11 @@ fitting runs on CPU; the fitted surface supplies the visible mesh and the
 browser's collision field. The account measurement editor uses the same fitter.
 Selecting **Default body** restores the original template unchanged.
 
-Drag to rotate; **Shift-drag**, right/middle-drag or the **Pan** toggle moves the
+Drag to turn the mannequin; **Shift-drag** or right/middle-drag moves the
 view. On touch screens, two fingers pan and pinch to zoom. Scroll zooms; the
-arrow keys pan when the canvas has focus. **Recenter** restores the initial
-framing. The visible floor has been removed.
+arrow keys rotate and **Shift+arrows** pan when the canvas has focus.
+Panning changes framing while the mannequin's rotation stays centered on its
+body. **Recenter** restores the initial framing. The visible floor has been removed.
 
 Click the mannequin caption below the preview for a table comparing requested
 and measured height, bust, underbust, waist, hips, wrist and thigh (wrist/thigh
@@ -48,7 +49,7 @@ The dataset simulation scripts still require their separate Warp installation.
 
 Current limitations: this remains an approximate cloth preview. The tube top's
 height-only neckline support is exposed as **Hold neckline (fitting aid)**.
-Fabric prints and button hardware are currently shown in 2D only. Live drapes
+Fabric prints and attached button hardware appear in both 2D and 3D. Live drapes
 are not yet attached as GLB exports when saving an outfit; stored legacy drapes
 remain available for existing saved outfits. The physics and asset licensing
 limits in `benchmarks/webgpu/README.md` still apply.

@@ -14,8 +14,11 @@ export class MannequinMotion {
   front(){this.target=this.yaw-Math.atan2(Math.sin(this.yaw),Math.cos(this.yaw));}
   advance(dt){
     const error=this.target-this.yaw;
-    const acceleration=Math.max(-9,Math.min(9,80*error-18*this.speed));
-    this.speed=Math.max(-2.4,Math.min(2.4,this.speed+acceleration*dt));
+    // Follow a drag promptly, with a short brake instead of a long ease-out.
+    // Keep finite acceleration and speed so each cloth substep sees a small
+    // collider movement rather than an instantaneous rotation.
+    const acceleration=Math.max(-120,Math.min(120,1600*error-80*this.speed));
+    this.speed=Math.max(-6,Math.min(6,this.speed+acceleration*dt));
     this.yaw+=this.speed*dt;
     if(Math.abs(error)<1e-5&&Math.abs(this.speed)<1e-4){this.yaw=this.target;this.speed=0;}
   }

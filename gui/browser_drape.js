@@ -1,5 +1,5 @@
-import {Cloth} from '/webgpu/physics.js?v=14';
-import {Renderer} from '/webgpu/render.js?v=15';
+import {Cloth} from '/webgpu/physics.js?v=15';
+import {Renderer} from '/webgpu/render.js?v=16';
 
 // GPU objects live outside Vue's reactive graph. Each mounted stage owns one
 // device and one loop; a serialized loader discards obsolete scene requests.
@@ -34,7 +34,7 @@ export default {
           <span class="se-drape-live" role="status">{{ paused ? 'Paused' : 'Live drape · ' + fps + ' fps' }}</span>
           <button @click="front">Front view</button>
           <label v-if="hasSupport"><input type="checkbox" v-model="support" @change="setSupport"> Hold neckline <small>(fitting aid)</small></label>
-          <small>{{paused ? 'Drag to inspect the paused drape' : 'Drag left / right to turn the mannequin'}}<br>Drag up / down to change view · Scroll to zoom</small>
+          <small>{{paused ? 'Drag to inspect the paused drape' : 'Drag left / right to turn the mannequin'}}<br>Drag up / down to change view<br>Shift-drag or right-drag to pan · Scroll to zoom<br>Touch: two fingers to pan or pinch to zoom</small>
         </div>
       </details>
     </div>
@@ -68,8 +68,8 @@ export default {
   },
   watch: {
     scene_url() {const e=engines.get(this); if(e){e.generation++; e.abort?.abort(); this.load();}},
-    active() {const e=engines.get(this);if(e?.cloth)this.frames=e.cloth.frame;if(e){e.stats=performance.now();e.count=0;}if(this.active)this.load();},
-    paused() {const e=engines.get(this);if(e?.cloth)this.frames=e.cloth.frame;if(e?.renderer)e.renderer.controls.viewOnly=this.paused;if(e){e.stats=performance.now();e.count=0;}},
+    active() {const e=engines.get(this);if(e?.cloth)this.frames=e.cloth.frame;if(e){e.last=null;e.stats=performance.now();e.count=0;}if(this.active)this.load();},
+    paused() {const e=engines.get(this);if(e?.cloth)this.frames=e.cloth.frame;if(e?.renderer)e.renderer.controls.viewOnly=this.paused;if(e){e.last=null;e.stats=performance.now();e.count=0;}},
     fabric_color() {this.appearance();},
     panel_colors: {deep:true, handler() {this.appearance();}},
     panel_fabrics: {deep:true, handler() {this.appearance();}},
@@ -81,7 +81,7 @@ export default {
       if(!e || e.disposed || e.loading || !this.active || (this.scene_url && e.url===this.scene_url))return;
       if(!this.scene_url){this.ready=false;this.progress='Choose a garment to preview.';return;}
       const generation=e.generation, url=this.scene_url;
-      e.loading=true; this.ready=false; this.failure=''; this.progress='Starting browser simulation…';
+      e.loading=true;e.last=null; this.ready=false; this.failure=''; this.progress='Starting browser simulation…';
       let cloth;
       try {
         if(!navigator.gpu)throw Error('WebGPU is unavailable. Open this page in a WebGPU-capable browser over HTTPS or localhost.');
@@ -103,15 +103,15 @@ export default {
         // Wait for any previous submission before releasing its buffers.
         await e.device.queue.onSubmittedWorkDone();
         if(generation!==e.generation || e.disposed)return;
-        const previousCamera=e.renderer ? {...e.renderer.camera,target:[...e.renderer.camera.target]} : null;
+        const previousCamera=e.renderer ? {...e.renderer.camera,target:[...e.renderer.camera.target],pan:[...(e.renderer.camera.pan||[0,0])]} : null;
         e.renderer?.destroy();e.renderer=null;e.cloth?.destroy();e.cloth=null;
         cloth=await Cloth.create(e.device,scene,()=>{this.progress='Preparing cloth and mannequin in your browser…';});
         if(generation!==e.generation || e.disposed){cloth.destroy();cloth=null;return;}
         e.cloth=cloth;cloth=null;
         e.renderer=new Renderer(e.device,this.$refs.canvas,e.cloth,navigator.gpu.getPreferredCanvasFormat());
         const height=scene.body_fit?.measurements?.height?.actual_cm/100 || 1.72;
-        e.defaultCamera={yaw:0,pitch:0,distance:height*1.9,target:[...e.cloth.motion.center]};
-        Object.assign(e.renderer.camera,{...(previousCamera || e.defaultCamera),target:[...e.defaultCamera.target]});
+        e.defaultCamera={yaw:0,pitch:0,distance:height*1.9,target:[...e.cloth.motion.center],pan:[0,0]};
+        Object.assign(e.renderer.camera,{...(previousCamera || e.defaultCamera),target:[...e.defaultCamera.target],pan:[...(previousCamera?.pan||[0,0])]});
         this.bodyNote=scene.body_note || 'Default mannequin';
         const labels={height:'Height',bust:'Bust',underbust:'Underbust',waist:'Waist',hips:'Hips',wrist:'Wrist (avg.)',leg_circ:'Thigh (avg.)'};
         this.fitRows=Object.entries(scene.body_fit?.measurements || {}).map(([key,r])=>({key,label:labels[key]||key,target:r.target_cm,actual:r.actual_cm}));
@@ -133,11 +133,12 @@ export default {
       const e=engines.get(this);if(!e || e.disposed)return;
       try {
         const visible=this.active && !document.hidden && this.$el.getClientRects().length>0;
+        if(!visible)e.last=null;
         if(visible && this.ready && !this.preparing && !this.error && !this.failure && !e.loading &&
            ((!this.paused && now-(e.last||0)>=1000/60-.8) || e.renderer.dirty)){
           const advance=!this.paused && now-(e.last||0)>=1000/60-.8;
           const encoder=e.device.createCommandEncoder();
-          if(advance){e.cloth.encode(encoder);e.last=now;e.count=(e.count||0)+1;}
+          if(advance){e.cloth.encode(encoder,null,e.last==null?1/60:(now-e.last)/1000);e.last=now;e.count=(e.count||0)+1;}
           e.renderer.render(encoder);e.device.queue.submit([encoder.finish()]);
           if(now-(e.stats||0)>500){this.frames=e.cloth.frame;this.fps=Math.round((e.count||0)*1000/(now-(e.stats||0)));e.stats=now;e.count=0;}
           await e.device.queue.onSubmittedWorkDone();
@@ -152,9 +153,9 @@ export default {
       e.renderer.bodyView.color=[...linear(this.body_color),0];
       e.renderer.showBody=this.show_body;e.renderer.dirty=true;
     },
-    reset() {const e=engines.get(this);e.cloth?.reset();this.frames=0;this.paused=false;},
+    reset() {const e=engines.get(this);e.cloth?.reset();e.last=null;this.frames=0;this.paused=false;},
     front() {const e=engines.get(this);if(!this.paused)e.cloth.motion.front();e.renderer.camera.yaw=this.paused?e.cloth.motion.yaw:0;e.renderer.camera.pitch=0;e.renderer.dirty=true;},
-    center() {const e=engines.get(this);Object.assign(e.renderer.camera,{...e.defaultCamera,target:[...e.defaultCamera.target]});e.renderer.dirty=true;},
+    center() {const e=engines.get(this);Object.assign(e.renderer.camera,{...e.defaultCamera,target:[...e.defaultCamera.target],pan:[0,0]});e.renderer.dirty=true;},
     setSupport() {engines.get(this).cloth.settings.holdNeckline=this.support;},
     retry() {const e=engines.get(this);e.url='';this.failure='';if(this.error)this.$emit('retry');else this.load();},
   },

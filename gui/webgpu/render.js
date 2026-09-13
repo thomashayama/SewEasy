@@ -1,16 +1,19 @@
-import {buffer} from './physics.js?v=14';
-import {cameraControls} from './camera.js?v=13';
+import {buffer} from './physics.js?v=15';
+import {cameraControls} from './camera.js?v=14';
 import {Buttons} from './buttons.js?v=1';
 
 function normalize(v){const l=Math.hypot(...v)||1;return v.map(x=>x/l);}
 function cross(a,b){return [a[1]*b[2]-a[2]*b[1],a[2]*b[0]-a[0]*b[2],a[0]*b[1]-a[1]*b[0]];}
 function dot(a,b){return a.reduce((s,v,i)=>s+v*b[i],0);}
 function multiply(a,b){const r=new Float32Array(16);for(let c=0;c<4;c++)for(let row=0;row<4;row++)for(let k=0;k<4;k++)r[c*4+row]+=a[k*4+row]*b[c*4+k];return r;}
-function cameraMatrix(eye,target,aspect){
+export function cameraMatrix(eye,target,aspect,pan=[0,0]){
  const z=normalize(eye.map((x,i)=>x-target[i])),x=normalize(cross([0,1,0],z)),y=cross(z,x);
  const view=[x[0],y[0],z[0],0,x[1],y[1],z[1],0,x[2],y[2],z[2],0,-dot(x,eye),-dot(y,eye),-dot(z,eye),1];
  const f=1/Math.tan(35*Math.PI/360),near=.01,far=50;
  const projection=[f/aspect,0,0,0,0,f,0,0,0,0,far/(near-far),-1,0,0,far*near/(near-far),0];
+ // Lens shift changes framing without moving the orbit or physics pivot.
+ const distance=Math.hypot(...eye.map((v,i)=>v-target[i]));
+ projection[8]=-pan[0]*f/aspect/distance;projection[9]=-pan[1]*f/distance;
  return multiply(projection,view);
 }
 const shader=`
@@ -50,7 +53,7 @@ export class Renderer {
   this.device=device;this.canvas=canvas;this.cloth=cloth;this.format=format;this.dirty=true;
   this.resizeObserver=new ResizeObserver(()=>this.dirty=true);this.resizeObserver.observe(canvas);
   this.context=canvas.getContext('webgpu');this.context.configure({device,format,alphaMode:'opaque'});
-  this.camera={yaw:0,pitch:0,distance:2.3,target:[0,1.2,0]};this.buffers=[];this.showBody=true;
+  this.camera={yaw:0,pitch:0,distance:2.3,target:[0,1.2,0],pan:[0,0]};this.buffers=[];this.showBody=true;
   this.clothColors=buffer(device,new Float32Array(cloth.n*4).fill(1),GPUBufferUsage.STORAGE);
   this.bodyColors=buffer(device,new Float32Array(cloth.scene.body_vertices.length*4).fill(1),GPUBufferUsage.STORAGE);
   this.buffers.push(this.clothColors,this.bodyColors);
@@ -75,7 +78,7 @@ export class Renderer {
   const c=this.canvas,pixel=Math.min(devicePixelRatio,2),w=Math.max(1,Math.round(c.clientWidth*pixel)),h=Math.max(1,Math.round(c.clientHeight*pixel));
   if(c.width!==w||c.height!==h||!this.depth){c.width=w;c.height=h;this.depth?.destroy();this.depth=this.device.createTexture({size:[w,h],format:'depth24plus',usage:GPUTextureUsage.RENDER_ATTACHMENT});}
   const v=this.camera,r=v.distance,eye=[v.target[0]+r*Math.sin(v.yaw)*Math.cos(v.pitch),v.target[1]+r*Math.sin(v.pitch),v.target[2]+r*Math.cos(v.yaw)*Math.cos(v.pitch)];
-  const mvp=cameraMatrix(eye,v.target,w/h);
+  const mvp=cameraMatrix(eye,v.target,w/h,v.pan);
   for(const view of [this.clothView,this.bodyView]){const a=new Float32Array(32);a.set(mvp);a.set([...eye,1],16);a.set(view.color,20);a.set(view===this.bodyView?this.cloth.motion.uniform():[1,0,1,0,0,0,0,0],24);this.device.queue.writeBuffer(view.buffer,0,a);}
   const pass=encoder.beginRenderPass({colorAttachments:[{view:this.context.getCurrentTexture().createView(),clearValue:{r:.91,g:.94,b:.96,a:1},loadOp:'clear',storeOp:'store'}],depthStencilAttachment:{view:this.depth.createView(),depthClearValue:1,depthLoadOp:'clear',depthStoreOp:'store'},...(querySet?{timestampWrites:{querySet,beginningOfPassWriteIndex:2,endOfPassWriteIndex:3}}:{})});
   pass.setPipeline(this.pipeline);

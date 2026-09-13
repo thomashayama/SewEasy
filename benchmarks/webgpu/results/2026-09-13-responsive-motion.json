@@ -1,0 +1,372 @@
+{
+  "date": "2026-09-13",
+  "description": "Responsive turn controller and elapsed-time small-step solver; single compute pass per frame. Browser WebGPU, CPU-only server. Each run: 300 settling frames then 600 frames with turns and reversals.",
+  "runs": [
+    {
+      "scene": "outfit-test",
+      "frames": 900,
+      "simulationHz": 30,
+      "simulationTime": 30.00000000000065,
+      "msPerFrame": 19.399000000059605,
+      "kernelChecks": {
+        "self_contact_separates": true,
+        "adjacent_vertices_excluded": true,
+        "xpbd_distance_matches_equation": true,
+        "collar_hinge_waits_for_seam": true,
+        "collar_hinge_preserves_fold_direction": true,
+        "collar_junction_preserves_center_of_mass": true,
+        "sewn_one_ring_excluded": true,
+        "principal_strain_limited": true,
+        "strain_preserves_center_of_mass": true,
+        "rigid_rotation_unchanged": true,
+        "positional_friction_reduces_slip": true,
+        "moving_body_friction_carries_cloth": true,
+        "rotating_collider_transforms_contact_normal": true,
+        "surface_contact_catches_between_vertices": true
+      },
+      "placement": [
+        {
+          "part": "panels",
+          "translation_m": [
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "prefix": "g0__",
+          "side": "left",
+          "translation_m": [
+            0,
+            -0.03217443838202649,
+            0.031748545435714315
+          ]
+        },
+        {
+          "prefix": "g0__",
+          "side": "right",
+          "translation_m": [
+            0,
+            -0.03863991958333246,
+            0.036082890885714314
+          ]
+        }
+      ],
+      "bodyYaw": 0,
+      "motionReport": {
+        "samples": [
+          {
+            "frame": 0,
+            "yaw": 0.06944444444444445,
+            "nonRigidRms": 0.009495474067860363,
+            "velocity": 0.6220014000469224
+          },
+          {
+            "frame": 30,
+            "yaw": 1.2,
+            "nonRigidRms": 0.010762920825965805,
+            "velocity": 0.044945456221433464
+          },
+          {
+            "frame": 60,
+            "yaw": 1.2,
+            "nonRigidRms": 0.008894439175005838,
+            "velocity": 0.011378408388104543
+          },
+          {
+            "frame": 90,
+            "yaw": 1.2,
+            "nonRigidRms": 0.008822907907384036,
+            "velocity": 0.004963040620916609
+          },
+          {
+            "frame": 120,
+            "yaw": 1.2,
+            "nonRigidRms": 0.008813338927413756,
+            "velocity": 0.0043576944896641205
+          },
+          {
+            "frame": 150,
+            "yaw": 1.1305555555555553,
+            "nonRigidRms": 0.01623676718787693,
+            "velocity": 0.6122924847652957
+          },
+          {
+            "frame": 180,
+            "yaw": -1.2,
+            "nonRigidRms": 0.009817665421670353,
+            "velocity": 0.07178916697561026
+          },
+          {
+            "frame": 210,
+            "yaw": -1.2,
+            "nonRigidRms": 0.00859412823701636,
+            "velocity": 0.010678885042358205
+          },
+          {
+            "frame": 240,
+            "yaw": -1.2,
+            "nonRigidRms": 0.008587139081823665,
+            "velocity": 0.002336634287783562
+          },
+          {
+            "frame": 270,
+            "yaw": -1.2,
+            "nonRigidRms": 0.008579070403237406,
+            "velocity": 0.0006649724727213907
+          },
+          {
+            "frame": 300,
+            "yaw": -1.1305555555555553,
+            "nonRigidRms": 0.016119611912756272,
+            "velocity": 0.6228984863814051
+          },
+          {
+            "frame": 330,
+            "yaw": 0,
+            "nonRigidRms": 0.01087365089481392,
+            "velocity": 0.0439829559708933
+          },
+          {
+            "frame": 360,
+            "yaw": 0,
+            "nonRigidRms": 0.009845706795833782,
+            "velocity": 0.00855927001981619
+          },
+          {
+            "frame": 390,
+            "yaw": 0,
+            "nonRigidRms": 0.009396382308202349,
+            "velocity": 0.005038957879412755
+          },
+          {
+            "frame": 420,
+            "yaw": 0,
+            "nonRigidRms": 0.009376052661874561,
+            "velocity": 0.0034273645803721453
+          },
+          {
+            "frame": 450,
+            "yaw": 0,
+            "nonRigidRms": 0.009353377901749177,
+            "velocity": 0.002680291879273051
+          },
+          {
+            "frame": 480,
+            "yaw": 0,
+            "nonRigidRms": 0.009375908082040484,
+            "velocity": 0.002549174461828702
+          },
+          {
+            "frame": 510,
+            "yaw": 0,
+            "nonRigidRms": 0.00935135210002601,
+            "velocity": 0.002964997923699507
+          },
+          {
+            "frame": 540,
+            "yaw": 0,
+            "nonRigidRms": 0.009353972536936386,
+            "velocity": 0.00286700490009269
+          },
+          {
+            "frame": 570,
+            "yaw": 0,
+            "nonRigidRms": 0.00937663538830686,
+            "velocity": 0.0032447039519247676
+          }
+        ],
+        "allFinite": true,
+        "maxClothLag": 0.01623676718787693
+      },
+      "geometryChecks": {
+        "allPositionsFinite": true,
+        "collarSeamMaxMm": 0.0,
+        "waistbandMinYMetres": 0.9727702736854553,
+        "waistbandMaxYMetres": 1.0411263704299927
+      }
+    },
+    {
+      "scene": "collar-default",
+      "frames": 900,
+      "simulationHz": 60,
+      "simulationTime": 15.000000000000325,
+      "msPerFrame": 7.284499999980132,
+      "kernelChecks": {
+        "self_contact_separates": true,
+        "adjacent_vertices_excluded": true,
+        "xpbd_distance_matches_equation": true,
+        "collar_hinge_waits_for_seam": true,
+        "collar_hinge_preserves_fold_direction": true,
+        "collar_junction_preserves_center_of_mass": true,
+        "sewn_one_ring_excluded": true,
+        "principal_strain_limited": true,
+        "strain_preserves_center_of_mass": true,
+        "rigid_rotation_unchanged": true,
+        "positional_friction_reduces_slip": true,
+        "moving_body_friction_carries_cloth": true,
+        "rotating_collider_transforms_contact_normal": true,
+        "surface_contact_catches_between_vertices": true
+      },
+      "placement": [
+        {
+          "part": "panels",
+          "translation_m": [
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "prefix": "",
+          "side": "left",
+          "translation_m": [
+            0,
+            -0.03217443838202649,
+            0.031748545435714315
+          ]
+        },
+        {
+          "prefix": "",
+          "side": "right",
+          "translation_m": [
+            0,
+            -0.03863991958333246,
+            0.036082890885714314
+          ]
+        }
+      ],
+      "bodyYaw": 0,
+      "motionReport": {
+        "samples": [
+          {
+            "frame": 0,
+            "yaw": 0.01805555555555556,
+            "nonRigidRms": 0.0029703646145266315,
+            "velocity": 0.3477008521007646
+          },
+          {
+            "frame": 30,
+            "yaw": 1.19999246736045,
+            "nonRigidRms": 0.01579817659317216,
+            "velocity": 0.2780609901048171
+          },
+          {
+            "frame": 60,
+            "yaw": 1.2,
+            "nonRigidRms": 0.009121487157822333,
+            "velocity": 0.04717866228418556
+          },
+          {
+            "frame": 90,
+            "yaw": 1.2,
+            "nonRigidRms": 0.00782111654167223,
+            "velocity": 0.01590423361646655
+          },
+          {
+            "frame": 120,
+            "yaw": 1.2,
+            "nonRigidRms": 0.006991341266619829,
+            "velocity": 0.00914464392444638
+          },
+          {
+            "frame": 150,
+            "yaw": 1.1819444444444442,
+            "nonRigidRms": 0.007845831040199418,
+            "velocity": 0.3491351747065354
+          },
+          {
+            "frame": 180,
+            "yaw": -1.1952571367477525,
+            "nonRigidRms": 0.03745596910214351,
+            "velocity": 0.38219733202076006
+          },
+          {
+            "frame": 210,
+            "yaw": -1.2,
+            "nonRigidRms": 0.010980278230570567,
+            "velocity": 0.09395626059993747
+          },
+          {
+            "frame": 240,
+            "yaw": -1.2,
+            "nonRigidRms": 0.006712416964452935,
+            "velocity": 0.035873435038630254
+          },
+          {
+            "frame": 270,
+            "yaw": -1.2,
+            "nonRigidRms": 0.00554642539102743,
+            "velocity": 0.014495648052171246
+          },
+          {
+            "frame": 300,
+            "yaw": -1.1819444444444442,
+            "nonRigidRms": 0.006260552710264435,
+            "velocity": 0.3497087586273415
+          },
+          {
+            "frame": 330,
+            "yaw": -7.532639550061947e-06,
+            "nonRigidRms": 0.017815406283635503,
+            "velocity": 0.30841266605941114
+          },
+          {
+            "frame": 360,
+            "yaw": 0,
+            "nonRigidRms": 0.010111268508061348,
+            "velocity": 0.06660536205063029
+          },
+          {
+            "frame": 390,
+            "yaw": 0,
+            "nonRigidRms": 0.007777772976075747,
+            "velocity": 0.025915682936423882
+          },
+          {
+            "frame": 420,
+            "yaw": 0,
+            "nonRigidRms": 0.006738780003550863,
+            "velocity": 0.01077032653744612
+          },
+          {
+            "frame": 450,
+            "yaw": 0,
+            "nonRigidRms": 0.006400809847101162,
+            "velocity": 0.004993126921254971
+          },
+          {
+            "frame": 480,
+            "yaw": 0,
+            "nonRigidRms": 0.006431828139928634,
+            "velocity": 0.0026746838087558815
+          },
+          {
+            "frame": 510,
+            "yaw": 0,
+            "nonRigidRms": 0.006354823865344283,
+            "velocity": 0.0018519440637878592
+          },
+          {
+            "frame": 540,
+            "yaw": 0,
+            "nonRigidRms": 0.006380051200231457,
+            "velocity": 0.0012527507258143049
+          },
+          {
+            "frame": 570,
+            "yaw": 0,
+            "nonRigidRms": 0.006376425186834064,
+            "velocity": 0.0007658957481895344
+          }
+        ],
+        "allFinite": true,
+        "maxClothLag": 0.03745596910214351
+      },
+      "geometryChecks": {
+        "allPositionsFinite": true,
+        "collarSeamMaxMm": 0.0
+      }
+    }
+  ]
+}
