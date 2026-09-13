@@ -191,6 +191,7 @@ def body_source_ui(state):
     account page. `state` is the GUIState."""
     email = state.user['email'] if state.user else None
     DEFAULT = '__default__'
+    CUSTOM = '__custom__'
     SHARED_PREFIX = 'shared:'  # shared-profile option keys: 'shared:<id>'
 
     async def apply_measurements(measurements):
@@ -204,6 +205,8 @@ def body_source_ui(state):
                     if not k.startswith('_')}
             await apply_measurements(base)
             await state.apply_skin_color(None)
+            if select.value == e.value:
+                select.set_options(options())
         elif email and (isinstance(e.value, int)
                         or str(e.value).startswith(SHARED_PREFIX)):
             if isinstance(e.value, int):
@@ -217,6 +220,8 @@ def body_source_ui(state):
                 return
             await apply_measurements(data['measurements'])
             await state.apply_skin_color(data.get('skin_color'))
+            if select.value == e.value:
+                select.set_options(options())
 
     def options():
         opts = {DEFAULT: 'Default body'}
@@ -227,6 +232,12 @@ def body_source_ui(state):
                 opts[f'{SHARED_PREFIX}{row["profile_id"]}'] = \
                     f'{row["name"]} — shared by {row["owner_name"]}'
         return opts
+
+    def mark_custom():
+        select.set_options({**options(), CUSTOM: 'Custom measurements'})
+        select.set_value(CUSTOM)
+
+    state.mark_custom_measurements = mark_custom
 
     with ui.row(wrap=False).classes('w-full items-center gap-1'):
         select = ui.select(options(), value=DEFAULT, label='Measurements',
@@ -271,6 +282,50 @@ def body_source_ui(state):
             .props('flat dense no-caps size=sm icon=straighten')
     else:
         ui.label('Sign in to save measurement profiles').classes('se-param-label')
+
+    # Editing the current body should not require an account or a file upload.
+    def edit_current():
+        from webapp import measurement_guide as guide
+        baseline = profiles.measurements_from_body(state.pattern_state.body_params)
+        fields = {}
+        with ui.dialog() as dialog, ui.card().classes('w-[520px] max-w-full'):
+            ui.label('Customize measurements').classes('text-lg font-semibold')
+            ui.label('Centimeters. Related proportions adjust with your edits.').classes('se-param-label')
+            with ui.element('div').classes('grid grid-cols-2 gap-3 w-full'):
+                for key, entry in guide.GUIDE.items():
+                    if entry.get('essential'):
+                        fields[key] = ui.number(entry['label'], value=baseline[key], min=1,
+                            step=.5, format='%.2f').props('outlined dense').classes('w-full')
+
+            async def apply():
+                try:
+                    values = {**baseline, **{k: float(f.value) for k, f in fields.items()}}
+                    values.update(guide.scale_coupled(baseline, values))
+                    errors, warnings = guide.validate_measurements(values)
+                    if errors:
+                        raise ValueError('\n'.join(errors))
+                    # Validate the fitted shape before changing the current design.
+                    from seweasy.meshgen.body_fit import fit_body
+                    await run.io_bound(fit_body, values)
+                except (TypeError, ValueError) as error:
+                    ui.notify(str(error), type='negative', multi_line=True)
+                    return
+                dialog.close()
+                mark_custom()
+                await apply_measurements(values)
+                if warnings:
+                    ui.notify('\n'.join(warnings), type='warning', multi_line=True)
+            with ui.row():
+                ui.button('Apply measurements', on_click=apply)
+                ui.button('Cancel', on_click=dialog.close).props('flat')
+        dialog.on('hide', dialog.delete)
+        dialog.open()
+
+    ui.button('Customize measurements', on_click=edit_current) \
+        .props('flat dense no-caps size=sm icon=straighten')
+    if any(abs(value - state.pattern_state.default_body_params.params.get(key, value)) > 1e-6
+           for key, value in state.pattern_state.body_params.params.items() if not key.startswith('_')):
+        mark_custom()
 
 
 def designs_ui(state):

@@ -17,7 +17,7 @@ function setup({gpu,fetch}={}) {
     requestAnimationFrame:()=>1,cancelAnimationFrame(){},
     Cloth:{create:async(_device,scene)=>({scene,frame:0,supportTargets:[],settings:{holdNeckline:false},
       destroy(){destroyed.push(scene.name);}})},
-    Renderer:class {constructor(){this.bodyView={};}setFabricColors(){}destroy(){}}
+    Renderer:class {constructor(){this.bodyView={};this.controls={};this.camera={target:[0,1,0]};}setFabricColors(){}destroy(){}}
   });
   vm.runInContext(source,context);
   const component=context.component;

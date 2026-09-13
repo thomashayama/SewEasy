@@ -1,6 +1,6 @@
 // SewEasy browser cloth experiment. Original WGSL implementation of small-step
 // XPBD distance constraints; see README.md for paper references and limits.
-import {strainShader, strainTopology, contactNeighbors, placePanels} from './strain.js?v=10';
+import {strainShader, strainTopology, contactNeighbors, placePanels} from './strain.js?v=11';
 const common = `
 struct Params { motion: vec4<f32>, material: vec4<f32>, counts: vec4<u32>, contact: vec4<f32>, limits:vec4<f32> }
 @group(0) @binding(0) var<storage, read_write> q: array<vec4<f32>>;

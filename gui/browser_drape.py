@@ -26,11 +26,10 @@ class BrowserDrape(Element, component='browser_drape.js'):
 def prepare_scene(pattern_state, target, resolution=1.5):
     """Triangulate the current design; all draping and rendering happens in JS.
 
-    The mannequin is still the shared mean body (as in the previous viewer).
-    The garment retains the user's measurements; we never silently re-draft
-    their design on default measurements to make it fit this mannequin.
+    Both garment drafting and mannequin fitting use the selected measurements.
+    The fitted surface supplies the renderer, normals, BVH and collision field.
     """
-    import trimesh
+    from seweasy.meshgen.body_fit import fit_body
     from seweasy.meshgen.boxmeshgen import BoxMesh
     from seweasy.meshgen.webgpu import build_scene, panel_mesh_data
     from seweasy.pattern.core import BasicPattern
@@ -43,13 +42,14 @@ def prepare_scene(pattern_state, target, resolution=1.5):
         BasicPattern.serialize(pattern, work, to_subfolder=False)
         box = BoxMesh(Path(work) / f'{pattern.name}_specification.json', resolution)
         box.load()
-        body = trimesh.load(ROOT / 'assets/bodies/mean_all.obj', process=False)
+        body, fit = fit_body(pattern_state.body_params.params)
         data = panel_mesh_data(box, body)
         upper = pattern_state.design_params['meta']['upper']['v']
         meta = dict(garment='element-top' if upper == 'ElementTubeTop' else 'current-design',
                     resolution_cm=resolution, panels=len(box.panelNames),
                     panel_stiffness=pattern.pattern.get('panel_stiffness', {}))
         scene = build_scene(data, meta, target.stem)
-        scene['body_note'] = 'Standard mannequin · not matched to your measurements'
+        scene['body_fit'] = fit
+        scene['body_note'] = fit['note']
         target.write_text(json.dumps(scene, separators=(',', ':'), allow_nan=False), encoding='utf-8')
     return target

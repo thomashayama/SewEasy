@@ -19,7 +19,7 @@ from webapp import auth, designs, profiles, sharing
 from webapp import measurement_guide as guide
 # body_display registers the /body and /body_tones static mounts and owns
 # the tone-tinted mannequin cache (shared with the studio 3D view)
-from webapp.body_display import tinted_body_glb_url
+from webapp.body_display import profile_body_glb_url
 from webapp.gui_widgets import (confirm_delete, open_share_dialog,
                                 preview_data_uri)
 
@@ -297,13 +297,12 @@ async def account_page(request: Request):
                     'Display units — values are stored in centimeters')
             update_unit_note()
 
-            # Mannequin beside the editor: skin tone follows this profile
-            # (the shape is the average body — measurements don't reshape it)
+            # Use the same fitted body as the studio, including the profile tone.
             with ui.row(wrap=False).classes('w-full gap-4 items-start'):
                 with ui.column().classes('shrink-0 gap-1'):
                     scene = _mannequin_scene()
-                    ui.label('Average body shape; skin tone follows '
-                             'this profile').classes('se-param-label w-64')
+                    mannequin_note = ui.label('Measurement-fitted body; approximate shape') \
+                        .classes('se-param-label w-64')
                 editor = ui.column().classes('grow min-w-0')
 
             fields = {}
@@ -320,10 +319,17 @@ async def account_page(request: Request):
                 scene_ctl['url'] = url
 
             def set_mannequin_tone(color):
-                # Sync path (initial load): stored tones are almost always
-                # already in the tint cache, so this is just a URL lookup
-                set_mannequin_url(tinted_body_glb_url(color) if color
-                                  else '/body/mean_all_display.glb')
+                data = profiles.get_profile(email, profile_select.value)
+                if not data:
+                    return
+                try:
+                    set_mannequin_url(profile_body_glb_url(color, data['measurements']))
+                    mannequin_note.set_text('Measurement-fitted body; approximate shape')
+                except ValueError as error:
+                    if scene_ctl['body'] is not None:
+                        scene_ctl['body'].delete()
+                    scene_ctl.update(body=None, url=None)
+                    mannequin_note.set_text(str(error))
 
             async def save_changes():
                 data = await run.io_bound(
@@ -375,8 +381,7 @@ async def account_page(request: Request):
                     ui.notify('Check these values:\n• ' + '\n• '.join(warnings),
                               type='warning', multi_line=True,
                               close_button=True)
-                if scaled:
-                    load_editor()  # Re-read so a mode switch shows new values
+                load_editor()  # Update the fitted body and the saved measurement state.
 
             def load_editor():
                 editor.clear()
@@ -405,8 +410,15 @@ async def account_page(request: Request):
                             tone = guide.skin_tone_hex(e.args)
                             skin_ctl['slider'].style(f'color: {tone}')
                             # A first-time tone tints the mesh: off-loop
-                            url = await run.io_bound(tinted_body_glb_url, tone)
-                            set_mannequin_url(url)
+                            selected_profile = profile_select.value
+                            try:
+                                url = await run.io_bound(profile_body_glb_url, tone, data['measurements'])
+                            except ValueError as error:
+                                if profile_select.value == selected_profile:
+                                    mannequin_note.set_text(str(error))
+                                return
+                            if profile_select.value == selected_profile:
+                                set_mannequin_url(url)
 
                         skin_ctl['slider'] = ui.slider(
                             value=guide.skin_tone_t(stored_tone)

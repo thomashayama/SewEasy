@@ -1,13 +1,8 @@
-"""Shared display-body helpers: skin-tinted mannequin GLBs.
-
-The mannequin shape never changes — only its material tint does — so
-tinted exports are cached on disk keyed by tone and served from one
-static mount. Both the studio 3D view and the account page use this
-cache; tinting is a trimesh load + export, so call it off the event
-loop (run.io_bound / an executor) on a cache miss.
-"""
+"""Cached mannequin GLBs for account previews; the studio uses WebGPU buffers."""
 
 from pathlib import Path
+import hashlib
+import json
 
 import trimesh
 from nicegui import app
@@ -32,5 +27,20 @@ def tinted_body_glb_url(color: str) -> str:
         body = trimesh.load(BODY_GLB_FILE)
         for geom in body.geometry.values():
             geom.visual.material.baseColorFactor = display_to_base_rgba(color)
+        body.export(path)
+    return f'/body_tones/{name}'
+
+
+def profile_body_glb_url(color, measurements):
+    """Use the same fitted surface as the studio; cache by profile and tone."""
+    from seweasy.meshgen.body_fit import fit_body
+    color = color or '#f9f2e4'
+    key = json.dumps(['body-fit-v1', color, measurements], sort_keys=True, allow_nan=False)
+    name = f'fitted_{hashlib.sha256(key.encode()).hexdigest()[:24]}.glb'
+    path = BODY_TONE_CACHE / name
+    if not path.exists():
+        body, _ = fit_body(measurements)
+        body.visual = trimesh.visual.TextureVisuals(material=trimesh.visual.material.PBRMaterial(
+            baseColorFactor=display_to_base_rgba(color), roughnessFactor=.9, metallicFactor=0))
         body.export(path)
     return f'/body_tones/{name}'

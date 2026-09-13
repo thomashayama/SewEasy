@@ -1,4 +1,5 @@
-import {buffer} from './physics.js?v=10';
+import {buffer} from './physics.js?v=11';
+import {cameraControls} from './camera.js?v=11';
 
 function normalize(v){const l=Math.hypot(...v)||1;return v.map(x=>x/l);}
 function cross(a,b){return [a[1]*b[2]-a[2]*b[1],a[2]*b[0]-a[0]*b[2],a[0]*b[1]-a[1]*b[0]];}
@@ -31,21 +32,6 @@ struct Out { @builtin(position) clip: vec4<f32>, @location(0) world: vec3<f32>, 
  let color=select(view.color.rgb*o.color,heat,view.color.a>.5);
  return vec4<f32>(pow(color*light+rim,vec3<f32>(1.0/2.2)),1);
 }`;
-const groundShader=`
-struct View { mvp: mat4x4<f32>, eye: vec4<f32>, color: vec4<f32> }
-struct Out { @builtin(position) clip:vec4<f32>,@location(0) world:vec3<f32> }
-@group(0) @binding(0) var<uniform> view:View;
-@vertex fn vertex(@builtin(vertex_index) i:u32)->Out{
- let corners=array<vec2<f32>,6>(vec2<f32>(-4,-4),vec2<f32>(4,-4),vec2<f32>(4,4),vec2<f32>(-4,-4),vec2<f32>(4,4),vec2<f32>(-4,4));
- var o:Out;let p=corners[i];o.world=vec3<f32>(p.x,-0.003,p.y);o.clip=view.mvp*vec4<f32>(o.world,1);return o;
-}
-@fragment fn fragment(o:Out)->@location(0) vec4<f32>{
- let grid=abs(fract(o.world.xz*5.0-0.5)-0.5)/max(fwidth(o.world.xz*5.0),vec2<f32>(1e-4));
- let line=1.0-min(min(grid.x,grid.y),1.0);let fade=exp(-dot(o.world.xz,o.world.xz)*0.3);
- let shadow=0.08*exp(-dot(o.world.xz/vec2<f32>(0.38,0.25),o.world.xz/vec2<f32>(0.38,0.25)));
- return vec4<f32>(vec3<f32>(0.91,0.94,0.96)-line*fade*0.055-shadow,1);
-}`;
-
 export class Renderer {
  constructor(device,canvas,cloth,format){
   this.device=device;this.canvas=canvas;this.cloth=cloth;this.format=format;this.dirty=true;
@@ -61,14 +47,8 @@ export class Renderer {
   this.pipeline=device.createRenderPipeline({layout:'auto',vertex:{module,entryPoint:'vertex'},fragment:{module,entryPoint:'fragment',targets:[{format}]},primitive:{topology:'triangle-list',cullMode:'none'},depthStencil:{format:'depth24plus',depthWriteEnabled:true,depthCompare:'less'}});
   const bind=(uniform,q,n,color)=>device.createBindGroup({layout:this.pipeline.getBindGroupLayout(0),entries:[{binding:0,resource:{buffer:uniform}},{binding:1,resource:{buffer:q}},{binding:2,resource:{buffer:n}},{binding:3,resource:{buffer:color}}]});
   this.clothBind=bind(this.clothView.buffer,cloth.q,cloth.normals,this.clothColors);this.bodyBind=bind(this.bodyView.buffer,cloth.body,cloth.bodyNormals,this.bodyColors);
-  const ground=device.createShaderModule({code:groundShader});
-  this.groundPipeline=device.createRenderPipeline({layout:'auto',vertex:{module:ground,entryPoint:'vertex'},fragment:{module:ground,entryPoint:'fragment',targets:[{format}]},primitive:{topology:'triangle-list'},depthStencil:{format:'depth24plus',depthWriteEnabled:true,depthCompare:'less'}});
-  this.groundBind=device.createBindGroup({layout:this.groundPipeline.getBindGroupLayout(0),entries:[{binding:0,resource:{buffer:this.clothView.buffer}}]});
-  this.abort=new AbortController();const opts={signal:this.abort.signal};let drag=null;
-  canvas.addEventListener('pointerdown',e=>{drag=[e.clientX,e.clientY];canvas.setPointerCapture(e.pointerId);},opts);
-  canvas.addEventListener('pointermove',e=>{if(!drag)return;this.dirty=true;this.camera.yaw-=(e.clientX-drag[0])*.008;this.camera.pitch=Math.max(-.6,Math.min(.6,this.camera.pitch+(e.clientY-drag[1])*.006));drag=[e.clientX,e.clientY];},opts);
-  canvas.addEventListener('pointerup',()=>drag=null,opts);canvas.addEventListener('pointercancel',()=>drag=null,opts);
-  canvas.addEventListener('wheel',e=>{e.preventDefault();this.dirty=true;this.camera.distance=Math.max(1.2,Math.min(6,this.camera.distance*Math.exp(e.deltaY*.001)));},{...opts,passive:false});
+  canvas.tabIndex=0;
+  this.controls=cameraControls(this.camera,canvas,()=>this.dirty=true);
  }
  render(encoder,querySet=null){
   this.dirty=false;
@@ -78,7 +58,6 @@ export class Renderer {
   const mvp=cameraMatrix(eye,v.target,w/h);
   for(const view of [this.clothView,this.bodyView]){const a=new Float32Array(24);a.set(mvp);a.set([...eye,1],16);a.set(view.color,20);this.device.queue.writeBuffer(view.buffer,0,a);}
   const pass=encoder.beginRenderPass({colorAttachments:[{view:this.context.getCurrentTexture().createView(),clearValue:{r:.91,g:.94,b:.96,a:1},loadOp:'clear',storeOp:'store'}],depthStencilAttachment:{view:this.depth.createView(),depthClearValue:1,depthLoadOp:'clear',depthStoreOp:'store'},...(querySet?{timestampWrites:{querySet,beginningOfPassWriteIndex:2,endOfPassWriteIndex:3}}:{})});
-  pass.setPipeline(this.groundPipeline);pass.setBindGroup(0,this.groundBind);pass.draw(6);
   pass.setPipeline(this.pipeline);
   if(this.showBody){pass.setBindGroup(0,this.bodyBind);pass.setIndexBuffer(this.cloth.bodyFaces,'uint32');pass.drawIndexed(this.cloth.scene.body_faces.length*3);}
   pass.setBindGroup(0,this.clothBind);pass.setIndexBuffer(this.cloth.faces,'uint32');pass.drawIndexed(this.cloth.scene.faces.length*3);pass.end();
@@ -92,5 +71,5 @@ export class Renderer {
   }
   this.device.queue.writeBuffer(this.clothColors,0,values);this.clothView.color=[1,1,1,this.clothView.color[3]];this.dirty=true;
  }
- destroy(){this.abort.abort();this.resizeObserver.disconnect();this.depth?.destroy();for(const b of this.buffers)b.destroy();}
+ destroy(){this.controls.destroy();this.resizeObserver.disconnect();this.depth?.destroy();for(const b of this.buffers)b.destroy();}
 }

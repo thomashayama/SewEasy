@@ -672,6 +672,7 @@ class GUIState:
             self.toggle_param_update_events(self.ui_active_body_refs)
             try:
                 self.pattern_state.set_new_body_params(param_dict)
+                self.mark_custom_measurements()
                 self.update_body_params_ui_state(self.ui_active_body_refs)
                 await self.update_pattern_ui_state()
             except Exception:
