@@ -16,14 +16,28 @@ export default {
       <button v-if="error || failure" @click="retry">Retry preview</button>
     </div>
     <div v-if="ready && !preparing && !error && !failure" class="se-drape-controls">
-      <span class="se-drape-live" role="status">{{ paused ? 'Paused' : 'Live drape · ' + fps + ' fps' }}</span>
-      <button @click="paused = !paused">{{ paused ? 'Resume' : 'Pause' }}</button>
-      <button @click="reset">Reset</button>
-      <button @click="front">Front</button>
-      <button @click="panMode=!panMode; setPan()" :aria-pressed="panMode" title="Drag to move the view">Pan</button>
-      <button @click="center">Recenter</button>
-      <label v-if="hasSupport"><input type="checkbox" v-model="support" @change="setSupport"> Hold neckline <small>(fitting aid)</small></label>
-      <small>Drag to {{panMode ? 'pan' : 'orbit'}} · Shift-drag to pan · Scroll to zoom</small>
+      <span v-if="hasSupport && support" class="se-drape-support-note">Neckline held · fitting aid</span>
+      <button class="se-drape-icon" @click="paused = !paused" :aria-label="paused ? 'Resume' : 'Pause'" :title="paused ? 'Resume simulation' : 'Pause simulation'" :aria-pressed="paused">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path v-if="paused" d="m9 5 10 7-10 7Z"/><path v-else d="M9 5v14M15 5v14"/></svg>
+      </button>
+      <button class="se-drape-icon" @click="reset" aria-label="Reset" title="Reset simulation">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 10a8 8 0 1 1 1.8 7M4 4v6h6"/></svg>
+      </button>
+      <button class="se-drape-icon" @click="center" aria-label="Recenter" title="Recenter view">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 4H4v4m12-4h4v4M4 16v4h4m12-4v4h-4"/><circle cx="12" cy="12" r="3"/></svg>
+      </button>
+      <details class="se-drape-more" @keydown.esc.prevent="$event.currentTarget.open = false">
+        <summary class="se-drape-icon" aria-label="More 3D controls" title="More 3D controls">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/></svg>
+        </summary>
+        <div class="se-drape-menu">
+          <span class="se-drape-live" role="status">{{ paused ? 'Paused' : 'Live drape · ' + fps + ' fps' }}</span>
+          <button @click="front">Front view</button>
+          <button @click="panMode=!panMode; setPan()" :aria-pressed="panMode">{{ panMode ? 'Pan mode on' : 'Pan mode' }}</button>
+          <label v-if="hasSupport"><input type="checkbox" v-model="support" @change="setSupport"> Hold neckline <small>(fitting aid)</small></label>
+          <small>Drag to {{panMode ? 'pan' : 'orbit'}}<br>Shift-drag to pan · Scroll to zoom</small>
+        </div>
+      </details>
     </div>
     <details v-if="ready && !preparing && !error" class="se-drape-body-note">
       <summary>{{bodyNote}}</summary>
