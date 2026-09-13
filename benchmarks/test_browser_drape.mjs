@@ -15,7 +15,7 @@ function setup({gpu,fetch}={}) {
     requestAdapter:async()=>({requestDevice:async()=>device}),getPreferredCanvasFormat:()=> 'bgra8unorm'}},
     fetch,performance:{now:()=>1000},AbortController,document:{hidden:false},
     requestAnimationFrame:()=>1,cancelAnimationFrame(){},
-    Cloth:{create:async(_device,scene)=>({scene,frame:0,supportTargets:[],settings:{holdNeckline:false},
+    Cloth:{create:async(_device,scene)=>({scene,frame:0,motion:{center:[0,.86,0]},supportTargets:[],settings:{holdNeckline:false},
       destroy(){destroyed.push(scene.name);}})},
     Renderer:class {constructor(){this.bodyView={};this.controls={};this.camera={target:[0,1,0]};}setFabricColors(){}destroy(){}}
   });

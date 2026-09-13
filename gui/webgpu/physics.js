@@ -2,6 +2,7 @@
 // XPBD distance constraints; see README.md for paper references and limits.
 import {strainShader, strainTopology, contactNeighbors, placePanels} from './strain.js?v=12';
 import {hingeShader, collarWeldShader} from './bending.js?v=2';
+import {MannequinMotion,bodyMotionWGSL} from './motion.js?v=1';
 const common = `
 struct Params { motion: vec4<f32>, material: vec4<f32>, counts: vec4<u32>, contact: vec4<f32>, limits:vec4<f32> }
 @group(0) @binding(0) var<storage, read_write> q: array<vec4<f32>>;
@@ -91,15 +92,16 @@ fn body_value(p: vec3<f32>) -> vec4<f32> {
  let signed=select(-sqrt(best),sqrt(best),dot(p-closest,normal)>=0.0);
  return vec4<f32>(normal,signed);
 }`;
-const bodyCollision = common + bodyGeometry + `
+const bodyCollision = common + bodyGeometry + bodyMotionWGSL + `
+@group(0) @binding(7) var<uniform> motion:BodyMotion;
 @group(0) @binding(6) var<storage, read_write> previous: array<vec4<f32>>;
 @compute @workgroup_size(64) fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
  let i=gid.x;if(i>=params.counts.x){return;}
- let p=q[i].xyz;let hit=body_value(p);let normal=hit.xyz;let signed=hit.w;
+ let p=q[i].xyz;let hit=body_value(body_local(p));let normal=body_normal(hit.xyz);let signed=hit.w;
  let depth=params.material.w-signed;
  if (depth>0.0) {
    let push=min(depth,0.04);let corrected=p+normal*push;
-   let movement=corrected-previous[i].xyz;
+   let movement=corrected-previous[i].xyz-body_movement(corrected);
    let tangent=movement-normal*dot(movement,normal);
    let friction=min(1.0,params.contact.z*push/max(length(tangent),1e-8));
    q[i]=vec4<f32>(corrected-tangent*friction,q[i].w);
@@ -134,19 +136,20 @@ fn sdf_normal(p:vec3<f32>)->vec3<f32>{
 }
 fn in_grid(p:vec3<f32>)->bool{let v=(p-grid.lo.xyz)/grid.step.xyz;return all(v>=vec3<f32>(1))&&all(v<vec3<f32>(grid.counts.xyz)-vec3<f32>(2));}
 `;
-const sdfCollision = common + gridType + `
+const sdfCollision = common + gridType + bodyMotionWGSL + `
 @group(0) @binding(2) var<storage,read> field:array<f32>;
 @group(0) @binding(3) var<uniform> grid:Grid;
 @group(0) @binding(4) var<storage,read_write> previous:array<vec4<f32>>;
+@group(0) @binding(5) var<uniform> motion:BodyMotion;
 ` + sdfFunctions + `
 @compute @workgroup_size(64) fn main(@builtin(global_invocation_id) gid:vec3<u32>){
  let i=gid.x;if(i>=params.counts.x){return;}let p=q[i].xyz;
- let v=(p-grid.lo.xyz)/grid.step.xyz;
+ let local=body_local(p);let v=(local-grid.lo.xyz)/grid.step.xyz;
  if(all(v>=vec3<f32>(1)) && all(v<vec3<f32>(grid.counts.xyz)-vec3<f32>(2))){
-  let depth=params.material.w-sample_sdf(p);
+  let depth=params.material.w-sample_sdf(local);
   if(depth>0.0){
-   let normal=sdf_normal(p);let push=min(depth,0.04);let corrected=p+normal*push;
-   let movement=corrected-previous[i].xyz;let tangent=movement-normal*dot(movement,normal);
+   let normal=body_normal(sdf_normal(local));let push=min(depth,0.04);let corrected=p+normal*push;
+   let movement=corrected-previous[i].xyz-body_movement(corrected);let tangent=movement-normal*dot(movement,normal);
    let friction=min(1.0,params.contact.z*push/max(length(tangent),1e-8));
    q[i]=vec4<f32>(corrected-tangent*friction,q[i].w);
   }
@@ -156,12 +159,13 @@ const sdfCollision = common + gridType + `
 
 // Resolve cloth surface samples, not just vertices: a triangle can span an
 // arm while all three endpoints are outside. Coloring makes these writes safe.
-const surfaceCollision=common+gridType+`
+const surfaceCollision=common+gridType+bodyMotionWGSL+`
 struct Triangle { ids:vec4<u32>, inverse:vec4<f32> }
 struct Batch { start:u32, count:u32, pad:vec2<u32> }
 @group(0) @binding(2) var<storage,read> triangles:array<Triangle>;
 @group(0) @binding(3) var<storage,read> field:array<f32>;
 @group(0) @binding(4) var<uniform> grid:Grid;
+@group(0) @binding(5) var<uniform> motion:BodyMotion;
 @group(1) @binding(0) var<uniform> batch:Batch;
 `+sdfFunctions+`
 @compute @workgroup_size(64) fn main(@builtin(global_invocation_id) gid:vec3<u32>){
@@ -169,8 +173,8 @@ struct Batch { start:u32, count:u32, pad:vec2<u32> }
  let samples=array<vec3<f32>,4>(vec3<f32>(.5,.5,0),vec3<f32>(.5,0,.5),vec3<f32>(0,.5,.5),vec3<f32>(1.0/3.0));
  for(var j=0u;j<4u;j++){
   let w=samples[j];let a=q[t.ids.x];let b=q[t.ids.y];let c=q[t.ids.z];let p=a.xyz*w.x+b.xyz*w.y+c.xyz*w.z;
-  if(!in_grid(p)){continue;}let depth=params.material.w-sample_sdf(p);if(depth<=0.0){continue;}
-  let normal=sdf_normal(p);let denom=a.w*w.x*w.x+b.w*w.y*w.y+c.w*w.z*w.z;
+  let local=body_local(p);if(!in_grid(local)){continue;}let depth=params.material.w-sample_sdf(local);if(depth<=0.0){continue;}
+  let normal=body_normal(sdf_normal(local));let denom=a.w*w.x*w.x+b.w*w.y*w.y+c.w*w.z*w.z;
   let correction=normal*min(depth,.02)/max(denom,1e-9);
   q[t.ids.x]=vec4<f32>(a.xyz+correction*(a.w*w.x),a.w);
   q[t.ids.y]=vec4<f32>(b.xyz+correction*(b.w*w.y),b.w);
@@ -273,21 +277,27 @@ export class Cloth {
   static async create(device, scene,progress=()=>{}) {const c=new Cloth(device,scene);c.progress=progress;try{await c.initialize();return c;}catch(error){c.destroy();throw error;}}
   constructor(device,scene) {
     this.device=device;this.scene=scene;this.n=scene.vertices.length;this.frame=0;this.owned=[];
+    this.motion=new MannequinMotion(scene.body_vertices);
     const placement=placePanels(scene);this.initialPositions=placement.positions;this.placement=placement.adjustments;this.supportTargets=placement.support;
     this.settings={substeps:12,width:1,wind:0,stretch:0.00001,bend:0.03,seam:0.0000001,thickness:0.004,gravity:9.81,damping:2,friction:0.4,sewDuration:1.6,selfCollision:true,bodyCollision:true,bodyMethod:'sdf',strainLimit:1.02,strainPasses:2,surfaceContact:true};
     this.settings.holdNeckline=this.supportTargets.length>0;
   }
   make(array,usage=GPUBufferUsage.STORAGE,label=''){const b=buffer(this.device,array,usage,label);this.owned.push(b);return b;}
-  async pipeline(code,resources,label){
+  async pipeline(code,resources,label,motionBinding=null){
     const module=this.device.createShaderModule({code,label});
     const info=await module.getCompilationInfo();const errors=info.messages.filter(m=>m.type==='error');
     if(errors.length)throw Error(label+': '+errors.map(m=>`${m.lineNum}: ${m.message}`).join('\n'));
     const pipeline=await this.device.createComputePipelineAsync({layout:'auto',compute:{module,entryPoint:'main'},label});
-    const bind=this.device.createBindGroup({layout:pipeline.getBindGroupLayout(0),entries:resources.map(([binding,b])=>({binding,resource:{buffer:b}}))});
-    return {pipeline,bind,label};
+    const entries=resources.map(([binding,b])=>({binding,resource:{buffer:b}}));
+    const moving=motionBinding===null?null:Array.from({length:64},(_,step)=>this.device.createBindGroup({layout:pipeline.getBindGroupLayout(0),entries:[...entries,{binding:motionBinding,resource:{buffer:this.motionBuffer,offset:step*this.motionStride,size:32}}]}));
+    const bind=moving?.[0]||this.device.createBindGroup({layout:pipeline.getBindGroupLayout(0),entries});
+    return {pipeline,bind,label,moving};
   }
   async initialize(){
     const d=this.device,s=this.scene;
+    this.motionStride=Math.max(256,d.limits.minUniformBufferOffsetAlignment);
+    this.motionRaw=new Float32Array(this.motionStride/4*64);
+    this.motionBuffer=this.make(this.motionRaw,GPUBufferUsage.UNIFORM);this.writeMotion(false);
     this.q=this.make(vec4(this.initialPositions,s.inverse_mass),GPUBufferUsage.STORAGE|GPUBufferUsage.COPY_SRC,'Cloth positions');
     this.previous=this.make(vec4(this.initialPositions,s.inverse_mass));this.velocity=this.make(new Float32Array(this.n*4),GPUBufferUsage.STORAGE|GPUBufferUsage.COPY_SRC);
     this.normals=this.make(new Float32Array(this.n*4));this.scratch=this.make(new Float32Array(this.n*4));
@@ -330,7 +340,7 @@ export class Cloth {
     this.strainTriangles.forEach((t,i)=>{tu.set([...t.ids,0],i*8);tf.set(t.inverse,i*8+4);});
     this.triangles=this.make(new Uint8Array(tr));this.strainSolve=await this.pipeline(common+strainShader,[...base,[2,this.triangles]],'Principal triangle strain');
     let triangleOffset=0;this.strainBatches=triangleColors.map(color=>{const batch={count:color.length,bind:d.createBindGroup({layout:this.strainSolve.pipeline.getBindGroupLayout(1),entries:[{binding:0,resource:{buffer:this.make(new Uint32Array([triangleOffset,color.length,0,0]),GPUBufferUsage.UNIFORM)}}]})};triangleOffset+=color.length;return batch;});
-    this.collide=await this.pipeline(bodyCollision,[...base,[2,this.nodes],[3,this.body],[4,this.bodyFaces],[5,this.bodyNormals],[6,this.previous]],'Mannequin BVH contact');
+    this.collide=await this.pipeline(bodyCollision,[...base,[2,this.nodes],[3,this.body],[4,this.bodyFaces],[5,this.bodyNormals],[6,this.previous]],'Mannequin BVH contact',7);
     // Resolve stitches again after other projections; these batches are also
     // graph-colored, so their endpoint writes cannot race.
     const seamColors=[],used=Array.from({length:this.n},()=>new Set());
@@ -352,8 +362,8 @@ export class Cloth {
     // Bound each submission to avoid long uninterruptible GPU work at startup.
     for(let start=0;start<cells;start+=16384){new Uint32Array(this.gridRaw)[11]=start;d.queue.writeBuffer(this.grid,0,this.gridRaw);const encoder=d.createCommandEncoder();this.dispatch(encoder,build,Math.min(16384,cells-start));d.queue.submit([encoder.finish()]);await d.queue.onSubmittedWorkDone();if(start%131072===0)this.progress(`Building body collision field on your GPU… ${Math.round(start/cells*100)}%`);}
     this.sdfSetupMs=performance.now()-sdfStart;
-    this.sdfCollide=await this.pipeline(sdfCollision,[...base,[2,this.field],[3,this.grid],[4,this.previous]],'Body distance field contact');
-    this.surfaceCollide=await this.pipeline(surfaceCollision,[...base,[2,this.triangles],[3,this.field],[4,this.grid]],'Triangle surface contact');
+    this.sdfCollide=await this.pipeline(sdfCollision,[...base,[2,this.field],[3,this.grid],[4,this.previous]],'Body distance field contact',5);
+    this.surfaceCollide=await this.pipeline(surfaceCollision,[...base,[2,this.triangles],[3,this.field],[4,this.grid]],'Triangle surface contact',5);
     let surfaceOffset=0;this.surfaceBatches=triangleColors.map(color=>{const batch={count:color.length,bind:d.createBindGroup({layout:this.surfaceCollide.pipeline.getBindGroupLayout(1),entries:[{binding:0,resource:{buffer:this.make(new Uint32Array([surfaceOffset,color.length,0,0]),GPUBufferUsage.UNIFORM)}}]})};surfaceOffset+=color.length;return batch;});
     this.clearHash=await this.pipeline(clearHash,[[1,this.params],[2,this.heads]],'Clear spatial hash');
     this.fillHash=await this.pipeline(fillHash,[...base,[2,this.heads],[3,this.next]],'Build spatial hash');
@@ -446,16 +456,29 @@ export class Cloth {
     const planeRaw=new ArrayBuffer(48);new Float32Array(planeRaw).set([-.02,-.02,-.02,0,.01,.01,.01,0]);new Uint32Array(planeRaw).set([5,5,5,0],8);
     const plane=this.make(Float32Array.from({length:125},(_,i)=>-.02+(Math.floor(i/5)%5)*.01));
     const planeGrid=this.make(new Uint8Array(planeRaw),GPUBufferUsage.UNIFORM);
-    const planeStage={...this.sdfCollide,bind:d.createBindGroup({layout:this.sdfCollide.pipeline.getBindGroupLayout(0),entries:[[0,this.q],[1,this.params],[2,plane],[3,planeGrid],[4,this.previous]].map(([binding,b])=>({binding,resource:{buffer:b}}))})};
+    const planeStage={...this.sdfCollide,moving:null,bind:d.createBindGroup({layout:this.sdfCollide.pipeline.getBindGroupLayout(0),entries:[[0,this.q],[1,this.params],[2,plane],[3,planeGrid],[4,this.previous],[5,this.motionBuffer]].map(([binding,b])=>({binding,resource:{buffer:b}}))})};
     d.queue.writeBuffer(this.q,0,new Float32Array([.0005,.003,0,1]));d.queue.writeBuffer(this.previous,0,new Float32Array([0,.003,0,1]));
     const contact=d.createCommandEncoder();this.dispatch(contact,planeStage,1);d.queue.submit([contact.finish()]);const frictionPoint=(await this.readPositions())[0];
     this.kernelChecks.positional_friction_reduces_slip=Math.abs(frictionPoint[0]-.0001)<1e-6&&Math.abs(frictionPoint[1]-.004)<1e-6;
+    // A rotating horizontal plane drags a resting particle tangentially.
+    d.queue.writeBuffer(this.motionBuffer,0,new Float32Array([Math.cos(.04),Math.sin(.04),1,0,0,0,0,0]));
+    d.queue.writeBuffer(this.q,0,new Float32Array([0,.003,.01,1]));d.queue.writeBuffer(this.previous,0,new Float32Array([0,.003,.01,1]));
+    const movingContact=d.createCommandEncoder();this.dispatch(movingContact,planeStage,1);d.queue.submit([movingContact.finish()]);const carried=(await this.readPositions())[0];
+    this.kernelChecks.moving_body_friction_carries_cloth=carried[0]>.00039&&carried[0]<.00041&&Math.abs(carried[1]-.004)<1e-6;
+    // Turn a vertical plane through 90 degrees; its world contact normal must
+    // rotate too, while its cached distance field remains untouched.
+    d.queue.writeBuffer(plane,0,Float32Array.from({length:125},(_,i)=>-.02+(i%5)*.01));
+    d.queue.writeBuffer(this.motionBuffer,0,new Float32Array([0,1,0,1,0,0,0,0]));
+    d.queue.writeBuffer(this.q,0,new Float32Array([0,.005,-.003,1]));d.queue.writeBuffer(this.previous,0,new Float32Array([0,.005,-.003,1]));
+    const turnedContact=d.createCommandEncoder();this.dispatch(turnedContact,planeStage,1);d.queue.submit([turnedContact.finish()]);const turned=(await this.readPositions())[0];
+    this.kernelChecks.rotating_collider_transforms_contact_normal=Math.abs(turned[2]+.004)<1e-6&&Math.abs(turned[0])<1e-6;
+    this.writeMotion(false);
     // All three vertices clear the sphere; the middle of an edge crosses it.
     const sphereRaw=new ArrayBuffer(48);new Float32Array(sphereRaw).set([-.04,-.04,-.04,0,.01,.01,.01,0]);new Uint32Array(sphereRaw).set([9,9,9,0],8);
     const sphere=this.make(Float32Array.from({length:729},(_,i)=>Math.hypot(-.04+(i%9)*.01,-.04+(Math.floor(i/9)%9)*.01,-.04+Math.floor(i/81)*.01)-.01));
     const sphereGrid=this.make(new Uint8Array(sphereRaw),GPUBufferUsage.UNIFORM);
     ti.set([0,1,2,0]);tv.set([1,0,0,1],4);d.queue.writeBuffer(this.triangles,0,test);
-    const surfaceStage={...this.surfaceCollide,bind:d.createBindGroup({layout:this.surfaceCollide.pipeline.getBindGroupLayout(0),entries:[[0,this.q],[1,this.params],[2,this.triangles],[3,sphere],[4,sphereGrid]].map(([binding,b])=>({binding,resource:{buffer:b}}))})};
+    const surfaceStage={...this.surfaceCollide,moving:null,bind:d.createBindGroup({layout:this.surfaceCollide.pipeline.getBindGroupLayout(0),entries:[[0,this.q],[1,this.params],[2,this.triangles],[3,sphere],[4,sphereGrid],[5,this.motionBuffer]].map(([binding,b])=>({binding,resource:{buffer:b}}))})};
     const surfaceBatch=d.createBindGroup({layout:this.surfaceCollide.pipeline.getBindGroupLayout(1),entries:[{binding:0,resource:{buffer:single}}]});
     const outside=[[-.02,.003,0],[.02,.003,0],[0,.023,0]];d.queue.writeBuffer(this.q,0,vec4(outside,1));
     const surface=d.createCommandEncoder();this.dispatch(surface,surfaceStage,1,surfaceBatch);d.queue.submit([surface.finish()]);const moved=await this.readPositions();
@@ -475,14 +498,25 @@ export class Cloth {
     u.set([this.n,s.substeps,+s.selfCollision,this.hashSize],8);
     f.set([s.gravity,s.damping,s.friction,s.sewDuration],12);f.set([s.strainLimit,0,0,0],16);this.device.queue.writeBuffer(this.params,0,raw);
   }
+  writeMotion(advance){
+    const count=this.settings.substeps;
+    if(!Number.isInteger(count)||count<1||count>64)throw Error('Substeps must be between 1 and 64.');
+    for(let step=0;step<count;step++){
+      const previous=this.motion.yaw;
+      if(advance)this.motion.advance(1/(60*count));
+      this.motionRaw.set(this.motion.uniform(previous),step*this.motionStride/4);
+    }
+    this.device.queue.writeBuffer(this.motionBuffer,0,this.motionRaw,0,count*this.motionStride/4);
+  }
   dispatch(encoder,stage,count=this.n,extra=null,timestamps=null){
     const pass=encoder.beginComputePass({label:stage.label,...(timestamps?{timestampWrites:timestamps}:{})});
-    pass.setPipeline(stage.pipeline);pass.setBindGroup(0,stage.bind);if(extra)pass.setBindGroup(1,extra);
+    pass.setPipeline(stage.pipeline);pass.setBindGroup(0,stage.moving?.[this.motionStep||0]||stage.bind);if(extra)pass.setBindGroup(1,extra);
     pass.dispatchWorkgroups(Math.ceil(count/64));pass.end();
   }
   encode(encoder,querySet=null){
-    this.frame++;this.updateParams();
+    this.frame++;this.updateParams();this.writeMotion(this.frame/60>this.settings.sewDuration);
     for(let step=0;step<this.settings.substeps;step++){
+      this.motionStep=step;
       this.dispatch(encoder,this.integrate,this.n,null,querySet&&step===0?{querySet,beginningOfPassWriteIndex:0}:null);
       for(const batch of this.batches)this.dispatch(encoder,this.solve,batch.count,batch.bind);
       if(this.settings.bodyCollision&&this.settings.surfaceContact)for(const batch of this.surfaceBatches)this.dispatch(encoder,this.surfaceCollide,batch.count,batch.bind);
@@ -498,9 +532,11 @@ export class Cloth {
       if(this.settings.bodyCollision)this.dispatch(encoder,this.settings.bodyMethod==='sdf'?this.sdfCollide:this.collide);
       this.dispatch(encoder,this.velocityPass);
     }
+    this.motionStep=0;
     this.dispatch(encoder,this.normalPass,this.n,null,querySet?{querySet,endOfPassWriteIndex:1}:null);
   }
   reset(){
+    this.motion.reset();this.motionStep=0;this.writeMotion(false);
     this.frame=0;this.device.queue.writeBuffer(this.q,0,vec4(this.initialPositions,this.scene.inverse_mass));
     this.device.queue.writeBuffer(this.previous,0,vec4(this.initialPositions,this.scene.inverse_mass));
     this.device.queue.writeBuffer(this.velocity,0,new Float32Array(this.n*4));this.updateParams();
@@ -515,3 +551,4 @@ export class Cloth {
   }
   destroy(){for(const b of this.owned)b.destroy();}
 }
+

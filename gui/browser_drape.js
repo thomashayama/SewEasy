@@ -1,5 +1,5 @@
-import {Cloth} from '/webgpu/physics.js?v=12';
-import {Renderer} from '/webgpu/render.js?v=12';
+import {Cloth} from '/webgpu/physics.js?v=13';
+import {Renderer} from '/webgpu/render.js?v=13';
 
 // GPU objects live outside Vue's reactive graph. Each mounted stage owns one
 // device and one loop; a serialized loader discards obsolete scene requests.
@@ -8,7 +8,7 @@ const linear = hex => [1,3,5].map(i => (parseInt(hex.slice(i,i+2),16)/255)**2.2)
 
 export default {
   template: `<div class="se-browser-drape" :data-state="state" :data-scene="loadedScene" :data-frames="frames">
-    <canvas ref="canvas" aria-label="Interactive 3D garment" :style="{visibility: ready && !preparing && !error ? 'visible' : 'hidden', cursor: panMode ? 'move' : 'grab'}"></canvas>
+    <canvas ref="canvas" aria-label="Interactive 3D garment" :style="{visibility: ready && !preparing && !error ? 'visible' : 'hidden', cursor: 'grab'}"></canvas>
     <div v-if="!ready || preparing || error || failure" class="se-drape-message" role="status">
       <div v-if="!(error || failure) && (preparing || scene_url)" class="se-drape-loader"></div>
       <strong>{{ error || failure || (preparing ? 'Preparing your pattern for 3D…' : progress) }}</strong>
@@ -33,9 +33,8 @@ export default {
         <div class="se-drape-menu">
           <span class="se-drape-live" role="status">{{ paused ? 'Paused' : 'Live drape · ' + fps + ' fps' }}</span>
           <button @click="front">Front view</button>
-          <button @click="panMode=!panMode; setPan()" :aria-pressed="panMode">{{ panMode ? 'Pan mode on' : 'Pan mode' }}</button>
           <label v-if="hasSupport"><input type="checkbox" v-model="support" @change="setSupport"> Hold neckline <small>(fitting aid)</small></label>
-          <small>Drag to {{panMode ? 'pan' : 'orbit'}}<br>Shift-drag to pan · Scroll to zoom</small>
+          <small>{{paused ? 'Drag to inspect the paused drape' : 'Drag left / right to turn the mannequin'}}<br>Drag up / down to change view · Scroll to zoom</small>
         </div>
       </details>
     </div>
@@ -52,7 +51,7 @@ export default {
   props: {scene_url:String, active:Boolean, preparing:Boolean, error:String,
     fabric_color:String, panel_colors:Object, body_color:String, show_body:Boolean},
   data: () => ({ready:false, progress:'Choose a garment to preview.', failure:'', paused:false,
-    fps:0, frames:0, loadedScene:'', hasSupport:false, support:false,panMode:false,
+    fps:0, frames:0, loadedScene:'', hasSupport:false, support:false,
     bodyNote:'Default mannequin',fitRows:[]}),
   computed: {
     state() {return this.error || this.failure ? 'error' : !this.preparing && !this.scene_url ? 'empty' : this.preparing || !this.ready ? 'preparing' :
@@ -70,7 +69,7 @@ export default {
   watch: {
     scene_url() {const e=engines.get(this); if(e){e.generation++; e.abort?.abort(); this.load();}},
     active() {const e=engines.get(this);if(e?.cloth)this.frames=e.cloth.frame;if(e){e.stats=performance.now();e.count=0;}if(this.active)this.load();},
-    paused() {const e=engines.get(this);if(e?.cloth)this.frames=e.cloth.frame;if(e){e.stats=performance.now();e.count=0;}},
+    paused() {const e=engines.get(this);if(e?.cloth)this.frames=e.cloth.frame;if(e?.renderer)e.renderer.controls.viewOnly=this.paused;if(e){e.stats=performance.now();e.count=0;}},
     fabric_color() {this.appearance();},
     panel_colors: {deep:true, handler() {this.appearance();}},
     body_color() {this.appearance();}, show_body() {this.appearance();},
@@ -110,9 +109,8 @@ export default {
         e.cloth=cloth;cloth=null;
         e.renderer=new Renderer(e.device,this.$refs.canvas,e.cloth,navigator.gpu.getPreferredCanvasFormat());
         const height=scene.body_fit?.measurements?.height?.actual_cm/100 || 1.72;
-        e.defaultCamera={yaw:0,pitch:0,distance:height*1.4,target:[0,height*.69,0]};
-        Object.assign(e.renderer.camera,previousCamera || {...e.defaultCamera,target:[...e.defaultCamera.target]});
-        this.setPan();
+        e.defaultCamera={yaw:0,pitch:0,distance:height*1.9,target:[...e.cloth.motion.center]};
+        Object.assign(e.renderer.camera,{...(previousCamera || e.defaultCamera),target:[...e.defaultCamera.target]});
         this.bodyNote=scene.body_note || 'Default mannequin';
         const labels={height:'Height',bust:'Bust',underbust:'Underbust',waist:'Waist',hips:'Hips',wrist:'Wrist (avg.)',leg_circ:'Thigh (avg.)'};
         this.fitRows=Object.entries(scene.body_fit?.measurements || {}).map(([key,r])=>({key,label:labels[key]||key,target:r.target_cm,actual:r.actual_cm}));
@@ -153,9 +151,8 @@ export default {
       e.renderer.showBody=this.show_body;e.renderer.dirty=true;
     },
     reset() {const e=engines.get(this);e.cloth?.reset();this.frames=0;this.paused=false;},
-    front() {const e=engines.get(this);e.renderer.camera.yaw=0;e.renderer.camera.pitch=0;e.renderer.dirty=true;},
+    front() {const e=engines.get(this);if(!this.paused)e.cloth.motion.front();e.renderer.camera.yaw=this.paused?e.cloth.motion.yaw:0;e.renderer.camera.pitch=0;e.renderer.dirty=true;},
     center() {const e=engines.get(this);Object.assign(e.renderer.camera,{...e.defaultCamera,target:[...e.defaultCamera.target]});e.renderer.dirty=true;},
-    setPan() {const e=engines.get(this);if(e?.renderer)e.renderer.controls.mode=this.panMode?'pan':'orbit';},
     setSupport() {engines.get(this).cloth.settings.holdNeckline=this.support;},
     retry() {const e=engines.get(this);e.url='';this.failure='';if(this.error)this.$emit('retry');else this.load();},
   },

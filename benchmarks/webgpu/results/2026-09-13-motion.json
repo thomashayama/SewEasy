@@ -1,0 +1,174 @@
+{
+  "scene": "collar-default",
+  "frames": 900,
+  "msPerFrame": 12.320666666676601,
+  "kernelChecks": {
+    "self_contact_separates": true,
+    "adjacent_vertices_excluded": true,
+    "xpbd_distance_matches_equation": true,
+    "collar_hinge_waits_for_seam": true,
+    "collar_hinge_preserves_fold_direction": true,
+    "collar_junction_preserves_center_of_mass": true,
+    "sewn_one_ring_excluded": true,
+    "principal_strain_limited": true,
+    "strain_preserves_center_of_mass": true,
+    "rigid_rotation_unchanged": true,
+    "positional_friction_reduces_slip": true,
+    "moving_body_friction_carries_cloth": true,
+    "rotating_collider_transforms_contact_normal": true,
+    "surface_contact_catches_between_vertices": true
+  },
+  "placement": [
+    {
+      "part": "panels",
+      "translation_m": [
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "side": "left",
+      "translation_m": [
+        0,
+        -0.03217443838202649,
+        0.031748545435714315
+      ]
+    },
+    {
+      "side": "right",
+      "translation_m": [
+        0,
+        -0.03863991958333246,
+        0.036082890885714314
+      ]
+    }
+  ],
+  "bodyYaw": 0,
+  "motionReport": {
+    "samples": [
+      {
+        "frame": 0,
+        "yaw": 0.0013541666666666667,
+        "nonRigidRms": 0.00021775279403396291,
+        "velocity": 0.02591655358984298
+      },
+      {
+        "frame": 30,
+        "yaw": 0.8954511743606897,
+        "nonRigidRms": 0.0077439347522056615,
+        "velocity": 0.4900340054460546
+      },
+      {
+        "frame": 60,
+        "yaw": 1.1902997137771183,
+        "nonRigidRms": 0.006494697625663342,
+        "velocity": 0.03973860396202044
+      },
+      {
+        "frame": 90,
+        "yaw": 1.1997754376556558,
+        "nonRigidRms": 0.0036990387508916115,
+        "velocity": 0.014709336200365205
+      },
+      {
+        "frame": 120,
+        "yaw": 1.2,
+        "nonRigidRms": 0.0021376086507928433,
+        "velocity": 0.00876004002719287
+      },
+      {
+        "frame": 150,
+        "yaw": 1.1986458333333334,
+        "nonRigidRms": 0.0021067355697977005,
+        "velocity": 0.02646559057768789
+      },
+      {
+        "frame": 180,
+        "yaw": 0.2783333333333365,
+        "nonRigidRms": 0.010128968727621762,
+        "velocity": 0.6076212267174731
+      },
+      {
+        "frame": 210,
+        "yaw": -0.8954511743606876,
+        "nonRigidRms": 0.008023908656442622,
+        "velocity": 0.4708534342438439
+      },
+      {
+        "frame": 240,
+        "yaw": -1.1902997137771183,
+        "nonRigidRms": 0.00433510586015029,
+        "velocity": 0.03268086187481155
+      },
+      {
+        "frame": 270,
+        "yaw": -1.1997754376556558,
+        "nonRigidRms": 0.0036821362612649336,
+        "velocity": 0.011611815903476206
+      },
+      {
+        "frame": 300,
+        "yaw": -1.1986458333333334,
+        "nonRigidRms": 0.0036887341329782655,
+        "velocity": 0.026442891035910944
+      },
+      {
+        "frame": 330,
+        "yaw": -0.30454882563931324,
+        "nonRigidRms": 0.008205563333052428,
+        "velocity": 0.4918644242400348
+      },
+      {
+        "frame": 360,
+        "yaw": -0.009700286222881924,
+        "nonRigidRms": 0.006936072597367859,
+        "velocity": 0.037945237612357956
+      },
+      {
+        "frame": 390,
+        "yaw": -0.00022456234434392762,
+        "nonRigidRms": 0.005201353672499799,
+        "velocity": 0.01398572258229883
+      },
+      {
+        "frame": 420,
+        "yaw": 0,
+        "nonRigidRms": 0.004197454175592585,
+        "velocity": 0.013286393136899985
+      },
+      {
+        "frame": 450,
+        "yaw": 0,
+        "nonRigidRms": 0.004450562531511144,
+        "velocity": 0.006877872038143211
+      },
+      {
+        "frame": 480,
+        "yaw": 0,
+        "nonRigidRms": 0.0044010480293413005,
+        "velocity": 0.006073718567776491
+      },
+      {
+        "frame": 510,
+        "yaw": 0,
+        "nonRigidRms": 0.004156686788939736,
+        "velocity": 0.0060284621942312145
+      },
+      {
+        "frame": 540,
+        "yaw": 0,
+        "nonRigidRms": 0.004114508972366586,
+        "velocity": 0.005831613636897329
+      },
+      {
+        "frame": 570,
+        "yaw": 0,
+        "nonRigidRms": 0.004148867384064686,
+        "velocity": 0.005800360436129772
+      }
+    ],
+    "allFinite": true,
+    "maxClothLag": 0.010128968727621762
+  }
+}
