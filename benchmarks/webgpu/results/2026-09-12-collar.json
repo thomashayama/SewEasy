@@ -1,0 +1,57 @@
+{
+  "date": "2026-09-12",
+  "backend": "Browser WebGPU; CPU-only preparation",
+  "cases": [
+    {
+      "scene": "collar-default",
+      "frames": 1800,
+      "ms_per_frame": 8.503555555558867,
+      "collar_triangles": 486,
+      "collar_seam_max_mm": 0.0,
+      "collar_stretch_p95": 1.0915738745459702,
+      "collar_stretch_max": 1.4031125275221632,
+      "fold_error_p95_deg": 0.8825631526347177,
+      "body_samples": 2300,
+      "inside_body_samples": 0,
+      "body_penetration_max_mm": 0.0,
+      "tip_drop_cm": {
+        "left": 9.717929363250732,
+        "right": 9.416627883911133
+      }
+    },
+    {
+      "scene": "collar-fine",
+      "frames": 1800,
+      "ms_per_frame": 11.785388888898822,
+      "collar_triangles": 1144,
+      "collar_seam_max_mm": 0.0,
+      "collar_stretch_p95": 1.1053300244577586,
+      "collar_stretch_max": 1.5742858493224567,
+      "fold_error_p95_deg": 3.2352942774524083,
+      "body_samples": 5311,
+      "inside_body_samples": 0,
+      "body_penetration_max_mm": 0.0,
+      "tip_drop_cm": {
+        "left": 9.962618350982666,
+        "right": 9.66348648071289
+      }
+    },
+    {
+      "scene": "collar-custom",
+      "frames": 1800,
+      "ms_per_frame": 10.786111111111111,
+      "collar_triangles": 596,
+      "collar_seam_max_mm": 0.0,
+      "collar_stretch_p95": 1.076709423883943,
+      "collar_stretch_max": 1.4109819767103355,
+      "fold_error_p95_deg": 0.414363092423242,
+      "body_samples": 2810,
+      "inside_body_samples": 0,
+      "body_penetration_max_mm": 0.0,
+      "tip_drop_cm": {
+        "left": 11.361300945281982,
+        "right": 11.364829540252686
+      }
+    }
+  ]
+}

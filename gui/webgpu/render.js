@@ -1,4 +1,4 @@
-import {buffer} from './physics.js?v=11';
+import {buffer} from './physics.js?v=12';
 import {cameraControls} from './camera.js?v=11';
 
 function normalize(v){const l=Math.hypot(...v)||1;return v.map(x=>x/l);}

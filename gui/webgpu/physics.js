@@ -1,6 +1,7 @@
 // SewEasy browser cloth experiment. Original WGSL implementation of small-step
 // XPBD distance constraints; see README.md for paper references and limits.
-import {strainShader, strainTopology, contactNeighbors, placePanels} from './strain.js?v=11';
+import {strainShader, strainTopology, contactNeighbors, placePanels} from './strain.js?v=12';
+import {hingeShader, collarWeldShader} from './bending.js?v=2';
 const common = `
 struct Params { motion: vec4<f32>, material: vec4<f32>, counts: vec4<u32>, contact: vec4<f32>, limits:vec4<f32> }
 @group(0) @binding(0) var<storage, read_write> q: array<vec4<f32>>;
@@ -310,6 +311,19 @@ export class Cloth {
     this.integrate=await this.pipeline(integrate,[...base,[2,this.previous],[3,this.velocity]],'Integrate');
     if(this.supportTargets.length){this.supportBuffer=this.make(new Float32Array(this.supportTargets.flat()));this.supportPass=await this.pipeline(necklineSupport,[[0,this.q],[2,this.supportBuffer],[3,this.previous]],'Optional neckline fitting support');}
     this.solve=await this.pipeline(constraints,[...base,[2,this.edges]],'Colored XPBD');
+    this.hingeBatches=[];
+    if(s.hinges?.length){
+      const raw=new ArrayBuffer(s.hinges.length*48),u=new Uint32Array(raw),f=new Float32Array(raw);
+      s.hinges.forEach((h,i)=>{u.set(h.ids.slice(0,3),i*12);u.set(h.ids.slice(3),i*12+4);f.set([h.angle,h.compliance,0,0],i*12+8);});
+      this.hinges=this.make(new Uint8Array(raw));
+      this.hingeSolve=await this.pipeline(common+hingeShader,[...base,[2,this.hinges]],'Signed collar bending');
+      this.hingeBatches=s.hinge_batches.map(([start,count])=>({count,bind:d.createBindGroup({layout:this.hingeSolve.pipeline.getBindGroupLayout(1),entries:[{binding:0,resource:{buffer:this.make(new Uint32Array([start,count,0,0]),GPUBufferUsage.UNIFORM)}}]})}));
+      const groups=new Map();
+      s.sewn_ids.forEach((id,i)=>{if(!groups.has(id))groups.set(id,[]);groups.get(id).push(i);});
+      const welds=[...groups.values()].filter(ids=>ids.length>1&&ids.some(i=>/collar|stand/.test(s.vertex_panels[i])));
+      const [ranges,ids]=csr(welds);this.collarWeldCount=welds.length;
+      this.collarWeld=await this.pipeline(common+collarWeldShader,[...base,[2,this.make(ranges)],[3,this.make(ids)],[4,this.previous]],'Close collar junctions');
+    }
     this.batches=s.batches.map(([start,count])=>({count,bind:d.createBindGroup({layout:this.solve.pipeline.getBindGroupLayout(1),entries:[{binding:0,resource:{buffer:this.make(new Uint32Array([start,count,0,0]),GPUBufferUsage.UNIFORM)}}]})}));
     const triangleColors=strainTopology(s);this.strainTriangles=triangleColors.flat();
     const tr=new ArrayBuffer(this.strainTriangles.length*32),tu=new Uint32Array(tr),tf=new Float32Array(tr);
@@ -375,6 +389,33 @@ export class Cloth {
     const alpha=this.settings.stretch/(1/(60*this.settings.substeps))**2;
     const expected=rest+rest*alpha/(s.inverse_mass[c[0]]+s.inverse_mass[c[1]]+alpha);
     this.kernelChecks={self_contact_separates:Math.abs(separated-.008)<1e-5,adjacent_vertices_excluded:Math.abs(excluded-.003)<1e-5,xpbd_distance_matches_equation:Math.abs(distance-expected)<1e-5};
+    if(this.hingeSolve){
+      const raw=new ArrayBuffer(48),u=new Uint32Array(raw),f=new Float32Array(raw);
+      u.set([0,1,2,0,3,4,5,0]);f.set([-2.18,0,0,0],8);d.queue.writeBuffer(this.hinges,0,raw);
+      const buffer=this.make(new Uint32Array([0,1,0,0]),GPUBufferUsage.UNIFORM);
+      const bind=d.createBindGroup({layout:this.hingeSolve.pipeline.getBindGroupLayout(1),entries:[{binding:0,resource:{buffer}}]});
+      const points=[[-.01,0,0],[.01,0,0],[0,.01,0],[-.01,0,0],[.01,0,0],[0,-.01,-.01]];
+      const project=async(points,count)=>{
+        d.queue.writeBuffer(this.q,0,vec4(points,[0,0,0,0,0,1]));
+        const e=d.createCommandEncoder();for(let i=0;i<count;i++)this.dispatch(e,this.hingeSolve,1,bind);
+        d.queue.submit([e.finish()]);return (await this.readPositions())[5];
+      };
+      const away=points.map(p=>[...p]);away[3][2]=away[4][2]=.05;
+      const before=await project(away,1);
+      this.kernelChecks.collar_hinge_waits_for_seam=before.every((v,i)=>Math.abs(v-points[5][i])<1e-6);
+      const after=await project(points,20);
+      this.kernelChecks.collar_hinge_preserves_fold_direction=Math.abs(Math.atan2(-after[2],-after[1])+2.18)<1e-4;
+      const h=s.hinges[0];u.set([...h.ids.slice(0,3),0,...h.ids.slice(3),0]);f.set([h.angle,h.compliance,0,0],8);d.queue.writeBuffer(this.hinges,0,raw);
+      const weld={...this.collarWeld,bind:d.createBindGroup({layout:this.collarWeld.pipeline.getBindGroupLayout(0),entries:
+        [[0,this.q],[1,this.params],[2,this.make(new Uint32Array([0,3]))],[3,this.make(new Uint32Array([0,1,2]))],[4,this.previous]].map(([binding,buffer])=>({binding,resource:{buffer}}))})};
+      const junction=vec4([[0,1,0],[.01,1,0],[.02,1,0]],[1,.5,1/3]);
+      d.queue.writeBuffer(this.q,0,junction);d.queue.writeBuffer(this.previous,0,junction);
+      this.frame=120;this.updateParams();
+      const close=d.createCommandEncoder();this.dispatch(close,weld,1);d.queue.submit([close.finish()]);
+      const closed=(await this.readPositions()).slice(0,3);
+      this.kernelChecks.collar_junction_preserves_center_of_mass=closed.every(p=>Math.abs(p[0]-.08/6)<1e-6&&Math.abs(p[1]-1)<1e-6);
+      this.frame=0;this.updateParams();
+    }
     let seamPair=null;
     for(let i=0;i<this.n&&!seamPair;i++){
       const j=s.sewn_ids.findIndex((id,j)=>id!==s.sewn_ids[i]&&this.contactNeighbors[i].includes(id)&&!s.neighbors[i].includes(j));
@@ -451,6 +492,8 @@ export class Cloth {
         this.dispatch(encoder,this.self);this.dispatch(encoder,this.applySelf);
       }
       for(const batch of this.seamBatches)this.dispatch(encoder,this.seamSolve,batch.count,batch.bind);
+      for(const batch of this.hingeBatches)this.dispatch(encoder,this.hingeSolve,batch.count,batch.bind);
+      if(this.collarWeld)this.dispatch(encoder,this.collarWeld,this.collarWeldCount);
       if(this.settings.holdNeckline&&this.supportPass)this.dispatch(encoder,this.supportPass,this.supportTargets.length);
       if(this.settings.bodyCollision)this.dispatch(encoder,this.settings.bodyMethod==='sdf'?this.sdfCollide:this.collide);
       this.dispatch(encoder,this.velocityPass);

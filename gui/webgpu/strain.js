@@ -56,7 +56,9 @@ export function contactNeighbors(scene) {
 }
 
 export function placePanels(scene) {
- const lift=scene.garment==='element-top'?0:.06;
+ // A collared shirt already has a drafted neck height. Raising it can sew
+ // the stand around the jaw on larger profiles and trap the whole shirt.
+ const lift=scene.garment==='element-top'||scene.hinges?.length?0:.06;
  const positions=scene.vertices.map(p=>[p[0],p[1]+lift,p[2]]),adjustments=[{part:'panels',translation_m:[0,lift,0]}];
  // The upstream flat sleeve placements can close a cuff above the wrist.
  // Align each sleeve/cuff assembly with the mannequin at its cuff X position

@@ -19,7 +19,6 @@ from scipy.spatial.transform import Rotation as R
 import seweasy as pyg
 
 from assets.garment_programs.base_classes import BaseBodicePanel
-from assets.garment_programs.bands import StraightBandPanel
 from assets.garment_programs.circle_skirt import CircleArcPanel
 from assets.garment_programs import sleeves
 from assets.garment_programs import collars
@@ -29,8 +28,8 @@ from assets.garment_programs.closures import pre_fold
 # pre-folded down-and-forward so it starts draped over the stand; the SOFT
 # fall stiffness (below) then lets it settle onto the chest/shoulders as a
 # real turndown. See closures.pre_fold.
-_COLLAR_FRONT_FOLD = 150
-_COLLAR_BACK_FOLD = 160
+_COLLAR_FRONT_FOLD = 125
+_COLLAR_BACK_FOLD = 130
 
 # Roll-line base radius (cm) of the CURVE-CUT collar. The stand and fall are
 # drafted as CONCENTRIC annular sectors sharing this geometry, so the fall's
@@ -177,29 +176,31 @@ class DressShirtPanel(BaseBodicePanel):
         return self.width
 
 
-class CollarLeafPanel(pyg.Panel):
-    """Fold-over collar half: a band with a pointed front end.
+class CollarLeafPanel(CircleArcPanel):
+    """Curved collar fall with a longer, pointed center-front tip.
 
-    Mimics StraightBandPanel's edge ordering so interface roles match:
-    edges[0] shoulder end, edges[2] front (pointed) end.
+    Only the free edge changes: the roll line and shoulder seam retain their
+    lengths, so changing the point never stretches a connecting seam.
     """
 
-    def __init__(self, name, width, depth, point_ext=0) -> None:
-        super().__init__(name)
-
-        self.edges = pyg.EdgeSeqFactory.from_verts(
-            [0, 0], [0, depth], [width + point_ext, depth], [width, 0],
-            loop=True)
-
-        self.interfaces = {
-            'right': pyg.Interface(self, self.edges[0]),
-            'top': pyg.Interface(self, self.edges[1]).reverse(True),
-            'left': pyg.Interface(self, self.edges[2]),
-            'bottom': pyg.Interface(self, self.edges[3]),
-        }
-
-        self.top_center_pivot()
-        self.center_x()
+    def __init__(self, name, radius, depth, angle, point_ext=0) -> None:
+        super().__init__(name, radius, depth, angle)
+        if point_ext <= 0:
+            return
+        outer = self.edges[2]
+        curve = outer.as_curve()
+        start, end = np.array(outer.start), np.array(outer.end)
+        tangent0, tangent1 = curve.derivative(0), curve.derivative(1)
+        c0 = start + np.array([tangent0.real, tangent0.imag]) / 3
+        c1 = end - np.array([tangent1.real, tangent1.imag]) / 3
+        # Set the tip back from center front so the two leaves form an open V
+        # instead of overlapping across the button line.
+        tip = point_ext * np.array([-.65, -1.])
+        outer.start[:] = (start + tip).tolist()
+        edge = pyg.CurveEdge(outer.start, outer.end,
+                             [c0.tolist(), c1.tolist()], relative=False)
+        self.edges.substitute(outer, edge)
+        self.interfaces['bottom'] = pyg.Interface(self, edge)
 
 
 class ShirtCollar(pyg.Component):
@@ -256,10 +257,9 @@ class ShirtCollar(pyg.Component):
         # Collar stand: inner arc (R1) is the neckline seam, outer arc (R2)
         # the roll line. Placed as a flat crescent front/back of the neck; the
         # sim wraps it around and the pre-folded fall lies over it. The stand
-        # and its fall share the SAME arc center (concentric), so the stand's
-        # outer arc and the fall's inner arc coincide -> a clean roll-line
-        # weld. Center of a flipped arc panel sits at translate + (0, r*cos
-        # (halfarc), 0); equate stand and fall centers to solve the fall's y.
+        # and unfolded fall share an arc center. The flipped stand's outer
+        # chord is ABOVE its inner chord by stand_h*cos(halfarc), which sets
+        # the fall's translation before folding.
         self.stand_f = CircleArcPanel(f'{tag}_stand_front', R1, stand_h, af)
         self.stand_f.rotate_by(flipX)
         self.stand_f.translate_by([-R1 * np.sin(af / 2), neck_y, 12])
@@ -272,15 +272,12 @@ class ShirtCollar(pyg.Component):
         # inner arc coincides with the front stand's outer arc, then pre-folded
         # down over it so the collar "falls" correctly in the drape. The BACK
         # fall is built once, continuously, at the DressShirt level (see
-        # DressShirt._add_back_fall) -- a single piece with no center-back
-        # seam, which is the only way a folded back fall both welds and holds
-        # (a split, folded, center-back-seamed fall collapses the mesh weld).
-        self.leaf_f = CircleArcPanel(f'{tag}_collar_front', R2, collar_d, af)
+        # DressShirt._add_back_fall), with shoulder seams joining the leaves.
+        # Folding happens after mirroring, to preserve both seam orientations.
+        self.leaf_f = CollarLeafPanel(f'{tag}_collar_front', R2, collar_d, af, point)
         self.leaf_f.rotate_by(flipX)
         self.leaf_f.translate_by(
-            [-R1 * np.sin(af / 2), neck_y - stand_h * np.cos(af / 2), 12])
-        pre_fold(self.leaf_f, self.leaf_f.interfaces['top'].edges[0],
-                 _COLLAR_FRONT_FOLD)
+            [-R1 * np.sin(af / 2), neck_y + stand_h * np.cos(af / 2), 12])
 
         self.stitching_rules = pyg.Stitches(
             # stands meet at the shoulder line (the band stays continuous
@@ -414,12 +411,8 @@ class DressShirtHalf(pyg.Component):
             self.ftorso.interfaces['inside'], self.interfaces['front_collar']
         )
         self.interfaces['back_collar'] = self.collar_comp.interfaces['back']
-        # Center-back seam = the torso only. The two back stands are NOT
-        # seamed to each other here: with a continuous back fall welded across
-        # both their tops, adding a stand-to-stand center-back seam makes three
-        # seams meet at the center-back-top point and collapses the initial
-        # mesh weld. The stands are held closed by the neckline below and the
-        # continuous fall above.
+        # Close the torso here; DressShirt closes the stand separately when
+        # attaching the continuous back fall.
         self.interfaces['back_in'] = self.btorso.interfaces['inside']
         # Exposed so DressShirt can weld one continuous back fall across both
         # halves' back stand tops, and join each front fall to that back fall
@@ -445,6 +438,13 @@ class DressShirt(pyg.Component):
 
         self.right = DressShirtHalf('right', body, design)
         self.left = DressShirtHalf('left', body, design).mirror()
+
+        # Mirror while the panels are still unfolded. Panel.mirror autonorms
+        # each surface; doing that after a fold reverses only the left leaf's
+        # winding and twists its roll-line stitch end for end.
+        for half in (self.right, self.left):
+            leaf = half.collar_comp.leaf_f
+            pre_fold(leaf, leaf.interfaces['top'].edges[0], _COLLAR_FRONT_FOLD)
 
         # Button line: the placket extensions are stitched shut
         self.stitching_rules.append((self.right.interfaces['front_in'],
@@ -499,15 +499,7 @@ class DressShirt(pyg.Component):
         return spat
 
     def _add_back_fall(self):
-        """Build the collar's back fall as ONE continuous panel welded across
-        both halves' back stand tops, then pre-fold it down.
-
-        A split back fall (one per half, seamed at center back) collapses the
-        initial mesh weld once folded. A single piece has no center-back seam,
-        welds cleanly to the two stand tops, and -- being connected to the
-        stand through that weld -- holds its fold via cloth bending, the same
-        way the front fall does.
-        """
+        """Connect one continuous back fall to both stands and front leaves."""
         collar = self.right.collar_comp
         depth = collar.collar_d
 
@@ -524,21 +516,17 @@ class DressShirt(pyg.Component):
         # inner arc on the back stands' roll line (same center formula as the
         # front fall).
         self.back_fall.translate_by(
-            [0, collar.neck_y - collar.stand_h * np.cos(ab), -12])
-        pre_fold(self.back_fall, self.back_fall.interfaces['top'].edges[0],
-                 _COLLAR_BACK_FOLD)
+            [0, collar.neck_y + collar.stand_h * np.cos(ab), -12])
+        pre_fold(self.back_fall, self.back_fall.interfaces['top'].edges[0], _COLLAR_BACK_FOLD)
 
         stand_top = pyg.Interface.from_multiple(
             self.right.interfaces['back_stand_top'],
             self.left.interfaces['back_stand_top'])
         self.stitching_rules.append(
             (self.back_fall.interfaces['top'], stand_top))
-        # NOTE: the front falls are intentionally NOT seamed to the back fall
-        # at the shoulder. Doing so converges four seams (stand-stand,
-        # front-fall-to-stand, back-fall-to-stand, front-fall-to-back-fall) at
-        # the shoulder-roll point and collapses the initial mesh weld
-        # (verified). The falls' shoulder corners stay free -- a minor splay is
-        # the price of a weldable folded collar.
+        self.stitching_rules.append((self.right.interfaces['back_collar'], self.left.interfaces['back_collar']))
+        self.stitching_rules.append((self.right.interfaces['fall_shoulder'], self.back_fall.interfaces['right']))
+        self.stitching_rules.append((self.left.interfaces['fall_shoulder'], self.back_fall.interfaces['left']))
 
     def length(self):
         return self.right.length()

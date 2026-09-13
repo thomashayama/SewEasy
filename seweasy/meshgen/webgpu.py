@@ -69,10 +69,9 @@ def build_scene(data, meta, name):
             panel = str(data['face_panels'][sides[0][1]])
             stiff = float(meta['panel_stiffness'].get(panel, 1))
             constraints.append([a, b, 1, float(delta[0]), float(delta[1]), 1/stiff, 0.0])
-    # Preserve the authored fold where the tube-top cuff joins its bodice.
-    # Stitches alone join points but provide no hinge resistance, allowing the
-    # cuff to flip above the neckline. Rest distances use the local seam frame
-    # and original panel-normal angle, independent of their unsewn separation.
+    # Stitches join points but cannot preserve a fold's direction. The shirt
+    # collar uses signed dihedrals; retain the existing opposite-vertex distance
+    # approximation for the tube-top cuff.
     sewn_edges = {}
     for (a, b), sides in edges.items():
         if len(sides) == 1:
@@ -80,11 +79,26 @@ def build_scene(data, meta, name):
                 a, b = b, a
             sewn_edges.setdefault((world_ids[a], world_ids[b]), []).append((a, b, *sides[0]))
     creases = 0
+    hinges = []
     for sides in sewn_edges.values():
         if len(sides) != 2:
             continue
         names = {str(data['face_panels'][side[3]]) for side in sides}
-        if names not in ({'front', 'fcuff'}, {'back', 'bcuff'}):
+        shirt_roll = any('stand_' in name for name in names) and any('collar_' in name for name in names)
+        if names not in ({'front', 'fcuff'}, {'back', 'bcuff'}) and not shirt_roll:
+            continue
+        if shirt_roll:
+            (a0, b0, c, _), (a1, b1, d, _) = sides
+            e0, e1 = positions[b0]-positions[a0], positions[b1]-positions[a1]
+            n0 = np.cross(e0, positions[c]-positions[a0])
+            n1 = np.cross(positions[d]-positions[a1], e1)
+            n0 /= np.linalg.norm(n0)
+            n1 /= np.linalg.norm(n1)
+            axis = e0 / np.linalg.norm(e0)
+            angle = np.arctan2(np.dot(np.cross(n0, n1), axis), np.dot(n0, n1))
+            stiffness = max(float(meta['panel_stiffness'].get(name, 1)) for name in names)
+            hinges.append(dict(ids=[a0, b0, c, a1, b1, d], angle=float(angle), compliance=0.00002/stiffness))
+            creases += 1
             continue
         along, heights, normals = [], [], []
         for a, b, opposite, fi in sides:
@@ -130,6 +144,21 @@ def build_scene(data, meta, name):
         assert len(set(ids)) == len(ids), 'Constraint color has a write race'
         batches.append([len(ordered), len(color)])
         ordered.extend(color)
+    hinge_colors, used = [], [set() for _ in range(n)]
+    for hinge in hinges:
+        forbidden = set().union(*(used[i] for i in hinge['ids']))
+        color = 0
+        while color in forbidden:
+            color += 1
+        while len(hinge_colors) <= color:
+            hinge_colors.append([])
+        hinge_colors[color].append(hinge)
+        for i in hinge['ids']:
+            used[i].add(color)
+    hinge_batches, hinges = [], []
+    for color in hinge_colors:
+        hinge_batches.append([len(hinges), len(color)])
+        hinges.extend(color)
     body = trimesh.Trimesh(data['body_vertices'], data['body_faces'], process=False)
     nodes, body_faces = bvh(body.vertices, body.faces)
     scene = dict(name=name, garment=meta['garment'], resolution_cm=meta['resolution_cm'],
@@ -139,6 +168,7 @@ def build_scene(data, meta, name):
                  body_vertices=body.vertices.tolist(), body_normals=body.vertex_normals.tolist(),
                  body_faces=body_faces.tolist(), body_bvh=nodes,
                  seams=seam_count, crease_constraints=creases, panels=meta['panels'],
+                 hinges=hinges, hinge_batches=hinge_batches,
                  initialization='Unsewn original panel transforms; no precomputed drape',
                  preparation_seconds=time.perf_counter()-started)
     return scene

@@ -75,6 +75,11 @@ For the tube top, 67 additional bending constraints cross the cuff seam and
 preserve the authored fold angle. The sewn vertices of each neckline support
 share the same target height, so the aid does not hold stitches apart.
 
+Dress-shirt collar seams use graph-colored signed dihedral constraints. These
+preserve the outward fold instead of treating inward and outward bends as the
+same distance. They activate only when the seam endpoints are within 1.5 cm.
+See [collar regression and results](../../docs/Collar_preview_2026-09-12.md).
+
 The browser uses small-step XPBD distance projections, graph-colored principal
 triangle strain limiting, sewing constraints, gravity, damping, positional
 friction, discrete body collision and particle self-contact through a GPU spatial
@@ -85,7 +90,8 @@ the browser GPU during normal playback. WGSL computes normals and the WebGPU
 renderer reads the position buffer directly. No frame streams come from Python.
 
 For assembly, original unsewn panels are sewn over 1.6 seconds before gravity
-ramps up. Shirt panels are raised 6 cm; long sleeve/cuff assemblies are translated
+ramps up. Uncollared shirt panels are raised 6 cm; collared shirts retain their
+drafted neck height so they do not sew around the jaw. Long sleeve/cuff assemblies are translated
 to align with body cross-sections at the cuffs. The tube top starts at its drafted
 height. Placement translations and any fitting support are recorded. No settled
 garment is loaded. The mannequin distance

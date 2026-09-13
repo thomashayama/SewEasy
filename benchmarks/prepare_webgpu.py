@@ -17,7 +17,9 @@ sys.path.insert(0, str(ROOT))
 
 def package(mesh, destination):
     from seweasy.meshgen.webgpu import build_scene
-    with np.load(mesh) as data:
+    with np.load(mesh) as archive:
+        # Materialize compressed arrays once; build_scene indexes them repeatedly.
+        data = {key: archive[key] for key in archive.files}
         meta = json.loads((mesh.parent / 'prepare.json').read_text())
         scene = build_scene(data, meta, mesh.parent.name)
     target = destination / f'{mesh.parent.name}.json'
