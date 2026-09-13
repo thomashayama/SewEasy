@@ -1,6 +1,6 @@
 # Fabric editing in the sewing pattern
 
-Hover over a pattern piece to highlight its outline and show the fabric brush
+Hover over a pattern piece to highlight its outline and show the standard arrow
 cursor. Click to select it. Shift-click or Ctrl-click toggles additional pieces;
 Cmd-click also works on macOS. Dragging still pans the sheet without selecting
 the pieces crossed by the pointer.
@@ -11,7 +11,8 @@ stiffness. Fields show **Mixed** when the selection differs. Changing one field
 preserves the other settings on each piece. **Use garment fabric** clears the
 selected pieces' fabric and stiffness overrides.
 
-The panel can be closed and reopened with **Fabric** above the workspace.
+Closing the panel clears the selection outlines and keeps the fabric edits.
+Reopen it with **Fabric** above the workspace.
 Keyboard users can focus a piece and press Enter or Space to select it, hold a
 modifier to add/remove it, use Ctrl/Cmd+A to select all, and Escape to clear.
 Hover and selection outlines are browser-local SVG overlays and never become

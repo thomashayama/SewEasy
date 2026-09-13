@@ -578,7 +578,7 @@ class GUIState:
                     .props('unelevated icon=download') \
                     .classes('absolute bottom-10 right-5 z-40 shadow-lg')
             self.ui_fabric_panel = FabricPanel()
-            self.ui_fabric_panel.on('close', lambda: self.ui_fabric_panel.configure(open=False))
+            self.ui_fabric_panel.on('close', self.close_fabric_panel)
             self.ui_fabric_panel.on('clear', lambda: self.set_pattern_selection([]))
             self.ui_fabric_panel.on('select-all', lambda: self.set_pattern_selection(list(self.pattern_state.panel_svg_paths)))
             self.ui_fabric_panel.on('edit', self.edit_selected_fabric)
@@ -956,6 +956,10 @@ class GUIState:
 
     def on_pattern_selection(self, e):
         self.set_pattern_selection(e.args.get('panels', []))
+
+    def close_fabric_panel(self):
+        self.set_pattern_selection([], open_panel=False)
+        self.ui_fabric_panel.configure(open=False)
 
     def set_pattern_selection(self, panels, open_panel=True):
         self.selected_panels = list(dict.fromkeys(p for p in panels if p in self.pattern_state.panel_svg_paths))
