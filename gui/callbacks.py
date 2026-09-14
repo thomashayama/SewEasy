@@ -54,9 +54,6 @@ theme_colors = theme.colors
 # them to material factors at export time)
 DEFAULT_BODY_COLOR = '#f9f2e4'
 
-# Skin tone ramp + helpers live with the rest of the body knowledge
-from webapp.measurement_guide import skin_tone_hex, skin_tone_t
-
 # Static mounts are app-wide: registering them per connection only bloats
 # the router. Session-specific files under /geo get unique names, so long
 # browser caching is safe everywhere.
@@ -193,6 +190,7 @@ class GUIState:
                 self.pattern_state.panel_colors = snapshot['appearance'].get('panel_colors', {})
                 self.pattern_state.panel_fabrics = snapshot['appearance'].get('panel_fabrics', {})
                 self.pattern_state.panel_stiffness = snapshot['appearance'].get('panel_stiffness', {})
+                self.pattern_state.panel_materials = snapshot['appearance'].get('panel_materials', {})
             self._restored_skin = snapshot.get('skin')
         except Exception:
             traceback.print_exc()   # a broken snapshot falls back to defaults
@@ -592,19 +590,6 @@ class GUIState:
                 on_change=lambda e: self.ui_browser_drape.configure(show_body=e.value)
             ).props('dense left-label').classes('se-overlay-chip text-stone-800 pl-2.5 pr-1.5 py-0.5')
 
-            # Mannequin skin tone
-            with ui.element('div').classes('se-overlay-chip w-44 px-4 pt-0.5'):
-                self.ui_skin_slider = ui.slider(
-                    value=skin_tone_t(self.body_color)
-                        if self.body_color != DEFAULT_BODY_COLOR else 0.3,
-                    min=0., max=1., step=0.01,
-                ).props('dense aria-label="Mannequin skin tone"') \
-                    .classes('se-skin-slider w-full') \
-                    .style(f'color: {self.body_color}') \
-                    .on('change',
-                        lambda e: self.update_body_color(skin_tone_hex(e.args))) \
-                    .tooltip('Mannequin skin tone')
-
     # !SECTION
     # SECTION -- Other UI details
     def def_pattern_waiting(self):
@@ -976,7 +961,7 @@ class GUIState:
                 self.update_pattern_display()
                 self.ui_browser_drape.configure(panel_colors=self.pattern_state.display_panel_colors(),
                                                 panel_fabrics=self.pattern_state.display_panel_fabrics())
-                if data.get('field') in ('stiffness', 'reset'):
+                if data.get('field') in ('material', 'stiffness', 'reset'):
                     self._preview_revision += 1
                     self.ui_browser_drape.configure(scene_url='')
                     await self.update_3d_scene()
@@ -1088,15 +1073,11 @@ class GUIState:
         if not color or color == self.body_color:
             return
         self.body_color = color
-        self.ui_skin_slider.style(f'color: {color}')
         self.ui_browser_drape.configure(body_color=color)
 
     async def apply_skin_color(self, color):
-        """Apply a stored skin tone (None -> default muslin) and sync the
-        slider position + thumb color to it"""
+        """Apply the profile's stored skin tone (None -> default muslin)."""
         color = color or DEFAULT_BODY_COLOR
-        self.ui_skin_slider.set_value(skin_tone_t(color))
-        self.ui_skin_slider.style(f'color: {color}')
         await self.update_body_color(color)
 
     def apply_fabric_color_visuals(self, color):

@@ -4,6 +4,7 @@ from pathlib import Path
 from nicegui import ui
 from nicegui.elements.mixins.source_element import SourceElement
 from nicegui.element import Element
+from .fabric_library import FABRIC_PRESETS
 
 
 class PatternCanvas(SourceElement, component='pattern_canvas.js'):
@@ -20,7 +21,8 @@ class PatternCanvas(SourceElement, component='pattern_canvas.js'):
 class FabricPanel(Element, component='fabric_panel.js'):
     def __init__(self):
         super().__init__()
-        self._props.update(selection=[], open=False, available=0, busy=False)
+        self._props.update(selection=[], open=False, available=0, busy=False,
+                           materials=list(FABRIC_PRESETS))
 
     def configure(self, **props):
         self._props.update(props)

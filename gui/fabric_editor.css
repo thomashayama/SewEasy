@@ -35,8 +35,8 @@
 .se-fabric-panel input:focus-visible, .se-fabric-panel select:focus-visible, .se-fabric-panel button:focus-visible {outline:2px solid #4a90d2; outline-offset:3px;}
 .se-fabric-color:focus-within {outline:2px solid #4a90d2; outline-offset:2px;}
 .se-fabric-unit {position:absolute; right:0; font-weight:400; color:#5a6270;}
-.se-fabric-stiffness {padding-top:16px; border-top:1px solid #dbe0e6;}
-.se-fabric-stiffness small {display:block; margin-top:6px; font-weight:400;}
+.se-fabric-stiffness {padding-bottom:18px; border-bottom:1px solid #dbe0e6;}
+.se-fabric-material small, .se-fabric-stiffness small {display:block; margin-top:6px; font-weight:400;}
 .se-fabric-panel footer {padding:12px 20px; border-top:1px solid #dbe0e6; font-size:11px; color:#5a6270;}
 .se-fabric-panel button:disabled, .se-fabric-panel fieldset:disabled {opacity:.55; cursor:default;}
 @media(max-width:600px) {.se-fabric-panel {position:absolute; right:0; top:48px; bottom:0; height:auto; padding-top:14px; width:min(280px,85vw); box-shadow:-8px 0 24px #1d2b4212;}}

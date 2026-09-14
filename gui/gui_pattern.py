@@ -119,6 +119,7 @@ class GUIPattern:
         # Per-panel bending-stiffness multipliers (panel_name -> factor). User
         # overrides on top of any garment default; applied in the 3D drape.
         self.panel_stiffness = {}
+        self.panel_materials = {}  # Preset IDs, stored separately from colors/prints.
         # panel_name -> svgpathtools Path (SVG coords), for 2D click hit-tests
         self.panel_svg_paths = {}
         self.design_sampler = pyg.DesignSampler()
@@ -219,7 +220,8 @@ class GUIPattern:
     def garment_appearance(self):
         return dict(fabric_color=self.fabric_color, panel_colors=dict(self.panel_colors),
                     panel_fabrics=deepcopy(self.panel_fabrics),
-                    panel_stiffness=dict(self.panel_stiffness))
+                    panel_stiffness=dict(self.panel_stiffness),
+                    panel_materials=dict(self.panel_materials))
 
     def sync_outfit_garment(self):
         if self.outfit_items:
@@ -239,6 +241,7 @@ class GUIPattern:
         self.panel_colors = deepcopy(look.get('panel_colors', {}))
         self.panel_fabrics = deepcopy(look.get('panel_fabrics', {}))
         self.panel_stiffness = deepcopy(look.get('panel_stiffness', {}))
+        self.panel_materials = deepcopy(look.get('panel_materials', {}))
 
     def display_panel_colors(self):
         if not self.outfit_items:
@@ -267,9 +270,27 @@ class GUIPattern:
         if not panels:
             return {}
         colors, prints = self.display_panel_colors(), self.display_panel_fabrics()
+        stiffness = self.display_panel_stiffness()
         return {
             p: {**dict(kind='plain', fg='#eef2f8', bg=colors.get(p, self.fabric_color), scale=.6),
-                **deepcopy(prints.get(p, {})), 'stiffness': self.panel_stiffness_of(p)} for p in panels}
+                **deepcopy(prints.get(p, {})), 'stiffness': stiffness.get(p, 1.0),
+                'material': self.panel_material_of(p)} for p in panels}
+
+    def panel_material_of(self, panel):
+        from .fabric_library import FABRICS_BY_ID
+        materials, local = self._panel_appearance_map(panel, 'panel_materials')
+        stiffness, _ = self._panel_appearance_map(panel, 'panel_stiffness')
+        preset = FABRICS_BY_ID.get(materials.get(local))
+        if preset and stiffness.get(local) == preset['stiffness']:
+            return preset['id']
+        return 'custom' if local in stiffness else 'default'
+
+    def display_panel_stiffness(self):
+        """Effective solver values, including reinforced collars/cuffs and outfits."""
+        self.sync_outfit_garment()
+        defaults = (self.sew_pattern.assembly().pattern.get('panel_stiffness', {})
+                    if self.sew_pattern is not None else {})
+        return {**defaults, **({} if self.outfit_items else self.panel_stiffness)}
 
     def _panel_appearance_map(self, panel, field):
         """Resolve a displayed piece into its garment's mutable appearance map."""
@@ -286,6 +307,7 @@ class GUIPattern:
         import math
         import re
         from seweasy.pattern.fabrics import KINDS
+        from .fabric_library import FABRICS_BY_ID
         panels = list(dict.fromkeys(p for p in panels if p in self.panel_svg_paths))
         if not panels:
             return
@@ -296,6 +318,9 @@ class GUIPattern:
         elif field == 'kind':
             if value not in KINDS:
                 raise ValueError('Unknown fabric pattern.')
+        elif field == 'material':
+            if value not in ('default', 'custom') and value not in FABRICS_BY_ID:
+                raise ValueError('Unknown fabric type.')
         elif field in ('scale', 'stiffness'):
             value = float(value)
             low, high = (.2, 4) if field == 'scale' else (.5, 30)
@@ -306,21 +331,31 @@ class GUIPattern:
         settings = self.panel_fabric_settings(panels)
         for panel in panels:
             if field == 'reset':
-                for key in ('panel_colors', 'panel_fabrics', 'panel_stiffness'):
+                for key in ('panel_colors', 'panel_fabrics', 'panel_stiffness', 'panel_materials'):
                     overrides, local = self._panel_appearance_map(panel, key)
                     overrides.pop(local, None)
-            elif field == 'stiffness':
+            elif field in ('stiffness', 'material'):
                 overrides, local = self._panel_appearance_map(panel, 'panel_stiffness')
-                overrides[local] = value
+                materials, _ = self._panel_appearance_map(panel, 'panel_materials')
+                materials.pop(local, None)
+                if field == 'stiffness':
+                    overrides[local] = value
+                elif value == 'default':
+                    overrides.pop(local, None)
+                elif value == 'custom':
+                    overrides[local] = settings[panel]['stiffness']
+                else:
+                    overrides[local] = FABRICS_BY_ID[value]['stiffness']
+                    materials[local] = value
             else:
-                spec = {k: v for k, v in settings[panel].items() if k != 'stiffness'}
+                spec = {k: v for k, v in settings[panel].items() if k not in ('stiffness', 'material')}
                 spec[field] = value
                 overrides, local = self._panel_appearance_map(panel, 'panel_fabrics')
                 overrides[local] = spec
                 colors, local = self._panel_appearance_map(panel, 'panel_colors')
                 colors[local] = spec['bg']
         self.sync_outfit_garment()
-        if self.sew_pattern is not None and field != 'stiffness':
+        if self.sew_pattern is not None and field not in ('stiffness', 'material'):
             self._view_serialize()
 
     @staticmethod
@@ -376,24 +411,15 @@ class GUIPattern:
     def set_panel_stiffness(self, panel, factor):
         """Override one panel's bending-stiffness multiplier (applied on the
         next 3D drape; does not change the 2D view)"""
-        if self.outfit_items and '__' in panel:
-            prefix, local = panel.split('__', 1)
-            index = int(prefix[1:])
-            if index == self.active_garment:
-                self.panel_stiffness[local] = float(factor)
-            else:
-                self.outfit_items[index].setdefault('appearance', {}).setdefault('panel_stiffness', {})[local] = float(factor)
-            self.sync_outfit_garment()
-        else:
-            self.panel_stiffness[panel] = float(factor)
+        overrides, local = self._panel_appearance_map(panel, 'panel_stiffness')
+        overrides[local] = float(factor)
+        materials, _ = self._panel_appearance_map(panel, 'panel_materials')
+        materials.pop(local, None)
+        self.sync_outfit_garment()
 
     def panel_stiffness_of(self, panel):
-        """The user's stiffness override for a panel (1.0 if unset)"""
-        if self.outfit_items and '__' in panel:
-            self.sync_outfit_garment()
-            prefix, local = panel.split('__', 1)
-            return self.outfit_items[int(prefix[1:])].get('appearance', {}).get('panel_stiffness', {}).get(local, 1.0)
-        return self.panel_stiffness.get(panel, 1.0)
+        """The stiffness used by the simulator, including garment defaults."""
+        return self.display_panel_stiffness().get(panel, 1.0)
 
     def sync_left(self, with_check=False):
         """Synchronize left and right design parameters"""
@@ -754,7 +780,7 @@ class GUIPattern:
 
         # Merge the user's per-panel stiffness overrides on top of any garment
         # default, so the 3D drape uses them
-        if self.panel_stiffness:
+        if self.panel_stiffness and not self.outfit_items:
             pattern.pattern.setdefault('panel_stiffness', {}).update(
                 self.panel_stiffness)
 

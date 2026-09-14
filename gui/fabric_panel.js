@@ -16,6 +16,19 @@ export default {
         <ul v-if="selection.length" class="se-fabric-pieces"><li v-for="p in selection" :key="p.id">{{p.label}}</li></ul>
       </div>
       <fieldset v-if="selection.length" :disabled="busy">
+        <label class="se-fabric-field se-fabric-material">Fabric type
+          <select aria-label="Fabric type" :value="shared('material')??''" @change="edit('material',$event.target.value)">
+            <option v-if="shared('material')===null" value="" disabled>Mixed fabrics</option>
+            <option value="default">Garment default</option>
+            <option v-for="fabric in materials" :key="fabric.id" :value="fabric.id">{{fabric.label}}</option>
+            <option value="custom">Custom</option>
+          </select>
+          <small>{{materialDescription}}</small>
+        </label>
+        <label class="se-fabric-field se-fabric-stiffness">Bending stiffness
+          <input type="number" aria-label="Bending stiffness" min="0.5" max="30" step="0.5" :placeholder="shared('stiffness')===null?'Mixed':''" :value="shared('stiffness')??''" @input="number('stiffness',$event)" @blur="restoreInvalid('stiffness',$event)">
+          <small>Higher values hold their shape more.<br>Presets approximate drape; adjust to suit your fabric.</small>
+        </label>
         <label class="se-fabric-field">Pattern
           <select aria-label="Fabric pattern" :value="shared('kind')??''" @change="edit('kind',$event.target.value)">
             <option v-if="shared('kind')===null" value="" disabled>Mixed patterns</option>
@@ -32,19 +45,24 @@ export default {
         <label v-if="shared('kind')!=='plain'" class="se-fabric-field">Pattern spacing <span class="se-fabric-unit">cm</span>
           <input type="number" aria-label="Pattern spacing" min="0.2" max="4" step="0.1" :placeholder="shared('scale')===null?'Mixed':''" :value="shared('scale')??''" @input="number('scale',$event)" @blur="restoreInvalid('scale',$event)">
         </label>
-        <label class="se-fabric-field se-fabric-stiffness">Bending stiffness
-          <input type="number" aria-label="Bending stiffness" min="0.5" max="30" step="0.5" :placeholder="shared('stiffness')===null?'Mixed':''" :value="shared('stiffness')??''" @input="number('stiffness',$event)" @blur="restoreInvalid('stiffness',$event)">
-          <small>Higher values hold their shape more.</small>
-        </label>
-        <button class="se-fabric-reset" @click="edit('reset')">Use garment fabric</button>
+        <button class="se-fabric-reset" @click="edit('reset')">Reset fabric, color & print</button>
       </fieldset>
     </div>
     <footer v-if="selection.length" role="status">{{busy?'Applying fabric…':'Changes apply to all selected sections'}}</footer>
   </aside>`,
-  props: {selection:Array, open:Boolean, available:Number, busy:Boolean},
+  props: {selection:Array, open:Boolean, available:Number, busy:Boolean, materials:Array},
   data: () => ({pending:{}}),
   beforeUnmount() {Object.values(this.pending).forEach(p=>clearTimeout(p.timer));},
-  computed: {colorFields() {return this.shared('kind')==='plain' ? [{key:'bg',label:'Fabric color'}] : [{key:'bg',label:'Base color'},{key:'fg',label:'Print color'}];}},
+  computed: {
+    colorFields() {return this.shared('kind')==='plain' ? [{key:'bg',label:'Fabric color'}] : [{key:'bg',label:'Base color'},{key:'fg',label:'Print color'}];},
+    materialDescription() {
+      const id=this.shared('material');
+      if(id===null)return 'Choose a fabric for all selected sections.';
+      if(id==='default')return 'Original stiffness, including structured collars and cuffs.';
+      if(id==='custom')return 'Your own stiffness setting.';
+      return this.materials.find(fabric=>fabric.id===id)?.description||'';
+    },
+  },
   methods: {
     shared(field) {return sharedValue(this.selection,field);},
     edit(field,value) {

@@ -1,10 +1,12 @@
 """Selection edits preserve independent material fields and garment ownership."""
+import json
 import unittest
 from copy import deepcopy
 from unittest.mock import Mock
 
 from gui.gui_pattern import GUIPattern
 from gui.outfit import OutfitProgram
+from gui.fabric_library import FABRICS_BY_ID
 from webapp.wardrobe import Wardrobe
 
 
@@ -65,6 +67,72 @@ class FabricSelectionTests(unittest.TestCase):
         self.assertEqual(p.panel_fabrics, {})
         p.edit_panel_fabrics(self.panels, 'stiffness', 8)
         self.assertTrue(all(p.panel_stiffness_of(n) == 8 for n in self.panels))
+
+    def test_presets_preserve_prints_and_custom_edits_clear_preset_identity(self):
+        p = self.pattern
+        p.edit_panel_fabrics(self.panels, 'kind', 'gingham')
+        p.edit_panel_fabrics([self.panels[0]], 'bg', '#112233')
+        before = p.display_panel_fabrics()
+        for material, preset in FABRICS_BY_ID.items():
+            p.edit_panel_fabrics(self.panels, 'material', material)
+            settings = p.panel_fabric_settings(self.panels)
+            self.assertTrue(all(s['material'] == material and s['stiffness'] == preset['stiffness']
+                                for s in settings.values()))
+            self.assertEqual(p.display_panel_fabrics(), before)
+        p.edit_panel_fabrics([self.panels[0]], 'stiffness', 7)
+        self.assertEqual(p.panel_material_of(self.panels[0]), 'custom')
+        self.assertEqual(p.panel_material_of(self.panels[1]), 'canvas')
+        snapshot = p.garment_appearance()
+        with self.assertRaises(ValueError):
+            p.edit_panel_fabrics(self.panels, 'material', 'unknown')
+        self.assertEqual(p.garment_appearance(), snapshot)
+
+    def test_default_restores_construction_stiffness_without_losing_color(self):
+        p = self.pattern
+        collar = 'right_collar_front'
+        default = p.sew_pattern.assembly().pattern['panel_stiffness'][collar]
+        self.assertGreater(default, 1)
+        self.assertEqual(p.panel_stiffness_of(collar), default)
+        p.edit_panel_fabrics([collar], 'bg', '#112233')
+        p.edit_panel_fabrics([collar], 'material', 'chiffon')
+        self.assertEqual(p.panel_stiffness_of(collar), 0.5)
+        p.edit_panel_fabrics([collar], 'material', 'default')
+        settings = p.panel_fabric_settings([collar])[collar]
+        self.assertEqual((settings['material'], settings['stiffness'], settings['bg']),
+                         ('default', default, '#112233'))
+        p.edit_panel_fabrics([collar], 'material', 'denim')
+        p.edit_panel_fabrics([collar], 'reset')
+        self.assertEqual(p.panel_material_of(collar), 'default')
+        self.assertEqual(p.panel_stiffness_of(collar), default)
+        self.assertNotIn(collar, p.panel_materials)
+
+    def test_saved_outfit_keeps_per_garment_materials_and_solver_values(self):
+        p = self.pattern
+        item = dict(name='Shirt', params=deepcopy(p.design_params), appearance=p.garment_appearance())
+        p.load_outfit([item, deepcopy(item)])
+        p.reload_garment()
+        first, second = 'g0__right_ftorso', 'g1__right_ftorso'
+        p.edit_panel_fabrics([first, second], 'material', 'linen')
+        p.edit_panel_fabrics([second], 'material', 'denim')
+        store = Wardrobe(storage={})
+        versions = [store.save_garment(str(i), item['params'], item['appearance'])
+                    for i, item in enumerate(p.outfit_items)]
+        outfit = store.save_outfit('Materials', [g['id'] for g in versions])
+        p.load_outfit(outfit['garments'], active=1)
+        p.reload_garment()
+        self.assertEqual(p.panel_material_of(first), 'linen')
+        self.assertEqual(p.panel_material_of(second), 'denim')
+        assembled = p.sew_pattern.assembly().pattern
+        self.assertEqual(assembled['panel_stiffness'][first], 2.5)
+        self.assertEqual(assembled['panel_stiffness'][second], 6)
+        folder = p.save(pack=False)
+        exported = json.loads(next(folder.glob('*_specification.json')).read_text())['pattern']
+        self.assertTrue(set(exported['panel_stiffness']).issubset(exported['panels']))
+        self.assertEqual(exported['panel_stiffness'][second], 6)
+        self.assertEqual(p.panel_stiffness_of('g1__right_collar_front'),
+                         assembled['panel_stiffness']['g1__right_collar_front'])
+        p.edit_panel_fabrics([second], 'stiffness', 8)
+        self.assertEqual(store.read()['outfits'][0]['garments'][1]['appearance']['panel_stiffness']['right_ftorso'], 6)
 
 
 if __name__ == '__main__':
