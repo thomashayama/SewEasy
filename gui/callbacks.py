@@ -11,7 +11,7 @@ import shutil
 from pathlib import Path
 import time
 
-from nicegui import ui, app, events
+from nicegui import ui, app, events, background_tasks
 
 # Async execution of regular functions
 from concurrent.futures import ThreadPoolExecutor
@@ -21,7 +21,7 @@ import asyncio
 import seweasy as pyg
 from .gui_pattern import GUIPattern
 from . import theme
-from .browser_drape import BrowserDrape, prepare_scene
+from .browser_drape import BrowserDrape, prepare_scene, snapshot_scene
 from .pattern_canvas import PatternCanvas, FabricPanel
 from webapp import gui_widgets as account_widgets
 
@@ -112,6 +112,7 @@ class GUIState:
         self.ui_design_subtabs = {}
         self.ui_pattern_display = None
         self._async_executor = ThreadPoolExecutor(1)
+        self._preview_executor = ThreadPoolExecutor(1)
         self._fabric_edit_lock = asyncio.Lock()
 
         self.stylings()
@@ -122,6 +123,7 @@ class GUIState:
         """Clean-up after the sesssion"""
         self._released = True
         # A disconnect must not remove files under an in-flight CPU mesh job.
+        self._async_executor.submit(self._preview_executor.shutdown, wait=True)
         self._async_executor.submit(self._release_files)
         self._async_executor.shutdown(wait=False)
 
@@ -282,22 +284,25 @@ class GUIState:
 
     def view_stage(self):
         """Full-bleed 2D/3D stage; the view switcher and actions float on top"""
-        with ui.tabs().classes('hidden') as tabs:
-            self.ui_2d_tab = ui.tab('Sewing pattern')
-            self.ui_3d_tab = ui.tab('3D view')
-        with ui.tab_panels(tabs, value=self.ui_2d_tab, animated=False) \
-                .classes('w-full h-full p-0 m-0').props('keep-alive'):
-            with ui.tab_panel(self.ui_2d_tab).classes('w-full h-full p-0 m-0 relative'):
+        # Both stages mount immediately and keep their layout dimensions. The
+        # hidden canvas can compile, drape and draw before its first reveal.
+        with ui.element('div').classes('w-full h-full relative'):
+            with ui.element('div').classes('absolute inset-0') as self.ui_pattern_stage:
                 self.def_pattern_display()
-            with ui.tab_panel(self.ui_3d_tab).classes('w-full h-full p-0 m-0 relative'):
+            with ui.element('div').classes('absolute inset-0').style(
+                    'visibility:hidden; pointer-events:none').props('inert aria-hidden=true') as self.ui_drape_stage:
                 self.def_3d_scene()
 
         # Floating view switcher
         with ui.row(wrap=False).classes(
                 'absolute top-3 left-1/2 -translate-x-1/2 z-50 items-center gap-2'):
             async def switch_view(e):
-                tabs.set_value(e.value)
                 self._view_3d_active = e.value == '3D view'
+                for stage, visible in ((self.ui_pattern_stage, not self._view_3d_active),
+                                       (self.ui_drape_stage, self._view_3d_active)):
+                    stage.style(f'visibility:{"visible" if visible else "hidden"}; pointer-events:{"auto" if visible else "none"}')
+                    stage.props('aria-hidden=false' if visible else 'inert aria-hidden=true',
+                                remove='inert' if visible else '')
                 self.ui_browser_drape.configure(active=self._view_3d_active)
                 await self.update_3d_scene()
 
@@ -823,7 +828,7 @@ class GUIState:
         finally:
             self.spin_dialog.close()  # If open
             self._draft_pending -= 1
-        await self.update_3d_scene()
+        background_tasks.create(self.update_3d_scene())
 
     def _sync_update_state(self):
         # Update derivative body values (just in case)
@@ -965,7 +970,7 @@ class GUIState:
                 if data.get('field') in ('material', 'stiffness', 'reset'):
                     self._preview_revision += 1
                     self.ui_browser_drape.configure(scene_url='')
-                    await self.update_3d_scene()
+                    background_tasks.create(self.update_3d_scene())
             except ValueError as error:
                 ui.notify(str(error), type='warning')
             finally:
@@ -1004,14 +1009,14 @@ class GUIState:
             await self.update_3d_scene()
 
     async def update_3d_scene(self):
-        """Prepare only the newest design, lazily when its 3D stage is open."""
-        if self._released or not self._view_3d_active or self._draft_pending or self._draft_failed or self._preparing_3d:
+        """Prepare the newest design as soon as its 2D draft is available."""
+        if self._released or self._draft_pending or self._draft_failed or self._preparing_3d:
             return
         if self._prepared_revision == self._preview_revision:
             return
         self._preparing_3d = True
         try:
-            while not self._released and self._view_3d_active and not self._draft_pending and not self._draft_failed:
+            while not self._released and not self._draft_pending and not self._draft_failed:
                 revision = self._preview_revision
                 if not self.pattern_state.svg_filename:
                     self.ui_browser_drape.configure(scene_url='', preparing=False, error='')
@@ -1019,8 +1024,14 @@ class GUIState:
                 self.ui_browser_drape.configure(preparing=True, error='')
                 target = self.local_path_3d / f'scene-{revision}.json'
                 try:
+                    draft = await asyncio.get_running_loop().run_in_executor(
+                        self._async_executor, snapshot_scene, self.pattern_state)
+                    if self._released:
+                        return
+                    if revision != self._preview_revision or self._draft_pending:
+                        continue
                     await asyncio.get_running_loop().run_in_executor(
-                        self._async_executor, prepare_scene, self.pattern_state, target)
+                        self._preview_executor, prepare_scene, draft, target)
                 except Exception:
                     traceback.print_exc()
                     if revision != self._preview_revision and not self._released:
@@ -1033,8 +1044,6 @@ class GUIState:
                     return
                 if revision != self._preview_revision:
                     target.unlink(missing_ok=True)
-                    if not self._view_3d_active:
-                        return
                     continue
                 self._prepared_revision = revision
                 self.ui_browser_drape.configure(

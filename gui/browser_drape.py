@@ -1,5 +1,7 @@
 """NiceGUI bridge for the browser cloth solver and CPU-only scene preparation."""
 import json
+from copy import deepcopy
+from dataclasses import dataclass
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
@@ -24,6 +26,33 @@ class BrowserDrape(Element, component='browser_drape.js'):
         self.update()
 
 
+@dataclass(frozen=True)
+class SceneDraft:
+    pattern: object
+    measurements: dict
+    colors: dict
+    fabrics: dict
+    garment: str
+    garment_types: dict
+
+
+def snapshot_scene(pattern_state):
+    """Copy a completed draft so meshing can run alongside subsequent 2D edits."""
+    from seweasy.pattern.core import BasicPattern
+    colors, fabrics = pattern_state.display_panel_colors(), pattern_state.display_panel_fabrics()
+    assembled = pattern_state.sew_pattern.assembly()
+    pattern = BasicPattern()
+    pattern.name, pattern.spec = assembled.name, deepcopy(assembled.spec)
+    pattern.pattern, pattern.properties = pattern.spec['pattern'], pattern.spec['properties']
+    items = getattr(pattern_state, 'outfit_items', [])
+    if not items:
+        pattern.pattern.setdefault('panel_stiffness', {}).update(pattern_state.panel_stiffness)
+    upper = pattern_state.design_params['meta']['upper']['v']
+    garment = 'outfit' if items else 'element-top' if upper == 'ElementTubeTop' else 'current-design'
+    return SceneDraft(pattern, deepcopy(pattern_state.body_params.params), deepcopy(colors), deepcopy(fabrics),
+                      garment, {f'g{i}__': item['params']['meta']['upper']['v'] for i, item in enumerate(items)})
+
+
 def prepare_scene(pattern_state, target, resolution=1.5):
     """Triangulate the current design; all draping and rendering happens in JS.
 
@@ -35,36 +64,27 @@ def prepare_scene(pattern_state, target, resolution=1.5):
     from seweasy.meshgen.webgpu import build_scene, panel_mesh_data
     from seweasy.pattern.core import BasicPattern
 
-    pattern = pattern_state.sew_pattern.assembly()
-    if not getattr(pattern_state, 'outfit_items', []):
-        pattern.pattern.setdefault('panel_stiffness', {}).update(pattern_state.panel_stiffness)
+    draft = pattern_state if isinstance(pattern_state, SceneDraft) else snapshot_scene(pattern_state)
+    pattern = draft.pattern
     target = Path(target)
     target.parent.mkdir(parents=True, exist_ok=True)
     with TemporaryDirectory(prefix='mesh-', dir=target.parent) as work:
         BasicPattern.serialize(pattern, work, to_subfolder=False)
         box = BoxMesh(Path(work) / f'{pattern.name}_specification.json', resolution)
         box.load()
-        body, fit = fit_body(pattern_state.body_params.params)
+        body, fit = fit_body(draft.measurements)
         data = panel_mesh_data(box, body)
         from seweasy.meshgen.browser_hardware import button_attachments
         buttons = button_attachments(box, pattern.pattern, data)
-        upper = pattern_state.design_params['meta']['upper']['v']
-        garment_type = ('outfit' if getattr(pattern_state, 'outfit_items', []) else
-                        'element-top' if upper == 'ElementTubeTop' else 'current-design')
-        meta = dict(garment=garment_type,
+        meta = dict(garment=draft.garment,
                     resolution_cm=resolution, panels=len(box.panelNames),
                     panel_stiffness=pattern.pattern.get('panel_stiffness', {}))
         scene = build_scene(data, meta, target.stem)
         scene['buttons'] = buttons
         scene['body_fit'] = fit
         scene['body_note'] = fit['note']
-        scene['panel_colors'] = pattern_state.display_panel_colors()
-        scene['garment_types'] = {f'g{i}__': item['params']['meta']['upper']['v']
-                                  for i, item in enumerate(getattr(pattern_state, 'outfit_items', []))}
-        scene['panel_fabrics'] = pattern.pattern.get('panel_fabrics', {})
-        if pattern.pattern.get('fabric'):
-            scene['panel_fabrics'].update({p: pattern.pattern['fabric'] for p in box.panelNames
-                                          if p not in pattern_state.panel_colors})
-        scene['panel_fabrics'].update(pattern_state.display_panel_fabrics())
+        scene['panel_colors'] = draft.colors
+        scene['garment_types'] = draft.garment_types
+        scene['panel_fabrics'] = draft.fabrics
         target.write_text(json.dumps(scene, separators=(',', ':'), allow_nan=False), encoding='utf-8')
     return target

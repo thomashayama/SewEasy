@@ -1,9 +1,19 @@
 # Browser 3D preview
 
-Run `python gui.py` and open <http://127.0.0.1:8080/>. Opening **3D view**
-automatically prepares the current pattern and starts browser WebGPU draping.
-Design and stiffness edits replace the scene automatically. Returning to the
-sewing pattern pauses the simulation; reopening 3D resumes the existing drape.
+Run `python gui.py` and open <http://127.0.0.1:8080/>. The current pattern starts
+preparing for 3D as soon as its 2D draft is available. Both views stay mounted;
+the browser compiles the GPU pipelines, warms the cloth and draws the hidden
+canvas while **Sewing pattern** is open. Opening **3D view** reuses that scene.
+Design and stiffness edits prepare a new scene automatically. Mesh preparation
+uses a separate CPU worker and a snapshot of the draft, so further 2D edits can
+continue and an outdated result cannot replace the current design.
+
+In 2D, the browser runs up to six simulated seconds of warm-up at 30 updates per
+second, then idles. This is an initial drape, not a convergence guarantee. The
+visible 3D view continues live simulation; an explicit Pause is respected, and
+switching away from the browser tab suspends GPU steps. The first load or a fresh
+edit still needs preparation time, but switching to an already warmed scene
+does not reload, recompile or restart it.
 Fabric and per-panel colors, mannequin tone, visibility, orbit, pan, pause and reset
 are handled in the browser without another simulation request.
 
@@ -54,10 +64,12 @@ are not yet attached as GLB exports when saving an outfit; stored legacy drapes
 remain available for existing saved outfits. The physics and asset licensing
 limits in `benchmarks/webgpu/README.md` still apply.
 
-Validation: `python -m unittest test_browser_preview -v` covers lazy preparation,
-scene reuse, edits during a mesh job, empty designs and retry after failure.
+Validation: `python -m unittest test_browser_preview -v` covers preparation in 2D,
+scene reuse, edits during a mesh job, draft snapshot isolation, empty designs and
+retry after failure.
 `node --test benchmarks/test_browser_drape.mjs` checks unsupported WebGPU,
-obsolete browser responses, and disposal during loading using a fake GPU.
+obsolete browser responses, disposal during loading, bounded background warm-up,
+pause/tab visibility and reuse on reveal using a fake GPU.
 Browser integration checks cover automatic startup, live design replacement,
 view switching, material changes and empty designs. The standalone benchmark
 continues to use the same scene exporter and GPU engine.

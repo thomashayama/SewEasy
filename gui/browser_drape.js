@@ -5,6 +5,9 @@ import {Renderer} from '/webgpu/render.js?v=18';
 // device and one loop; a serialized loader discards obsolete scene requests.
 const engines = new WeakMap();
 const linear = hex => [1,3,5].map(i => (parseInt(hex.slice(i,i+2),16)/255)**2.2);
+// Six seconds of cloth motion prepares a useful drape without running the GPU
+// indefinitely while editing a pattern. This is a warm-up, not a convergence test.
+const WARMUP_SECONDS=6;
 
 export default {
   template: `<div class="se-browser-drape" :data-state="state" :data-scene="loadedScene" :data-frames="frames">
@@ -51,12 +54,12 @@ export default {
   </div>`,
   props: {scene_url:String, active:Boolean, preparing:Boolean, error:String,
     fabric_color:String, panel_colors:Object, panel_fabrics:Object, body_color:String, show_body:Boolean},
-  data: () => ({ready:false, progress:'Choose a garment to preview.', failure:'', paused:false,
+  data: () => ({ready:false, warmed:false, progress:'Choose a garment to preview.', failure:'', paused:false,
     fps:0, frames:0, loadedScene:'', hasSupport:false, support:false,
     bodyNote:'Default mannequin',fitRows:[],hasButtons:false,buttonsClosed:true}),
   computed: {
     state() {return this.error || this.failure ? 'error' : !this.preparing && !this.scene_url ? 'empty' : this.preparing || !this.ready ? 'preparing' :
-      !this.active || this.paused ? 'paused' : 'running';},
+      this.paused ? 'paused' : this.active ? 'running' : this.warmed ? 'ready' : 'warming';},
   },
   mounted() {
     engines.set(this, {generation:0, disposed:false, loading:false, frame:0});
@@ -69,7 +72,7 @@ export default {
   },
   watch: {
     scene_url() {const e=engines.get(this); if(e){e.generation++; e.abort?.abort(); this.load();}},
-    active() {const e=engines.get(this);if(e?.cloth)this.frames=e.cloth.frame;if(e){e.last=null;e.stats=performance.now();e.count=0;}if(this.active)this.load();},
+    active() {const e=engines.get(this);if(e?.cloth)this.frames=e.cloth.frame;if(e){e.last=null;e.stats=performance.now();e.count=0;if(e.renderer)e.renderer.dirty=true;}this.load();},
     paused() {const e=engines.get(this);if(e?.cloth)this.frames=e.cloth.frame;if(e?.renderer)e.renderer.controls.viewOnly=this.paused;if(e){e.last=null;e.stats=performance.now();e.count=0;}},
     fabric_color() {this.appearance();},
     panel_colors: {deep:true, handler() {this.appearance();}},
@@ -79,10 +82,10 @@ export default {
   methods: {
     async load() {
       const e=engines.get(this);
-      if(!e || e.disposed || e.loading || !this.active || (this.scene_url && e.url===this.scene_url))return;
+      if(!e || e.disposed || e.loading || (this.scene_url && e.url===this.scene_url))return;
       if(!this.scene_url){this.ready=false;this.progress='Choose a garment to preview.';return;}
       const generation=e.generation, url=this.scene_url;
-      e.loading=true;e.last=null; this.ready=false; this.failure=''; this.progress='Starting browser simulation…';
+      e.loading=true;e.last=null; this.ready=false;this.warmed=false; this.failure=''; this.progress='Starting browser simulation…';
       let cloth;
       try {
         if(!navigator.gpu)throw Error('WebGPU is unavailable. Open this page in a WebGPU-capable browser over HTTPS or localhost.');
@@ -116,7 +119,7 @@ export default {
         this.bodyNote=scene.body_note || 'Default mannequin';
         const labels={height:'Height',bust:'Bust',underbust:'Underbust',waist:'Waist',hips:'Hips',wrist:'Wrist (avg.)',leg_circ:'Thigh (avg.)'};
         this.fitRows=Object.entries(scene.body_fit?.measurements || {}).map(([key,r])=>({key,label:labels[key]||key,target:r.target_cm,actual:r.actual_cm}));
-        e.url=url;this.loadedScene=scene.name;this.frames=0;this.fps=0;
+        e.url=url;e.warmupRemaining=WARMUP_SECONDS;this.loadedScene=scene.name;this.frames=0;this.fps=0;
         this.hasSupport=e.cloth.supportTargets.length>0;this.support=e.cloth.settings.holdNeckline;
         this.hasButtons=scene.buttons?.some(b=>b.hole)||false;this.buttonsClosed=true;
         this.appearance();this.paused=false;this.ready=true;
@@ -134,14 +137,23 @@ export default {
     async tick(now=0) {
       const e=engines.get(this);if(!e || e.disposed)return;
       try {
-        const visible=this.active && !document.hidden && this.$el.getClientRects().length>0;
-        if(!visible)e.last=null;
-        if(visible && this.ready && !this.preparing && !this.error && !this.failure && !e.loading &&
-           ((!this.paused && now-(e.last||0)>=1000/60-.8) || e.renderer.dirty)){
-          const advance=!this.paused && now-(e.last||0)>=1000/60-.8;
+        const visible=this.active && this.$el.getClientRects().length>0;
+        const simulate=!this.paused && (visible || !this.warmed);
+        if(document.hidden || !simulate)e.last=null;
+        const interval=1000/(visible?60:30);
+        if(!document.hidden && this.ready && !this.preparing && !this.error && !this.failure && !e.loading &&
+           ((simulate && now-(e.last||0)>=interval-.8) || e.renderer.dirty)){
+          const advance=simulate && now-(e.last||0)>=interval-.8;
           const encoder=e.device.createCommandEncoder();
-          if(advance){e.cloth.encode(encoder,null,e.last==null?1/60:(now-e.last)/1000);e.last=now;e.count=(e.count||0)+1;}
-          e.renderer.render(encoder);e.device.queue.submit([encoder.finish()]);
+          if(advance){
+            const elapsed=visible?(e.last==null?1/60:Math.min(1/30,(now-e.last)/1000)):1/30;
+            e.cloth.encode(encoder,null,elapsed);e.last=now;e.count=(e.count||0)+1;
+            e.warmupRemaining=Math.max(0,e.warmupRemaining-elapsed);this.warmed=e.warmupRemaining<1e-6;
+          }
+          // Draw once when warmed (or appearance changes); intermediate hidden
+          // steps only need compute. The final canvas is ready before switching.
+          if(visible || e.renderer.dirty || this.warmed)e.renderer.render(encoder);
+          e.device.queue.submit([encoder.finish()]);
           if(now-(e.stats||0)>500){this.frames=e.cloth.frame;this.fps=Math.round((e.count||0)*1000/(now-(e.stats||0)));e.stats=now;e.count=0;}
           await e.device.queue.onSubmittedWorkDone();
         }
@@ -155,7 +167,7 @@ export default {
       e.renderer.bodyView.color=[...linear(this.body_color),0];
       e.renderer.showBody=this.show_body;e.renderer.dirty=true;
     },
-    reset() {const e=engines.get(this);e.cloth?.reset();e.last=null;this.frames=0;this.paused=false;this.buttonsClosed=true;},
+    reset() {const e=engines.get(this);e.cloth?.reset();e.last=null;e.warmupRemaining=WARMUP_SECONDS;this.warmed=false;this.frames=0;this.paused=false;this.buttonsClosed=true;},
     front() {const e=engines.get(this);if(!this.paused)e.cloth.motion.front();e.renderer.camera.yaw=this.paused?e.cloth.motion.yaw:0;e.renderer.camera.pitch=0;e.renderer.dirty=true;},
     center() {const e=engines.get(this);Object.assign(e.renderer.camera,{...e.defaultCamera,target:[...e.defaultCamera.target],pan:[0,0]});e.renderer.dirty=true;},
     setSupport() {engines.get(this).cloth.settings.holdNeckline=this.support;},

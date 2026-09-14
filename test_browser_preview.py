@@ -1,4 +1,4 @@
-"""Regression checks for lazy, latest-design-only CPU preparation.
+"""Regression checks for background, latest-design-only CPU preparation.
 
 Run with the GUI environment: python -m unittest test_browser_preview -v
 The real WebGPU path is exercised separately in the browser.
@@ -13,6 +13,7 @@ import unittest
 from unittest.mock import patch
 
 from gui.callbacks import GUIState
+from gui.browser_drape import snapshot_scene
 
 
 class Preview:
@@ -38,12 +39,17 @@ class BrowserPreviewTest(unittest.IsolatedAsyncioTestCase):
         self.state._prepared_revision = -1
         self.state._preview_revision = 0
         self.state._async_executor = ThreadPoolExecutor(1)
+        self.state._preview_executor = ThreadPoolExecutor(1)
         self.state.local_path_3d = Path(self.directory.name)
         self.state.ui_browser_drape = Preview()
         self.state.pattern_state = SimpleNamespace(svg_filename='pattern.svg',
             id='TEST', fabric_color='#b7cde5', panel_colors={}, display_panel_colors=lambda: {}, display_panel_fabrics=lambda: {})
+        self.snapshot = patch('gui.callbacks.snapshot_scene', side_effect=lambda state: state)
+        self.snapshot.start()
 
     def tearDown(self):
+        self.snapshot.stop()
+        self.state._preview_executor.shutdown(wait=True)
         self.state._async_executor.shutdown(wait=True)
         self.directory.cleanup()
 
@@ -51,8 +57,8 @@ class BrowserPreviewTest(unittest.IsolatedAsyncioTestCase):
     def prepare(_pattern, target):
         target.write_text('{}')
 
-    async def test_no_work_when_hidden_drafting_failed_or_disconnected(self):
-        for key, value in [('_view_3d_active', False), ('_draft_pending', 1),
+    async def test_no_work_when_drafting_failed_or_disconnected(self):
+        for key, value in [('_draft_pending', 1),
                            ('_draft_failed', True), ('_released', True)]:
             old = getattr(self.state, key)
             setattr(self.state, key, value)
@@ -63,7 +69,9 @@ class BrowserPreviewTest(unittest.IsolatedAsyncioTestCase):
 
     async def test_reopen_reuses_prepared_scene(self):
         with patch('gui.callbacks.prepare_scene', side_effect=self.prepare) as prepare:
+            self.state._view_3d_active = False
             await self.state.update_3d_scene()
+            self.state._view_3d_active = True
             await self.state.update_3d_scene()
             self.assertEqual(prepare.call_count, 1)
             self.assertEqual(self.state.ui_browser_drape.loaded, ['/geo/TEST/scene-0.json'])
@@ -79,7 +87,12 @@ class BrowserPreviewTest(unittest.IsolatedAsyncioTestCase):
         with patch('gui.callbacks.prepare_scene', side_effect=slow_prepare):
             task = asyncio.create_task(self.state.update_3d_scene())
             self.assertTrue(await asyncio.to_thread(entered.wait, 5))
+            # Meshing must not occupy the worker used for interactive 2D drafts.
+            result = await asyncio.wait_for(asyncio.get_running_loop().run_in_executor(
+                self.state._async_executor, lambda: '2D stays responsive'), timeout=1)
+            self.assertEqual(result, '2D stays responsive')
             self.state._preview_revision = 1
+            self.state._view_3d_active = False
             await self.state.update_3d_scene()
             proceed.set()
             await task
@@ -104,6 +117,29 @@ class BrowserPreviewTest(unittest.IsolatedAsyncioTestCase):
             await self.state.update_3d_scene()
         self.assertEqual(self.state.ui_browser_drape.props['error'], '')
         self.assertEqual(self.state._prepared_revision, 0)
+
+
+class SceneSnapshotTest(unittest.TestCase):
+    def test_mesh_snapshot_retains_its_body_material_and_colors_during_later_edits(self):
+        from gui.gui_pattern import GUIPattern
+        pattern = GUIPattern(draft=False)
+        try:
+            pattern.reload_garment()
+            panel = 'right_ftorso'
+            pattern.edit_panel_fabrics([panel], 'bg', '#112233')
+            pattern.edit_panel_fabrics([panel], 'material', 'denim')
+            draft = snapshot_scene(pattern)
+            height = draft.measurements['height']
+            pattern.body_params.params['height'] += 5
+            pattern.edit_panel_fabrics([panel], 'bg', '#abcdef')
+            pattern.edit_panel_fabrics([panel], 'material', 'linen')
+            self.assertEqual(draft.measurements['height'], height)
+            self.assertEqual(draft.colors[panel], '#112233')
+            self.assertEqual(draft.fabrics[panel]['bg'], '#112233')
+            self.assertEqual(draft.pattern.pattern['panel_stiffness'][panel], 6)
+            self.assertEqual(pattern.panel_stiffness_of(panel), 2.5)
+        finally:
+            pattern.release()
 
 
 if __name__ == '__main__':

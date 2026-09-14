@@ -91,3 +91,40 @@ test('scene replacement preserves framing and recenter clears pan without changi
   s.instance.center();assert.deepEqual([...next.camera.pan],[0,0]);assert.deepEqual([...next.camera.target],[0,.86,0]);
   s.component.beforeUnmount.call(s.instance);
 });
+
+test('2D view warms the cloth, draws its final state and reveals the same scene without reloading',async()=>{
+  let requests=0;
+  const s=setup({fetch:async()=>{requests++;return {ok:true,json:async()=>({name:'background'})};}});
+  s.instance.active=false;s.component.mounted.call(s.instance);await until(()=>s.instance.ready);
+  let now=1000;
+  while(!s.instance.warmed && now<12000){await s.instance.tick(now);now+=34;}
+  assert.equal(s.instance.warmed,true);assert.equal(s.elapsed.length,180);
+  assert.ok(s.elapsed.every(dt=>dt===1/30));assert.equal(s.renderers[0].dirty,false);
+  await s.instance.tick(now+1000);assert.equal(s.elapsed.length,180);
+  s.instance.active=true;s.component.watch.active.call(s.instance);await s.instance.tick(now+2000);
+  assert.equal(requests,1);assert.equal(s.renderers.length,1);assert.equal(s.instance.loadedScene,'background');
+  assert.equal(s.elapsed.length,181);assert.equal(s.elapsed.at(-1),1/60);
+  s.component.beforeUnmount.call(s.instance);
+});
+
+test('background warm-up respects Pause and a hidden browser tab',async()=>{
+  const s=setup({fetch:async()=>({ok:true,json:async()=>({name:'background-pause'})})});
+  s.instance.active=false;s.component.mounted.call(s.instance);await until(()=>s.instance.ready);
+  s.instance.paused=true;s.component.watch.paused.call(s.instance);await s.instance.tick(1000);
+  assert.equal(s.elapsed.length,0);
+  s.instance.paused=false;s.component.watch.paused.call(s.instance);
+  s.context.document.hidden=true;await s.instance.tick(2000);assert.equal(s.elapsed.length,0);
+  s.context.document.hidden=false;await s.instance.tick(3000);assert.deepEqual(s.elapsed,[1/30]);
+  s.component.beforeUnmount.call(s.instance);
+});
+
+test('a material or design revision warms again while still in 2D',async()=>{
+  let revision=0;
+  const s=setup({fetch:async()=>({ok:true,json:async()=>({name:'revision-'+revision++})})});
+  s.instance.active=false;s.component.mounted.call(s.instance);await until(()=>s.instance.ready);
+  s.instance.warmed=true;
+  s.instance.scene_url='/geo/test/scene-1.json';s.component.watch.scene_url.call(s.instance);
+  await until(()=>s.instance.ready);assert.equal(s.instance.warmed,false);assert.equal(s.instance.loadedScene,'revision-1');
+  await s.instance.tick(1000);assert.deepEqual(s.elapsed,[1/30]);
+  s.component.beforeUnmount.call(s.instance);
+});
