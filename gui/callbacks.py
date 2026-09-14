@@ -294,7 +294,7 @@ class GUIState:
             with ui.tab_panel(self.ui_3d_tab).classes('w-full h-full p-0 m-0 relative'):
                 self.def_3d_scene()
 
-        # Floating view switcher + fabric color picker
+        # Floating view switcher
         with ui.row(wrap=False).classes(
                 'absolute top-3 left-1/2 -translate-x-1/2 z-50 items-center gap-2'):
             async def switch_view(e):
@@ -303,18 +303,10 @@ class GUIState:
                 self.ui_browser_drape.configure(active=self._view_3d_active)
                 await self.update_3d_scene()
 
-            view_toggle = ui.toggle(['Sewing pattern', '3D view'], value='Sewing pattern',
+            ui.toggle(['Sewing pattern', '3D view'], value='Sewing pattern',
                       on_change=switch_view) \
                 .props('no-caps unelevated rounded toggle-color=primary padding="2px 14px"') \
                 .classes('se-overlay-chip')
-
-            def show_fabric_panel():
-                tabs.set_value(self.ui_2d_tab)
-                view_toggle.set_value('Sewing pattern')
-                self.ui_fabric_panel.configure(open=True)
-            ui.button('Fabric', icon='palette', on_click=show_fabric_panel) \
-                .props('unelevated no-caps dense aria-label="Open fabric settings"') \
-                .classes('se-overlay-chip px-2')
 
         # Floating attribution
         with ui.row(wrap=False).classes(
