@@ -536,7 +536,8 @@ class GUIState:
         self.selected_panels = []
         with ui.element('div').classes('se-pattern-layout'):
             with ui.element('div').classes('se-pattern-sheet'):
-                with ui.element('div').classes('se-workspace w-full h-full'), ui.image(
+                with ui.element('div').classes('se-workspace w-full h-full').props(
+                        'tabindex="0" aria-label="Sewing pattern workspace"'), ui.image(
                         f'{self.path_static_img}/millimiter_paper_1500_900.png'
                     ).props('role=presentation').classes('w-[1400px] min-w-[1400px] h-[840px] min-h-[840px] m-auto p-0') as self.ui_pattern_bg:
                     # NOTE: Positioning: https://github.com/zauberzeug/nicegui/discussions/957

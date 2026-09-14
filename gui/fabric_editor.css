@@ -3,6 +3,7 @@
 .se-pattern-canvas {position:relative; line-height:0; user-select:none;}
 .se-pattern-canvas>img {width:100%; height:auto; display:block; pointer-events:none;}
 .se-pattern-canvas>svg {position:absolute; inset:0; width:100%; height:100%; overflow:visible;}
+.se-pattern-marquee {fill:rgba(74,144,210,.12); stroke:#35558a; stroke-width:1; pointer-events:none;}
 .se-pattern-canvas .se-pattern-piece {outline:none; fill:transparent; stroke:transparent; stroke-width:2; pointer-events:all;
   cursor:default;}
 .se-pattern-canvas .se-pattern-piece:hover {fill:rgba(74,144,210,.2); stroke:#4a90d2;}

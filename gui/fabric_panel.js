@@ -11,7 +11,7 @@ export default {
       <div class="se-fabric-selection" aria-live="polite">
         <h3>{{selection.length ? selection.length===1 ? '1 section selected' : selection.length+' sections selected' : 'Select a section'}}</h3>
         <p v-if="!selection.length">Click a pattern piece to edit its fabric.</p>
-        <p>Shift/Ctrl-click to add or remove pieces.</p>
+        <p>Drag empty space to select a group.<br>Shift/Ctrl adds to your selection.</p>
         <div class="se-fabric-selection-actions"><button :disabled="!available" @click="$emit('select-all')">Select all</button><button v-if="selection.length" @click="$emit('clear')">Clear selection</button></div>
         <ul v-if="selection.length" class="se-fabric-pieces"><li v-for="p in selection" :key="p.id">{{p.label}}</li></ul>
       </div>
