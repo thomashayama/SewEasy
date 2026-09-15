@@ -6,7 +6,7 @@ mirroring the pattern proven out in Rivulet_Server.
 
 from datetime import datetime
 
-from sqlalchemy import (JSON, Column, DateTime, ForeignKey, Integer,
+from sqlalchemy import (JSON, Boolean, Column, DateTime, ForeignKey, Integer,
                         LargeBinary, String, Text, UniqueConstraint)
 from sqlalchemy.orm import deferred, relationship
 
@@ -121,6 +121,32 @@ class WardrobeLibrary(Base):
     owner_email = Column(String, ForeignKey('users.email', ondelete='CASCADE'), primary_key=True)
     content = Column(JSON, nullable=False)
     owner = relationship('User', back_populates='wardrobe')
+
+
+class WardrobeShare(TimestampMixin, Base):
+    """An explicitly shared, immutable garment or outfit revision."""
+    __tablename__ = 'wardrobe_shares'
+    __table_args__ = (UniqueConstraint('owner_key', 'kind', 'revision_id', name='uq_wardrobe_share_revision'),)
+    id = Column(String, primary_key=True)  # Unguessable capability for link access.
+    owner_key = Column(String, nullable=False, index=True)
+    owner_name = Column(String, nullable=False)
+    kind = Column(String, nullable=False)
+    revision_id = Column(String, nullable=False)
+    snapshot = Column(JSON, nullable=False)
+    thumbnail = deferred(Column(Text))
+    public_link = Column(Boolean, nullable=False, default=False)
+    invitations = relationship('WardrobeInvitation', cascade='all, delete-orphan', back_populates='share')
+
+
+class WardrobeInvitation(Base):
+    """Invitations appear when the recipient signs in with this verified email."""
+    __tablename__ = 'wardrobe_invitations'
+    __table_args__ = (UniqueConstraint('share_id', 'recipient_email', name='uq_wardrobe_invitation'),)
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    share_id = Column(String, ForeignKey('wardrobe_shares.id', ondelete='CASCADE'), nullable=False, index=True)
+    recipient_email = Column(String, nullable=False, index=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    share = relationship('WardrobeShare', back_populates='invitations')
 
 
 class BodyProfileShare(Base):

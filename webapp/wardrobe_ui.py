@@ -3,7 +3,8 @@ from copy import deepcopy
 import json
 from nicegui import app, ui
 
-from webapp.wardrobe import Wardrobe
+from webapp.wardrobe import Wardrobe, latest_garments
+from webapp.wardrobe_actions import share_dialog, history_dialog
 from webapp.garment_catalog import STARTERS, garment_title, starter_item
 from webapp.thumbnail_ui import ThumbnailQueue
 
@@ -15,6 +16,7 @@ def wardrobe_ui(state):
     selected = []
     saved_signature = None
     state._outfit_name = getattr(state, '_outfit_name', 'Untitled outfit')
+    state._outfit_revision_id = getattr(state, '_outfit_revision_id', None)
 
     def current_items():
         pattern.sync_outfit_garment()
@@ -42,6 +44,7 @@ def wardrobe_ui(state):
         if not state._draft_pending and not state._draft_failed and not state._released:
             state.stash_pending_design()
         items = current_items()
+        owned_ids = {g['id'] for g in store.read()['garments']}
         state.ui_outfit_title.set_text(state._outfit_name)
         state.ui_draft_status.set_text('Saved' if saved_signature == signature() else 'Unsaved changes')
         state.ui_outfit_list.clear()
@@ -60,6 +63,10 @@ def wardrobe_ui(state):
                         with ui.menu():
                             ui.menu_item('Edit design', lambda _, i=index: edit_item(i))
                             ui.menu_item('Save garment version', lambda _, i=index: save_item(i))
+                            if item['id'] in owned_ids:
+                                ui.menu_item('Share saved version', lambda _, g=deepcopy(item): share_dialog(store, 'garment', g))
+                                ui.menu_item('Version history', lambda _, g=deepcopy(item), i=index: history_dialog(
+                                    store, 'garment', g, lambda version: restore_garment_version(i, version)))
                             if len(items) > 1:
                                 ui.menu_item('Remove from outfit', lambda _, i=index: remove_item(i))
 
@@ -67,6 +74,11 @@ def wardrobe_ui(state):
         if pattern.outfit_items and index != pattern.active_garment:
             await apply(current_items(), index)
         show_save()
+
+    async def restore_garment_version(index, version):
+        items = current_items()
+        items[index] = deepcopy(version)
+        await apply(items, index)
 
     def label(item):
         return f'{item["name"]} · v{item["version"]}'
@@ -93,7 +105,10 @@ def wardrobe_ui(state):
 
     async def save_garment():
         try:
-            version = store.save_garment(garment_name.value, pattern.design_params, pattern.garment_appearance())
+            item = current_items()[pattern.active_garment if pattern.outfit_items else 0]
+            parent = item['id'] if any(g['id'] == item['id'] for g in store.read()['garments']) else None
+            version = store.save_garment(garment_name.value, pattern.design_params, pattern.garment_appearance(),
+                                         parent_id=parent, new=parent is None)
         except ValueError as error:
             ui.notify(str(error), type='warning')
             return
@@ -110,7 +125,7 @@ def wardrobe_ui(state):
         ui.label('Save garment version').classes('text-lg font-semibold')
         ui.label('Keeps this garment’s design, fabric print, colors and panel settings.').classes('text-sm text-stone-500')
         garment_name = ui.input('Garment name').props('outlined dense').classes('w-full')
-        ui.label('Using an existing name creates a new version. Saved outfits keep their original versions.').classes('text-xs text-stone-500')
+        ui.label('Adds a version to this garment’s history. Saved outfits keep their original versions.').classes('text-xs text-stone-500')
         with ui.row().classes('w-full justify-end'):
             ui.button('Cancel', on_click=save_dialog.close).props('flat')
             ui.button('Save version', on_click=save_garment)
@@ -161,8 +176,10 @@ def wardrobe_ui(state):
             for i, item in enumerate(selected):
                 original = versions.get(item['id'])
                 if not original or item['params'] != original['params'] or item['appearance'] != original['appearance']:
-                    selected[i] = store.save_garment(item['name'], item['params'], item['appearance'])
-            outfit = store.save_outfit(outfit_name.value, [g['id'] for g in selected])
+                    selected[i] = store.save_garment(item['name'], item['params'], item['appearance'],
+                                                    parent_id=original['id'] if original else None, new=not original)
+            outfit = store.save_outfit(outfit_name.value, [g['id'] for g in selected],
+                                       parent_id=state._outfit_revision_id, new=not state._outfit_revision_id)
         except ValueError as error:
             ui.notify(str(error), type='warning')
             return False
@@ -175,6 +192,7 @@ def wardrobe_ui(state):
         else:
             await apply(outfit['garments'])
         state._outfit_name = outfit['name']
+        state._outfit_revision_id = outfit['revision_id']
         saved_signature = signature()
         refresh_studio()
         previews.enqueue_library()
@@ -189,13 +207,19 @@ def wardrobe_ui(state):
         refresh_composer()
         await preview()
         state._outfit_name = outfit['name']
+        state._outfit_revision_id = outfit['revision_id']
         saved_signature = signature()
         refresh_studio()
+
+    async def open_garment_version(item):
+        state._outfit_revision_id = None
+        state._outfit_name = 'Untitled outfit'
+        await apply([item])
 
     async def open_garment():
         item = next((g for g in store.read()['garments'] if g['id'] == saved_garment.value), None)
         if item:
-            await apply([item], solo=True)
+            await open_garment_version(item)
             outfit_dialog.close()
 
     with ui.dialog() as outfit_dialog, ui.card().classes('w-full max-w-xl gap-3'):
@@ -230,7 +254,13 @@ def wardrobe_ui(state):
             for outfit in reversed(library['outfits']):
                 with ui.row().classes('w-full justify-between items-center'):
                     ui.label(f'{outfit["name"]} · {len(outfit["garments"])} garment(s)')
-                    ui.button('Open', on_click=lambda _, o=outfit: open_outfit(o)).props('flat size=sm')
+                    with ui.row().classes('gap-1 items-center'):
+                        ui.button('Open', on_click=lambda _, o=outfit: open_outfit(o)).props('flat size=sm')
+                        with ui.button(icon='more_horiz').props('flat round dense') as more:
+                            more._props['aria-label'] = f'{outfit["name"]} actions'
+                            with ui.menu():
+                                ui.menu_item('Share', lambda _, o=outfit: share_dialog(store, 'outfit', o))
+                                ui.menu_item('Version history', lambda _, o=outfit: history_dialog(store, 'outfit', o, open_outfit))
         refresh_composer()
         outfit_dialog.open()
 
@@ -263,7 +293,7 @@ def wardrobe_ui(state):
     def show_add():
         add_saved_box.clear()
         with add_saved_box:
-            garments = store.read()['garments']
+            garments = latest_garments(store.read())
             if not garments:
                 ui.label('Saved versions will appear here.').classes('text-sm text-slate-500')
             for item in reversed(garments):

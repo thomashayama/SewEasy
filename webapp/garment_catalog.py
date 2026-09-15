@@ -123,7 +123,7 @@ def draft_items(snapshot):
     return []
 
 
-def studio_snapshot(items, name='Untitled outfit', previous=None):
+def studio_snapshot(items, name='Untitled outfit', previous=None, *, outfit_revision_id=None):
     """Open editable copies while retaining the currently chosen measurements."""
     if not items:
         raise ValueError('Choose at least one garment.')
@@ -131,6 +131,7 @@ def studio_snapshot(items, name='Untitled outfit', previous=None):
     active = items[0]
     snapshot = {key: deepcopy(value) for key, value in (previous or {}).items() if key in ('body', 'skin')}
     snapshot.update(design=deepcopy(active['params']), outfit=items, outfit_name=name,
+                    outfit_revision_id=outfit_revision_id,
                     active_garment=0, appearance=deepcopy(active.get('appearance', {})),
                     fabric=active.get('appearance', {}).get('fabric_color', '#b7cde5'))
     return snapshot

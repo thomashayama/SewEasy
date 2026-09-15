@@ -17,7 +17,8 @@
  body :is(.q-separator,.q-field--outlined .q-field__control:before) {border-color:var(--se-chalkline);}
  body .q-separator {background:var(--se-chalkline);}
  body :is(.text-primary,.text-grey-9) {color:var(--se-indigo)!important;}
- body :is(.text-stone-600,.text-gray-500,.text-grey-7,.text-gray-600) {color:var(--se-muted)!important;}
+ body :is(.text-stone-500,.text-stone-600,.text-slate-500,.text-gray-500,.text-grey-7,.text-gray-600) {color:var(--se-muted)!important;}
+ body :is(.q-dialog a,.se-home-header a:not(.se-home-logo)) {color:var(--se-indigo);}
  body :is(.q-field__label,.q-field__marginal,.q-field__messages) {color:var(--se-muted);}
  body :is(.q-field__native,.q-field__input,.q-field--dark .q-field__native) {color:var(--se-graphite);}
  body .q-field--highlighted .q-field__control {color:var(--se-indigo);}

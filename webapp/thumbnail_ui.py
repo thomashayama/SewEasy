@@ -134,18 +134,26 @@ class ThumbnailQueue(Element, component='thumbnail_renderer.js'):
         except ValueError as error:
             print(f'Thumbnail was not saved: {error}')
         finally:
-            (self.folder / f'{key}.json').unlink(missing_ok=True)
+            self.remove_scene(key)
             self.current = None
         await self.next()
 
     async def failed(self, event):
         if self.current and event.args.get('key') == self.current[0]:
             print(f'Browser thumbnail failed: {event.args.get("message", "Unknown error")}')
-            (self.folder / f'{self.current[0]}.json').unlink(missing_ok=True)
+            self.remove_scene(self.current[0])
             self.current = None
             if event.args.get('fatal'):
                 self.online = False
             await self.next()
+
+    def remove_scene(self, key):
+        try:
+            (self.folder / f'{key}.json').unlink(missing_ok=True)
+        except PermissionError:
+            # Windows can still have an HTTP response holding the file open
+            # when the browser reports a fetch failure. Page cleanup retries.
+            pass
 
     def close(self):
         self.closed = True

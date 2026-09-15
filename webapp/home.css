@@ -36,6 +36,12 @@
 .se-library-results {padding-top:16px;}
 .se-library-grid {display:grid; grid-template-columns:repeat(auto-fill,minmax(165px,1fr)); gap:16px; width:100%;}
 .se-library-card.q-btn {padding:0; text-align:left; align-self:start; border-radius:6px; color:#183452;}
+.se-library-entry {position:relative; min-width:0;}
+.se-library-entry .se-library-card {width:100%;}
+.se-library-entry.is-owned .se-library-caption {padding-right:34px;}
+.se-library-actions.q-btn {position:absolute; top:153px; right:0; width:30px; height:30px; color:var(--home-muted);}
+.se-shared-design {display:grid; grid-template-columns:minmax(180px,340px) minmax(0,440px); justify-content:center; gap:36px; padding-top:36px;}
+.se-shared-preview {height:400px; border-radius:8px; overflow:hidden; background:#e8f0f5; display:flex; align-items:center;}
 .se-library-card>.q-btn__content {display:flex; flex-direction:column; width:100%; align-items:stretch; justify-content:flex-start;}
 .se-library-art {height:146px; overflow:hidden; background:#f1f5f8; border:1px solid #e6edf2; border-radius:6px; gap:3px; width:100%;}
 .se-library-art>div {height:100%; flex:1;}
@@ -54,6 +60,7 @@
 .se-home :is(button,a,input):focus-visible,.se-new-outfit-dialog :is(button,a,input):focus-visible {outline:2px solid #447cad; outline-offset:3px;}
 @media(max-width:900px) {.se-home-content {padding:22px;} .se-home-header {padding:0 22px; gap:14px;}}
 @media(max-width:620px) {
+ .se-library-actions.q-btn {top:139px;} .se-shared-design {grid-template-columns:1fr; gap:24px;} .se-shared-preview {height:280px;}
  .se-home-header {padding:0 14px; gap:6px;} .se-home-location {display:none;}
  .se-home-header .se-home-measurements .q-icon {display:none;} .se-home-header .q-btn {padding:4px 8px; font-size:12px;}
  .se-home-content {padding:20px 16px 16px;} .se-home-heading {gap:12px; align-items:flex-start; margin-bottom:16px;}

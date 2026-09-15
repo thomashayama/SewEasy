@@ -168,6 +168,7 @@ class GUIState:
                 'fabric': self.pattern_state.fabric_color,
                 'outfit': snapshot_design_params(self.pattern_state.outfit_items),
                 'outfit_name': getattr(self, '_outfit_name', 'Untitled outfit'),
+                'outfit_revision_id': getattr(self, '_outfit_revision_id', None),
                 'active_garment': self.pattern_state.active_garment,
                 'appearance': self.pattern_state.garment_appearance(),
                 'skin': self.body_color
@@ -188,6 +189,7 @@ class GUIState:
             return
         try:
             self._outfit_name = snapshot.get('outfit_name', 'Untitled outfit')
+            self._outfit_revision_id = snapshot.get('outfit_revision_id')
             if snapshot.get('outfit'):
                 self.pattern_state.load_outfit(snapshot['outfit'], snapshot.get('active_garment', 0))
             if snapshot.get('design'):

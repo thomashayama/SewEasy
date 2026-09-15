@@ -135,6 +135,18 @@ class GarmentDetailsTest(unittest.TestCase):
 
 
 class HomeNavigationTest(unittest.TestCase):
+    def test_opening_an_outfit_retains_its_revision_but_new_compositions_detach(self):
+        from gui.callbacks import GUIState
+        snapshot = studio_snapshot([starter_item('DressShirt')], 'Versioned outfit',
+                                   outfit_revision_id='saved-revision')
+        state = GUIState.__new__(GUIState)
+        state.pattern_state = Mock()
+        with patch('gui.callbacks.app', SimpleNamespace(storage=SimpleNamespace(user={'pending_design': snapshot}))):
+            state._restore_pending_design()
+        self.assertEqual(state._outfit_revision_id, 'saved-revision')
+        new = studio_snapshot([starter_item('Pants')], previous=snapshot)
+        self.assertIsNone(new['outfit_revision_id'])
+
     def test_logo_stashes_before_navigating_and_keeps_failed_stash_in_studio(self):
         from gui.callbacks import GUIState
         state = GUIState.__new__(GUIState)
