@@ -44,6 +44,10 @@ def analyze(path):
         body_samples=len(samples),inside_body_samples=int((distance < -1e-5).sum()),
         body_penetration_max_mm=max(0.,-float(distance.min()))*1000)
     result['tip_drop_cm']={side:float((q[names==f'{side}_stand_front',1].max()-q[names==f'{side}_collar_front',1].min())*100) for side in ['left','right']}
+    stand_mask=np.array(['stand' in n for n in names])
+    stand_distance=igl.signed_distance(q[stand_mask],np.asarray(scene['body_vertices']),np.asarray(scene['body_faces']),igl.SIGNED_DISTANCE_TYPE_PSEUDONORMAL)[0]*1000
+    result['stand_clearance_mm']={key:float(value) for key,value in zip(
+        ['p05','median','p95','max'],np.percentile(stand_distance,[5,50,95,100]))}
     path.with_suffix('.collar-analysis.json').write_text(json.dumps(result,indent=2))
     assert all(d>2 for d in result['tip_drop_cm'].values()), 'Collar tip flipped upward'
     assert result['collar_seam_max_mm']<5, 'Collar seam opened'

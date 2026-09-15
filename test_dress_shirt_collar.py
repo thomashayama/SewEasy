@@ -9,7 +9,7 @@ import trimesh
 import yaml
 
 from assets.bodies.body_params import BodyParameters
-from assets.garment_programs.dress_shirt import DressShirt, CollarLeafPanel
+from assets.garment_programs.dress_shirt import DressShirt, CollarLeafPanel, ShirtCollar
 from seweasy.meshgen.boxmeshgen import BoxMesh
 from seweasy.meshgen.webgpu import build_scene, panel_mesh_data
 from seweasy.pattern.core import BasicPattern
@@ -45,6 +45,36 @@ class CollarTest(unittest.TestCase):
                     leaf_points=np.array([half.leaf_f.point_to_3D(v) for v in (b.start,b.end)])
                     np.testing.assert_allclose(stand_points,leaf_points[::-1],atol=1e-6)
 
+    def test_neck_band_tapers_and_excludes_button_overlap_from_neck_size(self):
+        for neck_width, height, ease in [(16, 2, 1.02), (18.9328, 3, 1.08), (22, 4.5, 1.2)]:
+            with self.subTest(neck_width=neck_width, height=height, ease=ease):
+                body, design = deepcopy(self.body), deepcopy(self.design)
+                body.params['neck_w'] = neck_width
+                d = design['dress_shirt']
+                d['stand_height']['v'], d['neck_ease']['v'] = height, ease
+                collar = ShirtCollar('test', body, design)
+                tab = d['placket_width']['v']
+                base = 2 * (collar.interfaces['bottom'].edges.length() - tab)
+                roll = 2 * sum(p.interfaces['bottom'].edges.length()
+                               for p in (collar.stand_f, collar.stand_b))
+                # A close-fitting neck opening, not a widening funnel.
+                self.assertLess(roll, base)
+                self.assertGreater(roll, base * .85)
+                self.assertGreater(base / ease / neck_width, 2.2)
+                self.assertLess(base / ease / neck_width, 2.35)
+                for panel in (collar.stand_f, collar.stand_b, collar.leaf_f):
+                    self.assertFalse(panel.is_self_intersecting(), panel.name)
+                projected = sum(collar.interfaces[n].edges.length()
+                                for n in ('front_proj', 'back_proj'))
+                self.assertAlmostEqual(projected, collar.interfaces['bottom'].edges.length())
+                # More overlap adds fabric, without enlarging the neck ring.
+                d['placket_width']['v'] += 1
+                wider_tab = ShirtCollar('wider', body, design)
+                self.assertAlmostEqual(wider_tab.interfaces['bottom'].edges.length(),
+                                       collar.interfaces['bottom'].edges.length() + 1)
+                self.assertAlmostEqual(wider_tab.stand_f.interfaces['bottom'].edges.length(),
+                                       collar.stand_f.interfaces['bottom'].edges.length())
+
     def test_complete_collar_mesh_and_fold_constraints(self):
         shirt=DressShirt(self.body,self.design)
         for panel in (shirt.back_fall,shirt.right.collar_comp.leaf_f,shirt.left.collar_comp.leaf_f):
@@ -60,10 +90,14 @@ class CollarTest(unittest.TestCase):
             data=panel_mesh_data(box,trimesh.load('assets/bodies/mean_all.obj',process=False))
             scene=build_scene(data,dict(garment='dress-shirt',resolution_cm=1.5,panels=len(box.panelNames),panel_stiffness=pattern.pattern['panel_stiffness']),'collar-test')
         folds=scene['hinges']
-        self.assertGreater(len(folds),30)
         self.assertTrue(all(np.isfinite(c['angle']) and c['compliance']>0 for c in folds))
         covered={scene['vertex_panels'][i] for c in folds for i in c['ids']}
         self.assertTrue({'right_collar_front','left_collar_front','collar_back'} <= covered)
+        # Mesh density changes with neck size. Require distributed hinges on
+        # every fall, rather than a fixed count from the old oversized collar.
+        for name in ('right_collar_front','left_collar_front','collar_back'):
+            attached = [h for h in folds if name in {scene['vertex_panels'][i] for i in h['ids']}]
+            self.assertGreaterEqual(len(attached), 4, name)
         for start,count in scene['hinge_batches']:
             ids=[i for h in folds[start:start+count] for i in h['ids']]
             self.assertEqual(len(ids),len(set(ids)))

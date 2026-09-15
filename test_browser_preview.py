@@ -7,10 +7,10 @@ import asyncio
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from tempfile import TemporaryDirectory
-from threading import Event
+from threading import Event, get_ident
 from types import SimpleNamespace
 import unittest
-from unittest.mock import patch, Mock
+from unittest.mock import patch, Mock, AsyncMock
 
 from gui.callbacks import GUIState
 from gui.browser_drape import snapshot_scene
@@ -68,6 +68,37 @@ class BrowserPreviewTest(unittest.IsolatedAsyncioTestCase):
     @staticmethod
     def prepare(_pattern, target):
         target.write_text('{}')
+
+    async def test_initial_draft_publishes_on_ui_thread_without_waiting_for_3d(self):
+        ui_thread = get_ident()
+        worker_threads, publish_threads = [], []
+        self.state._draft_pending = 1
+        self.state._restored_skin = None
+        self.state.ui_passive_body_refs = {}
+        self.state._sync_update_state = lambda: worker_threads.append(get_ident())
+        self.state.update_body_params_ui_state = Mock()
+        self.state.update_pattern_display = lambda: publish_threads.append(get_ident())
+        self.state.refresh_wardrobe = Mock()
+        self.state.update_3d_scene = AsyncMock()
+        await self.state.initial_draft()
+        self.assertNotEqual(worker_threads, [ui_thread])
+        self.assertEqual(publish_threads, [ui_thread])
+        self.assertEqual(self.state._draft_pending, 0)
+        # The browser's painted event starts meshing after the SVG is visible.
+        self.state.update_3d_scene.assert_not_called()
+
+    async def test_empty_initial_design_clears_preview_without_an_image_load(self):
+        self.state._draft_pending = 1
+        self.state._restored_skin = None
+        self.state.ui_passive_body_refs = {}
+        self.state.pattern_state.svg_filename = ''
+        self.state._sync_update_state = Mock()
+        self.state.update_body_params_ui_state = Mock()
+        self.state.update_pattern_display = Mock()
+        self.state.refresh_wardrobe = Mock()
+        await self.state.initial_draft()
+        self.assertEqual(self.state.ui_browser_drape.props['scene_url'], '')
+        self.assertFalse(self.state.ui_browser_drape.props['preparing'])
 
     async def test_no_work_when_drafting_failed_or_disconnected(self):
         for key, value in [('_draft_pending', 1),

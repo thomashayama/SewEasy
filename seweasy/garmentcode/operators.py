@@ -484,6 +484,19 @@ def _max_curvature(curve, points_estimates=100):
     # infeasible
     # Some hints here: https://math.stackexchange.com/questions/1954845/bezier-curvature-extrema
     t_space = np.linspace(0, 1, points_estimates)
+    if isinstance(curve, svgpath.CubicBezier):
+        # Evaluate the same sample points in one vector operation. Sleeve
+        # fitting calls this thousands of times; scalar SVG curvature calls
+        # otherwise dominate the entire interactive pattern draft.
+        d1, d2 = curve.derivative(t_space), curve.derivative(t_space, 2)
+        speed = np.abs(d1)
+        regular = speed > 1e-12
+        values = np.empty_like(speed)
+        values[regular] = np.abs(d1.real[regular] * d2.imag[regular] -
+                                 d1.imag[regular] * d2.real[regular]) / speed[regular]**3
+        for i in np.flatnonzero(~regular):
+            values[i] = curve.curvature(t_space[i])
+        return float(values.max())
     return max([curve.curvature(t) for t in t_space])
 
 

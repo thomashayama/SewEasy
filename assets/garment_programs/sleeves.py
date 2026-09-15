@@ -1,4 +1,5 @@
 from copy import deepcopy
+from functools import lru_cache
 
 import numpy as np
 from scipy.spatial.transform import Rotation as R
@@ -54,6 +55,20 @@ def ArmholeAngle(incl, width, angle, incl_coeff=0.2, w_coeff=0.2,
 
 
 def ArmholeCurve(incl, width, angle, bottom_angle_mix=0, invert=True, verbose=False, **kwargs):
+    # Left/right sleeves and unchanged designs share the expensive fit. Return
+    # independent edge graphs: garment assembly mutates endpoints in place.
+    if verbose:
+        return _fit_armhole_curve(incl, width, angle, bottom_angle_mix, invert, verbose=True)
+    return deepcopy(_cached_armhole_curve(float(incl), float(width), float(angle),
+                                         float(bottom_angle_mix), bool(invert)))
+
+
+@lru_cache(maxsize=128)
+def _cached_armhole_curve(incl, width, angle, bottom_angle_mix, invert):
+    return _fit_armhole_curve(incl, width, angle, bottom_angle_mix, invert)
+
+
+def _fit_armhole_curve(incl, width, angle, bottom_angle_mix=0, invert=True, verbose=False):
     """ Classic sleeve opening on Cubic Bezier curves
     """
     # Curvature as parameters?

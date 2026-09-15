@@ -129,6 +129,8 @@ class GUIState:
         try:
             await asyncio.get_event_loop().run_in_executor(
                 self._async_executor, self._sync_update_state)
+            self.update_body_params_ui_state(self.ui_passive_body_refs)
+            self.update_pattern_display()
         except Exception:
             traceback.print_exc()
             self._draft_failed = True
@@ -139,7 +141,10 @@ class GUIState:
         if self._restored_skin:
             await self.apply_skin_color(self._restored_skin)
         self.refresh_wardrobe()
-        await self.update_3d_scene()
+        # The canvas starts preview preparation after its first visible paint.
+        # GPU shader compilation must not get ahead of the 2D sheet.
+        if not self.pattern_state.svg_filename:
+            await self.update_3d_scene()  # Clear an empty design; no paint event.
 
     # --- Design persistence across navigation ---
 
@@ -522,6 +527,7 @@ class GUIState:
                         'se-pattern-paper').style('width:1000px') as self.ui_pattern_bg:
                     self.ui_pattern_display = PatternCanvas().classes('bg-transparent p-0 m-0')
                     self.ui_pattern_display.on('selection', self.on_pattern_selection)
+                    self.ui_pattern_display.on('painted', lambda: background_tasks.create(self.update_3d_scene()))
                 with ui.row(wrap=False).classes('se-pattern-tools'):
                     ui.button(icon='remove', on_click=lambda: self.ui_pattern_display.run_method('zoom', 1 / 1.2)) \
                         .props('flat dense round aria-label="Zoom out pattern"')
@@ -765,6 +771,8 @@ class GUIState:
             self.loop = asyncio.get_event_loop()
             await self.loop.run_in_executor(self._async_executor, self._sync_update_state)
             self._draft_failed = False
+            self.update_body_params_ui_state(self.ui_passive_body_refs)
+            self.update_pattern_display()
 
         except Exception as e:
             traceback.print_exc()
@@ -782,13 +790,14 @@ class GUIState:
             self.spin_dialog.close()  # If open
             self._draft_pending -= 1
         self.refresh_wardrobe()
-        background_tasks.create(self.update_3d_scene())
+        if not self.pattern_state.svg_filename:
+            background_tasks.create(self.update_3d_scene())
 
     def _sync_update_state(self):
+        started = time.perf_counter()
         # Update derivative body values (just in case)
         # TODOLOW only do that on body value updates
         self.pattern_state.body_params.eval_dependencies()
-        self.update_body_params_ui_state(self.ui_passive_body_refs) # Display evaluated dependencies
 
         # Update the garment
         # Sync left-right for easier editing
@@ -796,9 +805,7 @@ class GUIState:
 
         # NOTE This is the slow part 
         self.pattern_state.reload_garment()
-
-        # Update display
-        self.update_pattern_display()
+        self._last_draft_ms = round((time.perf_counter() - started) * 1000)
 
     def update_pattern_display(self):
         """Display the laid-out cutting pieces without changing assembly geometry."""
@@ -808,6 +815,8 @@ class GUIState:
             width, height = self.pattern_state.svg_bbox_size
             self.ui_pattern_display.set_source(str(self.pattern_state.svg_path()))
             self.ui_pattern_display.configure(
+                draft_ms=getattr(self, '_last_draft_ms', None),
+                revision=self._preview_revision,
                 viewbox=f'0 0 {width} {height}',
                 pieces=[{'id': name, 'label': self.panel_label(name), 'path': path.d() + ' Z',
                          **self.pattern_state.panel_svg_labels[name]}

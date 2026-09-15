@@ -2,6 +2,35 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import PatternCanvas, {rulerTicks} from '../gui/pattern_canvas.js';
 
+test('preview starts after a paint opportunity and discards obsolete images',t=>{
+  const original=globalThis.requestAnimationFrame, frames=[], events=[];
+  globalThis.requestAnimationFrame=fn=>frames.push(fn);
+  t.after(()=>{globalThis.requestAnimationFrame=original;});
+  const canvas={src:'shirt.svg',revision:1,autoFit(){},
+    $el:{dataset:{},isConnected:true},$emit:event=>events.push(event)};
+  const paint=()=>PatternCanvas.methods.painted.call(canvas);
+  paint();assert.deepEqual(events,[]);
+  frames.shift()();assert.deepEqual(events,[]);
+  frames.shift()();assert.deepEqual(events,['painted']);
+  paint();canvas.revision=2;
+  frames.shift()();frames.shift()();assert.equal(events.length,1);
+  paint();canvas.src='new.svg';
+  frames.shift()();frames.shift()();assert.equal(events.length,1);
+  paint();canvas.$el.isConnected=false;
+  frames.shift()();frames.shift()();assert.equal(events.length,1);
+});
+
+test('an unchanged SVG still warms a new body revision after the image is ready',()=>{
+  let paints=0;
+  const img={complete:true,naturalWidth:400};
+  const canvas={$nextTick:fn=>fn(),$el:{querySelector:()=>img},painted:()=>paints++};
+  PatternCanvas.watch.revision.call(canvas);assert.equal(paints,1);
+  img.complete=false;
+  PatternCanvas.watch.revision.call(canvas);assert.equal(paints,1);
+  img.complete=true;img.naturalWidth=0;
+  PatternCanvas.watch.revision.call(canvas);assert.equal(paints,1);
+});
+
 test('rulers retain centimetre values through zoom and pan, including a negative origin',()=>{
   const before=rulerTicks(100,4,500), after=rulerTicks(60,8,500);
   const a=before.find(t=>t.label==='20'), b=after.find(t=>t.label==='20');

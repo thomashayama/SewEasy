@@ -30,8 +30,8 @@ export function rulerTicks(origin, scale, length) {
 const workspaces=new WeakMap();
 
 export default {
-  template: `<div class="se-pattern-canvas">
-    <img v-if="src" :src="src" alt="Sewing pattern" draggable="false" @load="autoFit">
+  template: `<div class="se-pattern-canvas" :data-draft-ms="draft_ms">
+    <img v-if="src" :src="src" alt="Sewing pattern" draggable="false" @load="painted">
     <svg v-if="src" ref="svg" :viewBox="viewbox" preserveAspectRatio="none" aria-label="Select garment sections">
       <path v-for="piece in pieces" :key="piece.id" :d="piece.path" :data-pattern-piece="piece.id"
         role="button" tabindex="0" :aria-label="piece.label" :aria-pressed="picked.includes(piece.id)"
@@ -60,7 +60,7 @@ export default {
       </svg>
     </Teleport>
   </div>`,
-  props: {src:String, pieces:Array, selected:Array, viewbox:String},
+  props: {src:String, pieces:Array, selected:Array, viewbox:String, draft_ms:Number, revision:Number},
   data: () => ({picked:[], origin:null, marquee:null, suppressClick:false, rulerTarget:null,
     rulers:{width:1,height:1,x:[],y:[]},labelSize:2.6}),
   mounted() {
@@ -83,8 +83,25 @@ export default {
     selected: {immediate:true, handler(value) {this.cancel();this.picked=[...(value || [])];}},
     pieces() {this.cancel();},
     src() {this.cancel();},
+    revision() {
+      // A body-only edit can keep the exact same SVG. It still needs a new
+      // preview, even though the browser will not fire another image load.
+      this.$nextTick(()=>{
+        const img=this.$el.querySelector('img');
+        if(img?.complete && img.naturalWidth>0)this.painted();
+      });
+    },
   },
   methods: {
+    painted() {
+      this.autoFit();
+      const source=this.src, revision=this.revision;
+      requestAnimationFrame(()=>requestAnimationFrame(()=>{
+        if(this.src!==source || this.revision!==revision || !this.$el.isConnected)return;
+        this.$el.dataset.paintMs=Math.round(performance.now());
+        this.$emit('painted');
+      }));
+    },
     caption(label) {
       const words=label.split(' · ').pop().split(' ');
       return words.length<3 ? [words.join(' ')] : [words.slice(0,-1).join(' '),words.at(-1)];
