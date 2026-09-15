@@ -20,7 +20,7 @@ const workspaces=new WeakMap();
 
 export default {
   template: `<div class="se-pattern-canvas">
-    <img v-if="src" :src="src" alt="Sewing pattern" draggable="false">
+    <img v-if="src" :src="src" alt="Sewing pattern" draggable="false" @load="autoFit">
     <svg v-if="src" ref="svg" :viewBox="viewbox" preserveAspectRatio="none" aria-label="Select garment sections">
       <path v-for="piece in pieces" :key="piece.id" :d="piece.path" :data-pattern-piece="piece.id"
         role="button" tabindex="0" :aria-label="piece.label" :aria-pressed="picked.includes(piece.id)"
@@ -36,7 +36,9 @@ export default {
   mounted() {
     const ws=this.$el.closest('.se-workspace'), abort=new AbortController();
     if(!ws)return;
-    workspaces.set(this,{ws,abort,gesture:null});
+    const resize=new ResizeObserver(()=>this.autoFit());
+    workspaces.set(this,{ws,abort,resize,gesture:null,fitting:true});
+    resize.observe(ws);
     const opts={signal:abort.signal};
     for(const [event,handler] of Object.entries({pointerdown:this.start,click:this.background,
       keydown:this.keys,contextmenu:e=>e.preventDefault()}))ws.addEventListener(event,handler,opts);
@@ -44,13 +46,38 @@ export default {
       pointercancel:this.cancel,lostpointercapture:this.cancel}))document.addEventListener(event,handler,opts);
     window.addEventListener('blur',this.cancel,opts);
   },
-  beforeUnmount() {this.cancel();workspaces.get(this)?.abort.abort();workspaces.delete(this);},
+  beforeUnmount() {this.cancel();workspaces.get(this)?.abort.abort();workspaces.get(this)?.resize.disconnect();workspaces.delete(this);},
   watch: {
     selected: {immediate:true, handler(value) {this.cancel();this.picked=[...(value || [])];}},
     pieces() {this.cancel();},
     src() {this.cancel();},
   },
   methods: {
+    autoFit() {if(workspaces.get(this)?.fitting)this.$nextTick(()=>this.fit());},
+    fit() {
+      const state=workspaces.get(this), paper=this.$el.closest('.se-pattern-paper');
+      if(!state||!paper||!this.src)return;
+      const r=this.$el.getBoundingClientRect();
+      if(r.width<1||r.height<1||state.ws.clientWidth<1)return;
+      paper.style.margin=state.ws.clientHeight/2+'px '+state.ws.clientWidth/2+'px';
+      this.zoom(Math.min((state.ws.clientWidth-50)/r.width,(state.ws.clientHeight-100)/r.height));
+      state.fitting=true;
+      const next=this.$el.getBoundingClientRect(), viewport=state.ws.getBoundingClientRect();
+      state.ws.scrollLeft+=next.left+next.width/2-viewport.left-state.ws.clientWidth/2;
+      state.ws.scrollTop+=next.top+next.height/2-viewport.top-state.ws.clientHeight/2;
+    },
+    zoom(factor) {
+      const state=workspaces.get(this), paper=this.$el.closest('.se-pattern-paper');
+      if(!state||!paper)return;
+      this.cancel();state.fitting=false;
+      const width=paper.offsetWidth, next=Math.max(250,Math.min(10000,width*factor)), ratio=next/width;
+      const before=paper.getBoundingClientRect(), viewport=state.ws.getBoundingClientRect();
+      const x=viewport.left+state.ws.clientWidth/2-before.left, y=viewport.top+state.ws.clientHeight/2-before.top;
+      paper.style.width=next+'px';paper.style.height=next*.6+'px';
+      const after=paper.getBoundingClientRect();
+      state.ws.scrollLeft+=after.left+x*ratio-viewport.left-state.ws.clientWidth/2;
+      state.ws.scrollTop+=after.top+y*ratio-viewport.top-state.ws.clientHeight/2;
+    },
     start(e) {
       const state=workspaces.get(this);
       if(!state||state.gesture||e.button>2)return;
@@ -76,6 +103,7 @@ export default {
       e.preventDefault();
       if(!g.dragging){g.dragging=true;state.ws.setPointerCapture(g.id);}
       if(g.mode==='pan'){
+        state.fitting=false;
         state.ws.classList.add('se-dragging');
         state.ws.scrollLeft=g.scroll[0]-(end.x-g.start.x);
         state.ws.scrollTop=g.scroll[1]-(end.y-g.start.y);

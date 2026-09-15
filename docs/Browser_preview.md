@@ -2,14 +2,16 @@
 
 Run `python gui.py` and open <http://127.0.0.1:8080/>. The current pattern starts
 preparing for 3D as soon as its 2D draft is available. Both views stay mounted;
-the browser compiles the GPU pipelines, warms the cloth and draws the hidden
-canvas while **Sewing pattern** is open. Opening **3D view** reuses that scene.
+the browser compiles the GPU pipelines and warms the cloth in the docked
+preview while **Pattern** is open. Opening **3D** or expanding the preview
+reuses that same canvas, GPU device and scene.
 Design and stiffness edits prepare a new scene automatically. Mesh preparation
 uses a separate CPU worker and a snapshot of the draft, so further 2D edits can
 continue and an outdated result cannot replace the current design.
 
 In 2D, the browser runs up to six simulated seconds of warm-up at 30 updates per
-second, then idles. This is an initial drape, not a convergence guarantee. The
+second, then idles. Interacting with the dock wakes the simulation briefly so
+turning the mannequin still moves the cloth. This is an initial drape, not a convergence guarantee. The
 visible 3D view continues live simulation; an explicit Pause is respected, and
 switching away from the browser tab suspends GPU steps. The first load or a fresh
 edit still needs preparation time, but switching to an already warmed scene
@@ -17,7 +19,7 @@ does not reload, recompile or restart it.
 Fabric and per-panel colors, mannequin tone, visibility, orbit, pan, pause and reset
 are handled in the browser without another simulation request.
 
-Use **Customize measurements** in the studio, upload a measurement file, or
+Open **Measurements** in the header, then **Customize measurements**, upload a measurement file, or
 select a saved profile. Both the garment and mannequin use that profile. Body
 fitting runs on CPU; the fitted surface supplies the visible mesh and the
 browser's collision field. The account measurement editor uses the same fitter.

@@ -3,7 +3,8 @@ import assert from 'node:assert/strict';
 import PatternCanvas from '../gui/pattern_canvas.js';
 
 function canvasHarness(t) {
-  const originals={window:globalThis.window,document:globalThis.document,DOMPoint:globalThis.DOMPoint};
+  const originals={window:globalThis.window,document:globalThis.document,DOMPoint:globalThis.DOMPoint,ResizeObserver:globalThis.ResizeObserver};
+  globalThis.ResizeObserver=class {observe(){} disconnect(){}};
   globalThis.window=new EventTarget();globalThis.document=new EventTarget();
   globalThis.DOMPoint=class {constructor(x,y){this.x=x;this.y=y;}matrixTransform(){return this;}};
   const ws=new EventTarget(),captured=new Set(),classes=new Set(),emitted=[];

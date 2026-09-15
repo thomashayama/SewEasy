@@ -147,6 +147,7 @@ class GUIState:
             self._draft_pending -= 1
         if self._restored_skin:
             await self.apply_skin_color(self._restored_skin)
+        self.refresh_wardrobe()
         await self.update_3d_scene()
 
     # --- Design persistence across navigation ---
@@ -163,6 +164,7 @@ class GUIState:
                 'body': measurements_from_body(self.pattern_state.body_params),
                 'fabric': self.pattern_state.fabric_color,
                 'outfit': snapshot_design_params(self.pattern_state.outfit_items),
+                'outfit_name': getattr(self, '_outfit_name', 'Untitled outfit'),
                 'active_garment': self.pattern_state.active_garment,
                 'appearance': self.pattern_state.garment_appearance(),
                 'skin': self.body_color
@@ -180,6 +182,7 @@ class GUIState:
         if not snapshot:
             return
         try:
+            self._outfit_name = snapshot.get('outfit_name', 'Untitled outfit')
             if snapshot.get('outfit'):
                 self.pattern_state.load_outfit(snapshot['outfit'], snapshot.get('active_garment', 0))
             if snapshot.get('design'):
@@ -201,6 +204,7 @@ class GUIState:
     def stylings(self):
         """Theme definition"""
         ui.add_head_html(theme.HEAD_HTML)
+        ui.add_css(Path(__file__).with_name('studio.css').read_text())
         # Theme
         # Here: https://quasar.dev/style/theme-builder
         ui.colors(
@@ -216,132 +220,116 @@ class GUIState:
 
     # SECTION Top level layout        
     def layout(self):
-        """Overall page layout"""
-
-        # as % of viewport width/height
-        self.h_header = 5
-        self.h_params_content = 86
-        self.h_garment_display = 74 
-        self.w_garment_display = 65
-        self.w_splitter_design = 32
-        self.scene_base_resoltion = (1024, 800)
-
-        # Helpers
+        """Pattern-first studio: wardrobe, canvas and a persistent inspector."""
         self.def_pattern_waiting()
-        # TODOLOW One dialog for both? 
         self.def_design_file_dialog()
         self.def_body_file_dialog()
         self.def_photo_dialog()
-
-        # Configurator GUI
-        # Collapsible configuration side panel
-        # breakpoint: below 1024px CSS width the drawer overlays the stage
-        # and can be dismissed — a 390px fixed panel would swallow a phone
-        # screen entirely
-        self.ui_side_panel = ui.left_drawer(value=True, elevated=False, bordered=True) \
-            .classes('relative px-3 py-2 bg-[#fcfcfa]').props('width=390 breakpoint=1024')
-        with self.ui_side_panel:
-            self.def_side_panel()
-
-        # Full-bleed pattern/3D stage; all controls float on top
-        with ui.element('div').classes(
-                f'relative w-full h-[calc(100dvh-{self.h_header}vh-11px)] p-0 m-0 overflow-hidden'):
-            self.view_stage()
-
-        # Overall wrapping
-        # NOTE: https://nicegui.io/documentation/section_pages_routing#page_layout
-        with ui.header(elevated=False, fixed=False).classes('flex-col p-0 m-0 gap-0'):
-            with ui.row(wrap=False).classes(f'w-full h-[{self.h_header}vh] items-center justify-between py-0 px-5 m-0'):
-                # Brand
-                with ui.row(wrap=False).classes('items-center gap-2.5'):
-                    ui.button(icon='menu', on_click=self.ui_side_panel.toggle) \
-                        .props('flat color=white dense round aria-label="Toggle configuration panel"') \
-                        .tooltip('Configuration panel')
-                    ui.icon('content_cut').classes('text-2xl rotate-[-90deg] opacity-90')
-                    with ui.column().classes('gap-0.5'):
-                        ui.label('SewEasy').classes('se-wordmark')
-                        ui.label('parametric pattern studio').classes('se-eyebrow')
-                # Links + account
-                with ui.row(wrap=False).classes('items-center gap-1'):
-                    with ui.button('Resources').props('flat color=white no-caps icon-right=expand_more'):
-                        with ui.menu():
-                            ui.menu_item(
-                                'About GarmentCode',
-                                lambda: ui.navigate.to('https://igl.ethz.ch/projects/garmentcode/', new_tab=True))
-                            ui.menu_item(
-                                'Paper (arXiv)',
-                                lambda: ui.navigate.to('https://arxiv.org/abs/2306.03642', new_tab=True))
-                            ui.menu_item(
-                                'GarmentCodeData dataset',
-                                lambda: ui.navigate.to('https://igl.ethz.ch/projects/GarmentCodeData/', new_tab=True))
-                            ui.menu_item(
-                                'Source on GitHub',
-                                lambda: ui.navigate.to('https://github.com/thomashayama/SewEasy', new_tab=True))
-                    account_widgets.auth_header_ui(self)
-            # Signature: selvedge edge
-            ui.element('div').classes('se-selvedge w-full')
-        # NOTE No footer: attribution floats over the stage (see view_stage)
-
-    def view_stage(self):
-        """Full-bleed 2D/3D stage; the view switcher and actions float on top"""
-        # Both stages mount immediately and keep their layout dimensions. The
-        # hidden canvas can compile, drape and draw before its first reveal.
-        with ui.element('div').classes('w-full h-full relative'):
-            with ui.element('div').classes('absolute inset-0') as self.ui_pattern_stage:
-                self.def_pattern_display()
-            with ui.element('div').classes('absolute inset-0').style(
-                    'visibility:hidden; pointer-events:none').props('inert aria-hidden=true') as self.ui_drape_stage:
-                self.def_3d_scene()
-
-        # Floating view switcher
-        with ui.row(wrap=False).classes(
-                'absolute top-3 left-1/2 -translate-x-1/2 z-50 items-center gap-2'):
-            async def switch_view(e):
-                self._view_3d_active = e.value == '3D view'
-                for stage, visible in ((self.ui_pattern_stage, not self._view_3d_active),
-                                       (self.ui_drape_stage, self._view_3d_active)):
-                    stage.style(f'visibility:{"visible" if visible else "hidden"}; pointer-events:{"auto" if visible else "none"}')
-                    stage.props('aria-hidden=false' if visible else 'inert aria-hidden=true',
-                                remove='inert' if visible else '')
-                self.ui_browser_drape.configure(active=self._view_3d_active)
-                await self.update_3d_scene()
-
-            ui.toggle(['Sewing pattern', '3D view'], value='Sewing pattern',
-                      on_change=switch_view) \
-                .props('no-caps unelevated rounded toggle-color=primary padding="2px 14px"') \
-                .classes('se-overlay-chip')
-
-        # Floating attribution
-        with ui.row(wrap=False).classes(
-                'absolute bottom-2 left-3 z-40 se-overlay-chip items-center '
-                'gap-1 px-2.5 py-0.5 text-[0.7rem]'):
-            ui.link('© 2024 Interactive Geometry Lab', 'https://igl.ethz.ch/',
-                    new_tab=True).classes('text-[#5a6270]')
-            ui.label('·').classes('text-[#5a6270] opacity-60')
-            ui.link('Built on GarmentCode',
-                    'https://github.com/maria-korosteleva/GarmentCode',
-                    new_tab=True).classes('text-[#5a6270]')
-
-    # !SECTION
-    # SECTION -- Configuration side panel
-    def def_side_panel(self):
-        """Collapsible configuration panel: body source + design parameters"""
-        # NOTE: kept for compatibility with the shared update flow —
-        # measurement editing lives on the account page now
         self.ui_active_body_refs = {}
         self.ui_passive_body_refs = {}
+        with ui.dialog().props('position=left') as self.ui_design_settings:
+            with ui.card().classes('se-design-dialog'):
+                with ui.row().classes('w-full items-center justify-between'):
+                    ui.label('Garment design').classes('text-lg font-semibold')
+                    ui.button(icon='close', on_click=self.ui_design_settings.close).props(
+                        'flat round dense aria-label="Close garment design"')
+                self.def_design_block()
+        with ui.dialog() as self.ui_measurements_dialog:
+            with ui.card().classes('w-96 max-w-full gap-3'):
+                with ui.row().classes('w-full items-center justify-between'):
+                    ui.label('Measurements').classes('text-lg font-semibold')
+                    ui.button(icon='close', on_click=self.ui_measurements_dialog.close).props(
+                        'flat round dense aria-label="Close measurements"')
+                account_widgets.body_source_ui(self)
 
-        ui.button(icon='chevron_left', on_click=self.ui_side_panel.toggle) \
-            .props('flat dense round size=sm color=grey-7 aria-label="Collapse panel"') \
-            .classes('absolute top-1.5 right-1.5 z-10').tooltip('Collapse panel')
+        with ui.element('main').classes('se-studio'):
+            with ui.element('header').classes('se-studio-header'):
+                with ui.row(wrap=False).classes('items-center gap-3 min-w-0'):
+                    ui.button(icon='menu', on_click=self.toggle_wardrobe).props(
+                        'flat round dense aria-label="Toggle outfit list"').classes('se-mobile-menu')
+                    ui.label('SewEasy').classes('se-wordmark')
+                    self.ui_outfit_title = ui.button('Untitled outfit', on_click=lambda: self.show_outfits()) \
+                        .props('flat icon-right=expand_more').classes('se-outfit-title')
+                with ui.row(wrap=False).classes('se-header-actions items-center gap-2'):
+                    self.ui_draft_status = ui.label('Drafting…').classes('se-draft-status')
+                    ui.button('Measurements', icon='straighten', on_click=self.ui_measurements_dialog.open) \
+                        .props('flat').classes('se-measurements-button')
+                    ui.button('Save outfit', on_click=lambda: self.show_save_outfit()) \
+                        .props('unelevated').classes('se-save-outfit')
+                    ui.button('Export', icon='file_download', on_click=self.state_download).props('outline')
+                    with ui.element('div').classes('se-studio-account'):
+                        account_widgets.auth_header_ui(self, compact=True)
+            with ui.element('div').classes('se-studio-body') as self.ui_studio_body:
+                with ui.element('aside').classes('se-wardrobe').props('aria-label="This outfit"'):
+                    self.def_side_panel()
+                self.view_stage()
 
-        ui.label('Body').classes('se-section-label')
-        account_widgets.body_source_ui(self)
+        from webapp.wardrobe_ui import wardrobe_ui
+        wardrobe_ui(self)
 
-        ui.separator().classes('my-2')
+    def toggle_wardrobe(self):
+        self.ui_studio_body.classes(toggle='se-wardrobe-open')
 
-        ui.label('Garment').classes('se-section-label')
-        self.def_design_block()
+    def view_stage(self):
+        """The same live GPU canvas moves between its dock and the main stage."""
+        with ui.element('section').classes('se-studio-stage').props('aria-label="Pattern studio"') as self.ui_stage:
+            with ui.row(wrap=False).classes('se-stage-toolbar'):
+                self.ui_view_toggle = ui.toggle({'Sewing pattern': 'Pattern', '3D view': '3D'},
+                    value='Sewing pattern', on_change=lambda e: self.switch_view(e.value)) \
+                    .props('no-caps unelevated toggle-color=primary').classes('se-view-toggle')
+                ui.space()
+                ui.button(icon='tune', on_click=self.ui_design_settings.open).props(
+                    'flat dense round aria-label="Garment design settings"').tooltip('Garment design')
+            with ui.element('div').classes('se-main-pattern') as self.ui_pattern_stage:
+                self.def_pattern_display()
+            with ui.element('div').classes('se-studio-inspector'):
+                self.ui_fabric_panel = FabricPanel()
+                self.ui_fabric_panel.configure(docked=True)
+                self.ui_fabric_panel.on('close', self.close_fabric_panel)
+                self.ui_fabric_panel.on('clear', lambda: self.set_pattern_selection([]))
+                self.ui_fabric_panel.on('select-all', lambda: self.set_pattern_selection(list(self.pattern_state.panel_svg_paths)))
+                self.ui_fabric_panel.on('edit', self.edit_selected_fabric)
+            with ui.element('section').classes('se-preview-dock').props('aria-label="3D preview"') as self.ui_drape_stage:
+                with ui.row(wrap=False).classes('se-preview-header'):
+                    ui.label('3D preview').classes('font-semibold')
+                    ui.space()
+                    self.ui_expand_preview = ui.button(icon='open_in_full', on_click=self.expand_preview) \
+                        .props('flat round dense aria-label="Expand 3D preview"').tooltip('Expand 3D preview')
+                with ui.element('div').classes('se-preview-canvas'):
+                    self.def_3d_scene()
+
+    async def switch_view(self, value):
+        self._view_3d_active = value == '3D view'
+        self.ui_stage.classes('se-expanded-3d' if self._view_3d_active else '',
+                              remove='' if self._view_3d_active else 'se-expanded-3d')
+        self.ui_pattern_stage.props('inert aria-hidden=true' if self._view_3d_active else 'aria-hidden=false',
+                                    remove='' if self._view_3d_active else 'inert')
+        self.ui_expand_preview.props(f'icon={"close_fullscreen" if self._view_3d_active else "open_in_full"} '
+            f'aria-label="{"Dock 3D preview" if self._view_3d_active else "Expand 3D preview"}"')
+        self.ui_browser_drape.configure(active=self._view_3d_active, docked=not self._view_3d_active)
+        await self.update_3d_scene()
+
+    def expand_preview(self):
+        self.ui_view_toggle.set_value('Sewing pattern' if self._view_3d_active else '3D view')
+
+    def def_side_panel(self):
+        with ui.row(wrap=False).classes('se-wardrobe-heading'):
+            ui.label('This outfit').classes('font-semibold text-base')
+            ui.space()
+            ui.button(icon='close', on_click=self.toggle_wardrobe).props(
+                'flat round dense aria-label="Close outfit list"').classes('se-mobile-menu')
+        self.ui_outfit_list = ui.column().classes('se-outfit-list')
+        ui.button('Add garment', icon='add', on_click=lambda: self.show_add_garment()) \
+            .props('flat').classes('se-add-garment')
+        ui.space()
+        with ui.column().classes('se-wardrobe-footer'):
+            ui.button('Saved outfits', icon='folder_open', on_click=lambda: self.show_outfits()).props('flat')
+            with ui.button('Help & resources', icon='help_outline').props('flat size=sm'):
+                with ui.menu():
+                    ui.menu_item('About GarmentCode', lambda: ui.navigate.to('https://igl.ethz.ch/projects/garmentcode/', new_tab=True))
+                    ui.menu_item('Source on GitHub', lambda: ui.navigate.to('https://github.com/thomashayama/SewEasy', new_tab=True))
+            ui.link('Built on GarmentCode', 'https://github.com/maria-korosteleva/GarmentCode', new_tab=True) \
+                .classes('se-attribution')
 
     def def_flat_design_subtab(self, ui_elems, design_params, use_collapsible=False):
         """Group of design parameters"""
@@ -373,12 +361,12 @@ class GUIState:
                     ui.label(param_name).classes('p-0 m-0 mt-2 se-param-label')
                     ui_elems[param] = ui.select(
                         values, value=val,
-                        on_change=lambda e, dic=design_params, param=param: self.update_pattern_ui_state(dic, param, e.value)
+                        on_change=lambda e, dic=design_params, param=param: self.design_param_change(dic, param, e.value)
                     ).classes('w-full').props('outlined dense options-dense')
                 elif p_type == 'bool':
                     ui_elems[param] = ui.switch(
                         param_name, value=val, 
-                        on_change=lambda e, dic=design_params, param=param: self.update_pattern_ui_state(dic, param, e.value)
+                        on_change=lambda e, dic=design_params, param=param: self.design_param_change(dic, param, e.value)
                     ).classes('text-stone-500')
                 elif p_type == 'float' or p_type == 'int':
                     ui.label(param_name).classes('p-0 m-0 mt-2 se-param-label')
@@ -389,7 +377,7 @@ class GUIState:
                         step=0.025 if p_type == 'float' else 1,
                     ).props('snap label').classes('w-full')  \
                         .on('change',
-                            lambda e, dic=design_params, param=param: self.update_pattern_ui_state(dic, param, e.args))
+                            lambda e, dic=design_params, param=param: self.design_param_change(dic, param, e.args))
 
                     # NOTE 'change' fires when the user releases the slider:
                     # one draft per adjustment instead of one per drag tick
@@ -398,7 +386,7 @@ class GUIState:
                     ui.label(param_name).classes('p-0 m-0 mt-2 se-param-label')
                     ui_elems[param] = ui.color_input(
                         value=val,
-                        on_change=lambda e, dic=design_params, param=param: self.update_pattern_ui_state(dic, param, e.value)
+                        on_change=lambda e, dic=design_params, param=param: self.design_param_change(dic, param, e.value)
                     ).classes('w-full').props('outlined dense')
                 elif 'file' in p_type:
                     print(f'GUI::NotImplementedERROR::{param}::'
@@ -409,7 +397,7 @@ class GUIState:
                     print(f'GUI::WARNING::Unknown parameter type: {p_type}')
                     ui_elems[param] = ui.input(label=param_name, value=val, placeholder='Type the value',
                         validation={'Input too long': lambda value: len(value) < 20},
-                        on_change=lambda e, dic=design_params, param=param: self.update_pattern_ui_state(dic, param, e.value)
+                        on_change=lambda e, dic=design_params, param=param: self.design_param_change(dic, param, e.value)
                     ).classes('w-full').props('outlined dense')
                 
     # Which design sections a given bottom-garment choice reads
@@ -456,7 +444,7 @@ class GUIState:
                 .classes('p-0 m-0 mt-1 se-param-label')
             self.ui_design_refs['meta'][param] = ui.select(
                 values, value=meta[param]['v'],
-                on_change=lambda e, dic=meta, param=param: self.update_pattern_ui_state(dic, param, e.value)
+                on_change=lambda e, dic=meta, param=param: self.design_param_change(dic, param, e.value)
             ).classes('w-full').props('outlined dense options-dense')
 
         # Design-level actions
@@ -474,8 +462,7 @@ class GUIState:
                 .props('outline size=sm icon=undo') \
                 .tooltip('Restore the design that was just replaced')
             self.ui_undo_design_btn.set_visibility(False)
-            from webapp.wardrobe_ui import wardrobe_ui
-            wardrobe_ui(self)
+            ui.button('Save garment', on_click=lambda: self.show_save_garment()).props('outline size=sm icon=bookmark_add')
 
         # Parameter sections -- only those the current composition reads
         # are visible (see _refresh_section_relevance)
@@ -536,65 +523,38 @@ class GUIState:
     # !SECTION
     # SECTION -- Pattern visuals
     def def_pattern_display(self):
-        """Prepare pattern display area: a pannable drafting workspace
-        with floating controls"""
         self.selected_panels = []
         with ui.element('div').classes('se-pattern-layout'):
             with ui.element('div').classes('se-pattern-sheet'):
                 with ui.element('div').classes('se-workspace w-full h-full').props(
-                        'tabindex="0" aria-label="Sewing pattern workspace"'), ui.image(
-                        f'{self.path_static_img}/millimiter_paper_1500_900.png'
-                    ).props('role=presentation').classes('w-[1400px] min-w-[1400px] h-[840px] min-h-[840px] m-auto p-0') as self.ui_pattern_bg:
-                    # NOTE: Positioning: https://github.com/zauberzeug/nicegui/discussions/957
-                    with ui.row().classes('w-full h-full p-0 m-0 bg-transparent relative top-[0%] left-[0%]'):
-                        self.body_outline_classes = 'bg-transparent h-full absolute top-[0%] left-[0%] p-0 m-0'
+                        'tabindex="0" aria-label="Sewing pattern workspace"'), ui.element('div').classes(
+                        'se-pattern-paper').style('width:1400px; height:840px') as self.ui_pattern_bg:
+                    with ui.element('div').classes('se-body-outline absolute inset-0') as body_outline:
+                        self.body_outline_classes = 'bg-transparent h-full absolute top-0 left-0 p-0 m-0'
                         self.ui_body_outline = ui.image(f'{self.path_static_img}/ggg_outline_mean_all.svg') \
-                            .props('alt="Body silhouette behind the pattern"') \
-                            .classes(self.body_outline_classes)
-
-                    # NOTE: ui.row allows for correct classes application (e.g. no padding on svg pattern)
-                    with ui.row().classes('w-full h-full p-0 m-0 bg-transparent relative'):
-                        self.ui_pattern_display = PatternCanvas().classes('bg-transparent p-0 m-0')
-                        self.ui_pattern_display.on('selection', self.on_pattern_selection)
-
-                # Floating controls over the workspace
-                # NOTE: stacked vertically so they never collide with the
-                # centered view switcher on narrow windows
-                with ui.column().classes('absolute top-3 left-4 z-40 items-start gap-2'):
-                    ui.switch(
-                        'Body Silhouette', value=True,
-                    ).props('dense left-label').classes('se-overlay-chip text-stone-800 pl-2.5 pr-1.5 py-0.5') \
-                        .bind_value(self.ui_body_outline, 'visible')
-                    self.ui_self_intersect = ui.label(
-                        'Garment panels are self-intersecting'
-                    ).classes('se-warning-chip') \
+                            .props('alt="Body silhouette behind the pattern"').classes(self.body_outline_classes)
+                    body_outline.set_visibility(False)
+                    self.ui_pattern_display = PatternCanvas().classes('bg-transparent p-0 m-0')
+                    self.ui_pattern_display.on('selection', self.on_pattern_selection)
+                with ui.row(wrap=False).classes('se-pattern-tools'):
+                    ui.button(icon='remove', on_click=lambda: self.ui_pattern_display.run_method('zoom', 1 / 1.2)) \
+                        .props('flat dense round aria-label="Zoom out pattern"')
+                    ui.button('Fit', on_click=lambda: self.ui_pattern_display.run_method('fit')) \
+                        .props('flat dense aria-label="Fit pattern to view"')
+                    ui.button(icon='add', on_click=lambda: self.ui_pattern_display.run_method('zoom', 1.2)) \
+                        .props('flat dense round aria-label="Zoom in pattern"')
+                with ui.column().classes('se-pattern-options'):
+                    self.ui_self_intersect = ui.label('Panels overlap in this design').classes('se-warning-chip') \
                         .bind_visibility(self.pattern_state, 'is_self_intersecting')
+                    ui.switch('Body outline', value=False).props('dense').bind_value(body_outline, 'visible')
+                ui.label('Drag to select • Shift/Ctrl to add').classes('se-canvas-hint')
 
-                ui.button('Download pattern', on_click=lambda: self.state_download()) \
-                    .props('unelevated icon=download') \
-                    .classes('absolute bottom-10 right-5 z-40 shadow-lg')
-            self.ui_fabric_panel = FabricPanel()
-            self.ui_fabric_panel.on('close', self.close_fabric_panel)
-            self.ui_fabric_panel.on('clear', lambda: self.set_pattern_selection([]))
-            self.ui_fabric_panel.on('select-all', lambda: self.set_pattern_selection(list(self.pattern_state.panel_svg_paths)))
-            self.ui_fabric_panel.on('edit', self.edit_selected_fabric)
-
-    # !SECTION
-    # SECTION 3D view
     def def_3d_scene(self):
         self.ui_browser_drape = BrowserDrape(self.pattern_state.fabric_color, self.body_color) \
             .classes('w-full h-full p-0 m-0')
+        self.ui_browser_drape.configure(docked=True)
         self.ui_browser_drape.on('retry', self.retry_3d_scene)
-
-        # Floating controls over the 3D stage
-        # NOTE: stacked vertically so they never collide with the
-        # centered view switcher on narrow windows
-        with ui.column().classes('absolute top-14 left-4 z-40 items-start gap-2'):
-            self.ui_body_3d_switch = ui.switch(
-                'Body Silhouette',
-                value=True,
-                on_change=lambda e: self.ui_browser_drape.configure(show_body=e.value)
-            ).props('dense left-label').classes('se-overlay-chip text-stone-800 pl-2.5 pr-1.5 py-0.5')
+        self.ui_browser_drape.on('show-body', lambda e: self.ui_browser_drape.configure(show_body=e.args['value']))
 
     # !SECTION
     # SECTION -- Other UI details
@@ -776,12 +736,20 @@ class GUIState:
 
     # !SECTION
     # SECTION -- Event callbacks
+    def design_param_change(self, params, key, value):
+        # Loading a garment updates controls programmatically. NiceGUI calls
+        # their change handlers even when disabled: don't enqueue drafts for
+        # values already in the model (or race them against the new garment).
+        if params[key]['v'] != value:
+            return self.update_pattern_ui_state(params, key, value)
+
     async def update_pattern_ui_state(self, param_dict=None, param=None, new_value=None, body_param=False):
         """UI was updated -- update the state of the pattern parameters and visuals"""
         # NOTE: Fixing to the "same value" issue in lambdas 
         # https://github.com/zauberzeug/nicegui/wiki/FAQs#why-have-all-my-elements-the-same-value
    
         print('INFO::Updating pattern...')
+        self.ui_draft_status.set_text('Drafting…')
         self._preview_revision += 1
         self._draft_pending += 1
         self._draft_failed = True
@@ -828,6 +796,7 @@ class GUIState:
         finally:
             self.spin_dialog.close()  # If open
             self._draft_pending -= 1
+        self.refresh_wardrobe()
         background_tasks.create(self.update_3d_scene())
 
     def _sync_update_state(self):
@@ -975,6 +944,7 @@ class GUIState:
                 ui.notify(str(error), type='warning')
             finally:
                 self.ui_fabric_panel.configure(busy=False)
+                self.refresh_wardrobe()
 
     def update_design_params_ui_state(self, ui_elems, design_params):
         """Sync ui params with the current state of the design params"""

@@ -1,6 +1,6 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {cameraControls,panCamera} from '../gui/webgpu/camera.js';
+import {cameraControls,panCamera,framingScale} from '../gui/webgpu/camera.js';
 import {cameraMatrix} from '../gui/webgpu/render.js';
 import {MannequinMotion} from '../gui/webgpu/motion.js';
 const camera=()=>({yaw:0,pitch:0,distance:2,target:[.03,1,-.02],pan:[0,0]});
@@ -50,15 +50,15 @@ test('a quarter turn responds within 0.4 seconds at both 30 and 60 Hz',()=>{
 });
 
 test('panning follows the pointer on screen at different zooms and viewing angles',()=>{
-  for(const distance of [1,4])for(const yaw of [0,1.3]){
+  for(const [width,height] of [[1200,800],[272,480]])for(const distance of [1,4])for(const yaw of [0,1.3]){
     const c=camera();c.distance=distance;c.yaw=yaw;c.pitch=.3;
-    const eye=c.target.map((v,i)=>v+distance*[Math.sin(yaw)*Math.cos(c.pitch),Math.sin(c.pitch),Math.cos(yaw)*Math.cos(c.pitch)][i]);
+    const eye=c.target.map((v,i)=>v+distance*framingScale(width,height)*[Math.sin(yaw)*Math.cos(c.pitch),Math.sin(c.pitch),Math.cos(yaw)*Math.cos(c.pitch)][i]);
     const screen=()=>{
-      const m=cameraMatrix(eye,c.target,1.5,c.pan),p=[...c.target,1];
+      const m=cameraMatrix(eye,c.target,width/height,c.pan),p=[...c.target,1];
       const clip=[0,1,2,3].map(row=>p.reduce((s,v,i)=>s+m[i*4+row]*v,0));
-      return [clip[0]/clip[3]*600,-clip[1]/clip[3]*400];
+      return [clip[0]/clip[3]*width/2,-clip[1]/clip[3]*height/2];
     };
-    const before=screen();panCamera(c,60,40,800);const after=screen();
+    const before=screen();panCamera(c,60,40,height,width);const after=screen();
     assert.ok(Math.abs(after[0]-before[0]-60)<.001);assert.ok(Math.abs(after[1]-before[1]-40)<.001);
     assert.deepEqual(c.target,[.03,1,-.02]);
   }

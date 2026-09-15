@@ -1,0 +1,150 @@
+/* Pattern-first studio: white tools, blue drafting paper, quiet navy chrome. */
+.se-studio {--studio-line:#d7e1eb; --studio-muted:#67788c; width:100%; height:100dvh; min-height:440px; display:flex; flex-direction:column; color:#183452; background:#fff; overflow:hidden;}
+.se-studio .q-btn {letter-spacing:0; border-radius:6px; font-size:13px;}
+.se-studio-header {height:64px; flex-shrink:0; padding:0 22px; display:flex; align-items:center; justify-content:space-between; gap:16px; border-bottom:1px solid var(--studio-line); background:#fff; z-index:5;}
+.se-studio-header .se-wordmark {font-size:27px; letter-spacing:-1px; color:#183b62;}
+.se-studio-header .se-outfit-title {margin-left:16px; padding-left:24px; border-left:1px solid var(--studio-line); border-radius:0; font-size:17px; font-weight:600; max-width:260px;}
+.se-outfit-title .q-btn__content {flex-wrap:nowrap; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
+.se-header-actions {flex-shrink:0;}
+.se-draft-status {font-size:11px; color:var(--studio-muted); margin-right:8px;}
+.se-studio .se-save-outfit {background:#447cad!important; padding:7px 17px;}
+.se-studio-account {border-left:1px solid var(--studio-line); padding-left:12px; margin-left:4px;}
+.se-studio-account .q-btn, .se-studio-account .text-white {color:#35558a!important;}
+.se-studio-account .q-btn {border:0;}
+.se-studio-account .q-btn:before {border:0;}
+.se-studio-body {display:flex; flex:1; min-height:0; position:relative;}
+.se-wardrobe {display:flex; flex-direction:column; width:232px; flex:0 0 232px; padding:20px 12px 14px; border-right:1px solid var(--studio-line); background:#f9fbfd; gap:12px; min-height:0;}
+.se-wardrobe-heading {padding:0 8px 6px; align-items:center;}
+.se-outfit-list {width:100%; gap:8px; overflow:auto; flex-shrink:1; min-height:0;}
+.se-garment-row {display:flex; align-items:center; width:100%; position:relative; border:1px solid transparent; border-radius:7px; min-height:85px; flex-shrink:0;}
+.se-garment-row.is-active {background:#e7f0fc; border-color:#b6d4f4;}
+.se-garment-card {width:100%; padding:7px 27px 7px 5px;}
+.se-garment-card .q-btn__content {justify-content:flex-start; flex-wrap:nowrap; gap:10px;}
+.se-garment-thumb {width:53px; height:66px; flex-shrink:0; background:#f3f7fc; border-radius:4px;}
+.se-garment-thumb svg {width:100%; height:100%;}
+.se-garment-caption {gap:4px; min-width:0; text-align:left;}
+.se-garment-name {font-size:13px; font-weight:600; line-height:1.35;}
+.se-garment-version {font-size:11px; color:#67788c;}
+.se-garment-more {position:absolute; right:1px; top:26px;}
+.se-add-garment {align-self:flex-start; margin-top:3px;}
+.se-wardrobe-footer {border-top:1px solid var(--studio-line); padding-top:12px; gap:5px; width:100%;}
+.se-wardrobe-footer .q-btn {width:100%; justify-content:flex-start;}
+.se-wardrobe-footer .q-btn__content {justify-content:flex-start; gap:13px;}
+.se-attribution {font-size:10px; color:#718299; padding:5px 14px 0;}
+.se-studio-stage {flex:1; min-width:0; min-height:0; position:relative; display:grid; grid-template-columns:minmax(0,1fr) 300px; grid-template-rows:56px minmax(160px,42%) minmax(0,1fr); grid-template-areas:'toolbar fabric' 'pattern fabric' 'pattern preview';}
+.se-stage-toolbar {grid-area:toolbar; padding:0 18px; margin:0; gap:8px; align-items:center; border-bottom:1px solid var(--studio-line); background:#f8fbfd;}
+.se-view-toggle {padding:3px; border:1px solid #d5e0eb; border-radius:22px; background:#edf3f8;}
+.se-view-toggle .q-btn {border-radius:18px!important; min-height:28px; padding:2px 27px;}
+.se-view-toggle .bg-primary {background:#447cad!important;}
+.se-main-pattern {grid-area:pattern; position:relative; min-width:0; min-height:0; overflow:hidden; background:#edf4f8;}
+.se-pattern-sheet .se-workspace {display:block; position:absolute; inset:0; background-color:#edf4f8; background-image:linear-gradient(#c7dbea30 1px,transparent 1px),linear-gradient(90deg,#c7dbea30 1px,transparent 1px); background-size:12px 12px;}
+.se-pattern-paper {position:relative; flex-shrink:0; margin:auto; padding:0;}
+.se-body-outline {pointer-events:none; opacity:.25;}
+.se-pattern-paper .se-pattern-canvas {z-index:1;}
+.se-pattern-tools {position:absolute; bottom:22px; left:20px; align-items:center; gap:3px; padding:3px; background:#fff; border:1px solid var(--studio-line); border-radius:8px; box-shadow:0 2px 5px #18345206; z-index:3;}
+.se-pattern-options {position:absolute; top:12px; right:15px; align-items:flex-end; gap:8px; color:#60778f; font-size:11px; z-index:3;}
+.se-canvas-hint {position:absolute; bottom:32px; right:20px; color:#6c8196; font-size:10px; pointer-events:none;}
+.se-studio-inspector {grid-area:fabric; min-height:0; min-width:0; border-left:1px solid var(--studio-line); overflow:hidden; background:#fff;}
+.se-studio-inspector .se-fabric-panel {position:static; width:100%; height:100%; padding:22px 0 0; border:0; background:#fff; box-shadow:none; flex:1;}
+.se-studio-inspector .se-fabric-panel header {padding:0 22px 16px; min-height:36px;}
+.se-studio-inspector .se-fabric-panel h2 {font-family:'Public Sans',sans-serif; font-size:16px; font-weight:600;}
+.se-studio-inspector .se-fabric-scroll {padding:0 22px 18px;}
+.se-studio-inspector .se-fabric-panel fieldset {margin:0; border:0; padding:0;}
+.se-studio-inspector .se-fabric-panel footer {padding:8px 22px; background:#f9fbfd; border-color:var(--studio-line); font-size:10px;}
+.se-studio-inspector .se-fabric-field {font-size:12px; margin-bottom:14px; color:#203e60;}
+.se-studio-inspector .se-fabric-field>select, .se-studio-inspector .se-fabric-field>input, .se-studio-inspector .se-fabric-color {border-color:#d0dcea; border-radius:6px; height:35px;}
+.se-studio-inspector .se-fabric-panel small {font-size:10px; line-height:1.5;}
+.se-fabric-empty {padding-top:16px; color:#6c8196;}
+.se-fabric-empty svg {width:43px; height:43px; fill:#eff5fb; stroke:#7398ba; stroke-width:1.2; margin-bottom:16px;}
+.se-fabric-empty h3 {font-size:14px; color:#27496c; margin:0 0 10px;}
+.se-fabric-empty p {font-size:12px; line-height:1.8; margin-bottom:13px; max-width:230px;}
+.se-select-all {border:1px solid #ccdbea; background:white; padding:7px 11px; border-radius:5px; color:#35558a; font-size:12px; cursor:pointer; margin-top:4px;}
+.se-color-swatches {display:flex; justify-content:space-between; gap:12px; padding:1px 1px 19px;}
+.se-color-swatches button {width:32px; height:32px; border-radius:50%; border:1px solid #c2d0df; background:var(--swatch); box-shadow:0 0 0 3px white; cursor:pointer;}
+.se-color-swatches button[aria-pressed=true] {outline:2px solid #447cad; outline-offset:3px;}
+.se-fabric-drape, .se-fabric-selection {border-top:1px solid #e2e9f1; margin:6px 0 14px; padding-top:12px; font-size:12px;}
+.se-fabric-drape summary, .se-fabric-selection summary {cursor:pointer; color:#35558a;}
+.se-fabric-drape .se-fabric-field {margin-top:12px; border:0; padding:0;}
+.se-preview-dock {grid-area:preview; position:relative; min-height:0; min-width:0; display:flex; flex-direction:column; padding:12px; border-left:1px solid var(--studio-line); background:#fff;}
+.se-preview-header {align-items:center; gap:8px; margin:0; padding:0 4px 7px; font-size:13px;}
+.se-preview-canvas {min-height:0; flex:1; overflow:hidden; border-radius:8px; position:relative;}
+.se-preview-canvas .se-browser-drape {min-height:0;}
+.se-preview-dock .se-drape-controls {bottom:12px; right:12px; background:#ffffffeb;}
+.se-preview-dock .se-drape-body-note {bottom:auto; top:10px; max-width:93%; font-size:9px;}
+.se-preview-dock .se-drape-fit-details {top:100%; bottom:auto; width:265px; max-width:90vw;}
+.se-preview-dock .se-drape-message {inset:16px;}
+.se-preview-dock .se-drape-message strong {font-size:13px;}
+.se-preview-dock .se-drape-message span {font-size:11px;}
+.se-drape-status {font-size:10px; color:#52768f; display:flex; align-items:center; gap:5px;}
+.se-drape-status:before {content:''; width:5px; height:5px; border-radius:50%; background:#54a595;}
+.se-drape-state-label {position:absolute; top:10px; left:10px; color:#456c7f; font-size:10px; background:#ffffffd9; border-radius:4px; padding:3px 6px; pointer-events:none;}
+.se-preview-dock .se-drape-body-note {top:33px;}
+.se-expanded-3d {grid-template-areas:'toolbar fabric' 'preview fabric' 'preview fabric';}
+.se-expanded-3d .se-main-pattern {position:absolute; top:56px; bottom:0; left:0; right:300px; visibility:hidden; pointer-events:none;}
+.se-expanded-3d .se-preview-dock {border-left:0; background:#edf4f8; padding:0;}
+.se-expanded-3d .se-preview-header {position:absolute; right:12px; top:12px; z-index:3; padding:0;}
+.se-expanded-3d .se-preview-header>div {display:none;}
+.se-expanded-3d .se-preview-canvas {border-radius:0;}
+.se-design-dialog {width:390px; max-width:95vw; height:100dvh; max-height:100dvh!important; border-radius:0!important; gap:16px; padding:24px;}
+.se-design-dialog .se-stitch-card {border:1px solid #d7e1eb; border-radius:6px;}
+.se-mobile-menu {display:none;}
+.se-studio :is(button,a,summary):focus-visible {outline:2px solid #447cad; outline-offset:3px;}
+@media(max-width:1200px) {
+  .se-wardrobe {width:200px; flex-basis:200px; padding-left:8px; padding-right:8px;}
+  .se-studio-stage {grid-template-columns:minmax(0,1fr) 272px;}
+  .se-expanded-3d .se-main-pattern {right:272px;}
+  .se-studio-header {padding:0 14px;}
+  .se-studio-header .se-outfit-title {margin-left:2px; padding-left:14px; font-size:15px; max-width:190px;}
+  .se-draft-status {display:none;}
+  .se-studio-account .q-btn .q-icon {display:none;}
+  .se-canvas-hint {display:none;}
+}
+@media(max-width:980px) {
+  .se-mobile-menu {display:inline-flex;}
+  .se-wardrobe {display:none; position:absolute; top:0; bottom:0; left:0; z-index:20; width:232px; box-shadow:8px 0 30px #18345212;}
+  .se-wardrobe-open .se-wardrobe {display:flex;}
+  .se-studio-header .se-wordmark {font-size:23px;}
+  .se-studio-header .se-outfit-title {max-width:160px; font-size:13px;}
+  .se-measurements-button .q-icon {display:none;}
+}
+@media(max-width:700px) {
+  .se-studio-header {height:auto; min-height:96px; padding:9px 12px; flex-wrap:wrap; gap:8px;}
+  .se-studio-header .se-outfit-title {max-width:200px;}
+  .se-header-actions {width:100%; justify-content:flex-end; gap:5px;}
+  .se-header-actions .q-btn {min-height:28px; font-size:11px; padding:3px 8px;}
+  .se-header-actions .q-btn__content {white-space:nowrap; flex-wrap:nowrap;}
+  .se-header-actions .q-btn .q-icon {font-size:15px;}
+  .se-studio-account {padding-left:4px; margin-left:0;}
+  .se-studio-stage {grid-template-columns:minmax(0,1fr) 190px; grid-template-rows:46px minmax(170px,47%) minmax(0,1fr);}
+  .se-stage-toolbar {padding:0 7px; gap:0;}
+  .se-view-toggle .q-btn {padding:2px 12px;}
+  .se-studio-inspector .se-fabric-panel {padding-top:15px;}
+  .se-studio-inspector .se-fabric-panel header {padding:0 12px 10px;}
+  .se-studio-inspector .se-fabric-panel h2 {font-size:13px;}
+  .se-studio-inspector .se-fabric-scroll {padding:0 12px 12px;}
+  .se-fabric-empty {padding-top:4px;}
+  .se-fabric-empty svg {display:none;}
+  .se-fabric-empty p {font-size:11px;}
+  .se-preview-dock {padding:8px;}
+  .se-preview-header {font-size:11px; padding:0;}
+  .se-preview-dock .se-drape-icon {width:29px; height:32px;}
+  .se-preview-dock .se-drape-controls {right:6px; bottom:8px;}
+  .se-expanded-3d .se-main-pattern {right:190px; top:46px;}
+  .se-pattern-tools {left:8px; bottom:14px;}
+  .se-pattern-options {right:6px; top:4px;}
+  .se-color-swatches {gap:5px;}
+  .se-color-swatches button {width:23px; height:23px;}
+}
+@media(max-width:480px) {
+  .se-studio-stage {display:grid; grid-template-columns:minmax(0,1fr); grid-template-rows:44px minmax(180px,1fr) minmax(190px,36%); grid-template-areas:'toolbar' 'pattern' 'preview';}
+  .se-studio-inspector {position:absolute; top:44px; bottom:0; right:0; width:min(280px,85vw); z-index:5; box-shadow:-8px 0 20px #18345212; display:none;}
+  .se-studio-inspector:has(.se-fabric-panel:not(.is-empty)) {display:block;}
+  .se-preview-dock {border:0; padding:0 8px 8px;}
+  .se-preview-header {position:absolute; top:6px; left:18px; right:18px; z-index:3;}
+  .se-preview-dock .se-drape-body-note {top:35px;}
+  .se-preview-dock .se-drape-state-label {left:auto; right:48px; top:12px;}
+  .se-expanded-3d {grid-template-areas:'toolbar' 'preview' 'preview';}
+  .se-expanded-3d .se-main-pattern {right:0;}
+  .se-expanded-3d .se-preview-header {bottom:auto; left:auto; top:8px;}
+}
+@media(prefers-reduced-motion:reduce) {.se-studio *, .se-studio *:before {scroll-behavior:auto!important; animation-duration:.01ms!important; transition-duration:.01ms!important;}}

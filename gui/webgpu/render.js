@@ -1,5 +1,5 @@
 import {buffer} from './physics.js?v=17';
-import {cameraControls} from './camera.js?v=14';
+import {cameraControls,framingScale} from './camera.js?v=15';
 import {Buttons} from './buttons.js?v=3';
 
 function normalize(v){const l=Math.hypot(...v)||1;return v.map(x=>x/l);}
@@ -94,7 +94,9 @@ export class Renderer {
   this.dirty=false;
   const c=this.canvas,pixel=Math.min(devicePixelRatio,2),w=Math.max(1,Math.round(c.clientWidth*pixel)),h=Math.max(1,Math.round(c.clientHeight*pixel));
   if(c.width!==w||c.height!==h||!this.depth){c.width=w;c.height=h;this.depth?.destroy();this.depth=this.device.createTexture({size:[w,h],format:'depth24plus',usage:GPUTextureUsage.RENDER_ATTACHMENT});}
-  const v=this.camera,r=v.distance,eye=[v.target[0]+r*Math.sin(v.yaw)*Math.cos(v.pitch),v.target[1]+r*Math.sin(v.pitch),v.target[2]+r*Math.cos(v.yaw)*Math.cos(v.pitch)];
+  // Preserve the whole mannequin in the narrow inspector dock; expanding the
+  // same canvas keeps the user's camera distance and pan unchanged.
+  const v=this.camera,r=v.distance*framingScale(w,h),eye=[v.target[0]+r*Math.sin(v.yaw)*Math.cos(v.pitch),v.target[1]+r*Math.sin(v.pitch),v.target[2]+r*Math.cos(v.yaw)*Math.cos(v.pitch)];
   const mvp=cameraMatrix(eye,v.target,w/h,v.pan);
   for(const view of [this.clothView,this.bodyView]){const a=new Float32Array(32);a.set(mvp);a.set([...eye,1],16);a.set(view.color,20);a.set(view===this.bodyView?this.cloth.motion.uniform():[1,0,1,0,0,0,0,0],24);this.device.queue.writeBuffer(view.buffer,0,a);}
   const pass=encoder.beginRenderPass({colorAttachments:[{view:this.context.getCurrentTexture().createView(),clearValue:{r:.91,g:.94,b:.96,a:1},loadOp:'clear',storeOp:'store'}],depthStencilAttachment:{view:this.depth.createView(),depthClearValue:1,depthLoadOp:'clear',depthStoreOp:'store'},...(querySet?{timestampWrites:{querySet,beginningOfPassWriteIndex:2,endOfPassWriteIndex:3}}:{})});

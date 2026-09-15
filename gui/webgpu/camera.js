@@ -1,12 +1,15 @@
 // Pan the framing separately from the mannequin's fixed rotation pivot.
-export function panCamera(camera,dx,dy,height) {
-  const scale=2*camera.distance*Math.tan(35*Math.PI/360)/Math.max(1,height);
+export function framingScale(width=Infinity,height=1) {
+  return Math.max(1,.72*height/Math.max(1,width));
+}
+export function panCamera(camera,dx,dy,height,width=Infinity) {
+  const scale=2*camera.distance*framingScale(width,height)*Math.tan(35*Math.PI/360)/Math.max(1,height);
   camera.pan??=[0,0];camera.pan[0]+=dx*scale;camera.pan[1]-=dy*scale;
 }
 export function cameraControls(camera,canvas,changed,motion=null) {
   const abort=new AbortController(),opts={signal:abort.signal},pointers=new Map();
   const controls={destroy:()=>abort.abort()};
-  const pan=(dx,dy)=>panCamera(camera,dx,dy,canvas.clientHeight);
+  const pan=(dx,dy)=>panCamera(camera,dx,dy,canvas.clientHeight,canvas.clientWidth);
   const zoom=ratio=>{camera.distance=Math.max(.3,Math.min(10,camera.distance*ratio));};
   const rotate=(dx,dy)=>{
     if(motion&&!controls.viewOnly)motion.turn(dx*.008);else camera.yaw-=dx*.008;

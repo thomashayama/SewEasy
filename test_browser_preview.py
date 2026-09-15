@@ -10,7 +10,7 @@ from tempfile import TemporaryDirectory
 from threading import Event
 from types import SimpleNamespace
 import unittest
-from unittest.mock import patch
+from unittest.mock import patch, Mock
 
 from gui.callbacks import GUIState
 from gui.browser_drape import snapshot_scene
@@ -25,6 +25,18 @@ class Preview:
         self.props.update(props)
         if props.get('scene_url'):
             self.loaded.append(props['scene_url'])
+
+
+class DesignControlSyncTest(unittest.TestCase):
+    def test_loading_control_values_does_not_enqueue_duplicate_drafts(self):
+        state = GUIState.__new__(GUIState)
+        state.update_pattern_ui_state = Mock(return_value='draft requested')
+        params = {'upper': {'v': 'Pants'}, 'length': {'v': .9}}
+        for key in params:
+            self.assertIsNone(state.design_param_change(params, key, params[key]['v']))
+        state.update_pattern_ui_state.assert_not_called()
+        self.assertEqual(state.design_param_change(params, 'length', .8), 'draft requested')
+        state.update_pattern_ui_state.assert_called_once_with(params, 'length', .8)
 
 
 class BrowserPreviewTest(unittest.IsolatedAsyncioTestCase):

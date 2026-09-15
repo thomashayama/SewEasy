@@ -1,5 +1,5 @@
 import {Cloth} from '/webgpu/physics.js?v=17';
-import {Renderer} from '/webgpu/render.js?v=18';
+import {Renderer} from '/webgpu/render.js?v=20';
 
 // GPU objects live outside Vue's reactive graph. Each mounted stage owns one
 // device and one loop; a serialized loader discards obsolete scene requests.
@@ -11,7 +11,9 @@ const WARMUP_SECONDS=6;
 
 export default {
   template: `<div class="se-browser-drape" :data-state="state" :data-scene="loadedScene" :data-frames="frames">
-    <canvas ref="canvas" aria-label="Interactive 3D garment" :style="{visibility: ready && !preparing && !error ? 'visible' : 'hidden', cursor: 'grab'}"></canvas>
+    <canvas ref="canvas" aria-label="Interactive 3D garment" :style="{visibility: ready && !preparing && !error ? 'visible' : 'hidden', cursor: 'grab'}"
+      @pointerdown="wake" @pointermove="$event.buttons && wake()" @wheel="wake" @keydown="wake"></canvas>
+    <span v-if="ready && !preparing && !error && !failure" class="se-drape-state-label" role="status">{{paused?'Paused':active?'Live drape':warmed?'3D ready':'Settling…'}}</span>
     <div v-if="!ready || preparing || error || failure" class="se-drape-message" role="status">
       <div v-if="!(error || failure) && (preparing || scene_url)" class="se-drape-loader"></div>
       <strong>{{ error || failure || (preparing ? 'Preparing your pattern for 3D…' : progress) }}</strong>
@@ -36,6 +38,7 @@ export default {
         <div class="se-drape-menu">
           <span class="se-drape-live" role="status">{{ paused ? 'Paused' : 'Live drape · ' + fps + ' fps' }}</span>
           <button @click="front">Front view</button>
+          <label><input type="checkbox" :checked="show_body" @change="$emit('show-body',{value:$event.target.checked})"> Show mannequin</label>
           <button v-if="hasButtons" @click="toggleButtons">{{buttonsClosed ? 'Unbutton shirt' : 'Button shirt'}}</button>
           <label v-if="hasSupport"><input type="checkbox" v-model="support" @change="setSupport"> Hold neckline <small>(fitting aid)</small></label>
           <small>{{paused ? 'Drag to inspect the paused drape' : 'Drag left / right to turn the mannequin'}}<br>Drag up / down to change view<br>Shift-drag or right-drag to pan · Scroll to zoom<br>Touch: two fingers to pan or pinch to zoom</small>
@@ -52,7 +55,7 @@ export default {
       </div>
     </details>
   </div>`,
-  props: {scene_url:String, active:Boolean, preparing:Boolean, error:String,
+  props: {scene_url:String, active:Boolean, docked:Boolean, preparing:Boolean, error:String,
     fabric_color:String, panel_colors:Object, panel_fabrics:Object, body_color:String, show_body:Boolean},
   data: () => ({ready:false, warmed:false, progress:'Choose a garment to preview.', failure:'', paused:false,
     fps:0, frames:0, loadedScene:'', hasSupport:false, support:false,
@@ -73,7 +76,7 @@ export default {
   watch: {
     scene_url() {const e=engines.get(this); if(e){e.generation++; e.abort?.abort(); this.load();}},
     active() {const e=engines.get(this);if(e?.cloth)this.frames=e.cloth.frame;if(e){e.last=null;e.stats=performance.now();e.count=0;if(e.renderer)e.renderer.dirty=true;}this.load();},
-    paused() {const e=engines.get(this);if(e?.cloth)this.frames=e.cloth.frame;if(e?.renderer)e.renderer.controls.viewOnly=this.paused;if(e){e.last=null;e.stats=performance.now();e.count=0;}},
+    paused() {const e=engines.get(this);if(e?.cloth)this.frames=e.cloth.frame;if(e?.renderer)e.renderer.controls.viewOnly=this.paused;if(e){e.last=null;e.stats=performance.now();e.count=0;}if(!this.paused)this.wake();},
     fabric_color() {this.appearance();},
     panel_colors: {deep:true, handler() {this.appearance();}},
     panel_fabrics: {deep:true, handler() {this.appearance();}},
@@ -152,7 +155,7 @@ export default {
           }
           // Draw once when warmed (or appearance changes); intermediate hidden
           // steps only need compute. The final canvas is ready before switching.
-          if(visible || e.renderer.dirty || this.warmed)e.renderer.render(encoder);
+          if(visible || this.docked || e.renderer.dirty || this.warmed)e.renderer.render(encoder);
           e.device.queue.submit([encoder.finish()]);
           if(now-(e.stats||0)>500){this.frames=e.cloth.frame;this.fps=Math.round((e.count||0)*1000/(now-(e.stats||0)));e.stats=now;e.count=0;}
           await e.device.queue.onSubmittedWorkDone();
@@ -167,11 +170,12 @@ export default {
       e.renderer.bodyView.color=[...linear(this.body_color),0];
       e.renderer.showBody=this.show_body;e.renderer.dirty=true;
     },
+    wake() {const e=engines.get(this);if(e?.cloth && !this.paused && !this.active){e.warmupRemaining=Math.max(e.warmupRemaining,1.2);this.warmed=false;}},
     reset() {const e=engines.get(this);e.cloth?.reset();e.last=null;e.warmupRemaining=WARMUP_SECONDS;this.warmed=false;this.frames=0;this.paused=false;this.buttonsClosed=true;},
-    front() {const e=engines.get(this);if(!this.paused)e.cloth.motion.front();e.renderer.camera.yaw=this.paused?e.cloth.motion.yaw:0;e.renderer.camera.pitch=0;e.renderer.dirty=true;},
+    front() {this.wake();const e=engines.get(this);if(!this.paused)e.cloth.motion.front();e.renderer.camera.yaw=this.paused?e.cloth.motion.yaw:0;e.renderer.camera.pitch=0;e.renderer.dirty=true;},
     center() {const e=engines.get(this);Object.assign(e.renderer.camera,{...e.defaultCamera,target:[...e.defaultCamera.target],pan:[0,0]});e.renderer.dirty=true;},
     setSupport() {engines.get(this).cloth.settings.holdNeckline=this.support;},
-    toggleButtons() {const e=engines.get(this);this.buttonsClosed=!this.buttonsClosed;e.cloth.scene.buttons.forEach((_,i)=>e.cloth.setButton(i,this.buttonsClosed));this.paused=false;},
+    toggleButtons() {const e=engines.get(this);this.buttonsClosed=!this.buttonsClosed;e.cloth.scene.buttons.forEach((_,i)=>e.cloth.setButton(i,this.buttonsClosed));this.paused=false;this.wake();},
     retry() {const e=engines.get(this);e.url='';this.failure='';if(this.error)this.$emit('retry');else this.load();},
   },
 };

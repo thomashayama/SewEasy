@@ -128,3 +128,21 @@ test('a material or design revision warms again while still in 2D',async()=>{
   await s.instance.tick(1000);assert.deepEqual(s.elapsed,[1/30]);
   s.component.beforeUnmount.call(s.instance);
 });
+
+test('interacting with the dock wakes physics, settles again and respects explicit Pause',async()=>{
+  let requests=0;
+  const s=setup({fetch:async()=>{requests++;return {ok:true,json:async()=>({name:'dock'})};}});
+  s.instance.active=false;s.instance.docked=true;
+  s.component.mounted.call(s.instance);await until(()=>s.instance.ready);
+  let now=1000;
+  while(!s.instance.warmed){await s.instance.tick(now);now+=34;}
+  const before=s.elapsed.length;
+  s.instance.wake();assert.equal(s.instance.warmed,false);
+  while(!s.instance.warmed){await s.instance.tick(now);now+=34;}
+  assert.equal(s.elapsed.length,before+36);
+  await s.instance.tick(now+1000);assert.equal(s.elapsed.length,before+36);
+  s.instance.paused=true;s.component.watch.paused.call(s.instance);s.instance.wake();
+  await s.instance.tick(now+2000);assert.equal(s.elapsed.length,before+36);
+  assert.equal(requests,1);assert.equal(s.renderers.length,1);
+  s.component.beforeUnmount.call(s.instance);
+});

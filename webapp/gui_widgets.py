@@ -157,7 +157,7 @@ def outfit_preview_svg(pattern_state):
     return None
 
 
-def auth_header_ui(state):
+def auth_header_ui(state, compact=False):
     """Header controls: sign-in button, or user identity (-> account page).
     `state` is the GUIState — both navigations stash the working design
     first, so signing in or visiting the account never discards it."""
@@ -180,9 +180,9 @@ def auth_header_ui(state):
                 ui.icon('account_circle').classes('text-3xl')
             ui.label(user.get('name') or user['email']).classes('text-white')
     elif config.google_configured():
-        ui.button('Sign in with Google',
+        ui.button('Sign in' if compact else 'Sign in with Google',
                   on_click=lambda: go('/auth/login')) \
-            .props('outline color=white no-caps icon=login')
+            .props('outline color=white no-caps icon=login').tooltip('Sign in with Google')
 
 
 def body_source_ui(state):

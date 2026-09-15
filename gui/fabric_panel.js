@@ -5,15 +5,15 @@ export function sharedValue(selection, field) {
 }
 
 export default {
-  template: `<aside v-if="open" class="se-fabric-panel" aria-label="Fabric settings" :aria-busy="busy">
-    <header><h2>Fabric</h2><button class="se-fabric-icon" aria-label="Close fabric settings" @click="$emit('close')">×</button></header>
+  template: `<aside v-if="open || docked" class="se-fabric-panel" :class="{'is-empty':!selection.length}" aria-label="Fabric settings" :aria-busy="busy">
+    <header><h2>{{selection.length ? selection.length===1 ? '1 section selected' : selection.length+' sections selected' : 'Fabric'}}</h2><button v-if="selection.length" class="se-fabric-icon" aria-label="Close fabric settings" @click="$emit('close')">×</button></header>
     <div class="se-fabric-scroll">
-      <div class="se-fabric-selection" aria-live="polite">
-        <h3>{{selection.length ? selection.length===1 ? '1 section selected' : selection.length+' sections selected' : 'Select a section'}}</h3>
-        <p v-if="!selection.length">Click a pattern piece to edit its fabric.</p>
-        <p>Drag empty space to select a group.<br>Shift/Ctrl adds to your selection.</p>
-        <div class="se-fabric-selection-actions"><button :disabled="!available" @click="$emit('select-all')">Select all</button><button v-if="selection.length" @click="$emit('clear')">Clear selection</button></div>
-        <ul v-if="selection.length" class="se-fabric-pieces"><li v-for="p in selection" :key="p.id">{{p.label}}</li></ul>
+      <div v-if="!selection.length" class="se-fabric-empty">
+        <svg viewBox="0 0 44 44" aria-hidden="true"><path d="M8 6h19v7h9v25H8Z"/><path d="m17 18 14 8-7 2-3 7Z"/></svg>
+        <h3>Make it your fabric</h3>
+        <p>Select a pattern piece to choose its fabric, color and print.</p>
+        <p>Drag a box to select a group.<br>Hold Shift or Ctrl to add pieces.</p>
+        <button :disabled="!available" class="se-select-all" @click="$emit('select-all')">Select all pieces</button>
       </div>
       <fieldset v-if="selection.length" :disabled="busy">
         <label class="se-fabric-field se-fabric-material">Fabric type
@@ -25,10 +25,10 @@ export default {
           </select>
           <small>{{materialDescription}}</small>
         </label>
-        <label class="se-fabric-field se-fabric-stiffness">Bending stiffness
-          <input type="number" aria-label="Bending stiffness" min="0.5" max="30" step="0.5" :placeholder="shared('stiffness')===null?'Mixed':''" :value="shared('stiffness')??''" @input="number('stiffness',$event)" @blur="restoreInvalid('stiffness',$event)">
-          <small>Higher values hold their shape more.<br>Presets approximate drape; adjust to suit your fabric.</small>
-        </label>
+        <div class="se-color-swatches" aria-label="Fabric colors">
+          <button v-for="swatch in swatches" :key="swatch.color" :style="{'--swatch':swatch.color}" :aria-label="swatch.name+' fabric'"
+            :aria-pressed="shared('bg')===swatch.color" :title="swatch.name" @click="edit('bg',swatch.color)"></button>
+        </div>
         <label class="se-fabric-field">Pattern
           <select aria-label="Fabric pattern" :value="shared('kind')??''" @change="edit('kind',$event.target.value)">
             <option v-if="shared('kind')===null" value="" disabled>Mixed patterns</option>
@@ -45,13 +45,24 @@ export default {
         <label v-if="shared('kind')!=='plain'" class="se-fabric-field">Pattern spacing <span class="se-fabric-unit">cm</span>
           <input type="number" aria-label="Pattern spacing" min="0.2" max="4" step="0.1" :placeholder="shared('scale')===null?'Mixed':''" :value="shared('scale')??''" @input="number('scale',$event)" @blur="restoreInvalid('scale',$event)">
         </label>
-        <button class="se-fabric-reset" @click="edit('reset')">Reset fabric, color & print</button>
+        <details class="se-fabric-drape"><summary>Drape</summary>
+          <label class="se-fabric-field se-fabric-stiffness">Bending stiffness
+            <input type="number" aria-label="Bending stiffness" min="0.5" max="30" step="0.5" :placeholder="shared('stiffness')===null?'Mixed':''" :value="shared('stiffness')??''" @input="number('stiffness',$event)" @blur="restoreInvalid('stiffness',$event)">
+            <small>Higher values hold their shape more. Presets approximate drape.</small>
+          </label>
+        </details>
+        <details class="se-fabric-selection"><summary>Selected pieces ({{selection.length}})</summary>
+          <ul class="se-fabric-pieces"><li v-for="p in selection" :key="p.id">{{p.label}}</li></ul>
+          <div class="se-fabric-selection-actions"><button :disabled="!available" @click="$emit('select-all')">Select all</button><button @click="$emit('clear')">Clear selection</button></div>
+        </details>
+        <button class="se-fabric-reset" @click="edit('reset')">Reset fabric settings</button>
       </fieldset>
     </div>
-    <footer v-if="selection.length" role="status">{{busy?'Applying fabric…':'Changes apply to all selected sections'}}</footer>
+    <footer v-if="selection.length" role="status">{{busy?'Applying fabric…':'Applied to all selected pieces'}}</footer>
   </aside>`,
-  props: {selection:Array, open:Boolean, available:Number, busy:Boolean, materials:Array},
-  data: () => ({pending:{}}),
+  props: {selection:Array, open:Boolean, docked:Boolean, available:Number, busy:Boolean, materials:Array},
+  data: () => ({pending:{}, swatches:[{name:'Oxford blue',color:'#b7cde5'},{name:'White',color:'#f8fafc'},
+    {name:'Silver',color:'#bfc6cf'},{name:'Rose',color:'#deb5c0'},{name:'Navy',color:'#263f5d'}]}),
   beforeUnmount() {Object.values(this.pending).forEach(p=>clearTimeout(p.timer));},
   computed: {
     colorFields() {return this.shared('kind')==='plain' ? [{key:'bg',label:'Fabric color'}] : [{key:'bg',label:'Base color'},{key:'fg',label:'Print color'}];},
