@@ -77,3 +77,20 @@ class Wardrobe:
         library = self.read()
         library['outfits'] = [o for o in library['outfits'] if o['id'] != outfit_id]
         self._write(library)
+
+    def save_thumbnail(self, key, image):
+        from webapp.garment_catalog import standard_garments
+        from webapp.thumbnail_cache import normalize_image, thumbnail_key
+        library = self.read()
+        targets = [[g] for g in library['garments'] + standard_garments()]
+        targets.extend(o['garments'] for o in library['outfits'])
+        owned_keys = {thumbnail_key(items) for items in targets}
+        if key not in owned_keys:
+            raise ValueError('This thumbnail no longer matches an item in your library.')
+        normalized = normalize_image(image)
+        # Keep images separate from garment snapshots, so saving a preview does
+        # not create a design revision or alter an outfit's pinned versions.
+        library['thumbnails'] = {k: v for k, v in library.get('thumbnails', {}).items() if k in owned_keys}
+        library['thumbnails'][key] = normalized
+        self._write(library)
+        return normalized

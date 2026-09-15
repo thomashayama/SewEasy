@@ -63,7 +63,7 @@ export class Renderer {
  constructor(device,canvas,cloth,format){
   this.device=device;this.canvas=canvas;this.cloth=cloth;this.format=format;this.dirty=true;
   this.resizeObserver=new ResizeObserver(()=>this.dirty=true);this.resizeObserver.observe(canvas);
-  this.context=canvas.getContext('webgpu');this.context.configure({device,format,alphaMode:'opaque'});
+  this.context=canvas.getContext('webgpu');this.context.configure({device,format,alphaMode:'opaque',usage:GPUTextureUsage.RENDER_ATTACHMENT|GPUTextureUsage.COPY_SRC});
   this.camera={yaw:0,pitch:0,distance:2.3,target:[0,1.2,0],pan:[0,0]};this.buffers=[];this.showBody=true;
   this.clothColors=buffer(device,new Float32Array(cloth.n*4).fill(1),GPUBufferUsage.STORAGE);
   this.bodyColors=buffer(device,new Float32Array(cloth.scene.body_vertices.length*4).fill(1),GPUBufferUsage.STORAGE);
@@ -92,7 +92,7 @@ export class Renderer {
  }
  render(encoder,querySet=null){
   this.dirty=false;
-  const c=this.canvas,pixel=Math.min(devicePixelRatio,2),w=Math.max(1,Math.round(c.clientWidth*pixel)),h=Math.max(1,Math.round(c.clientHeight*pixel));
+  const c=this.canvas,pixel=this.pixelRatio ?? Math.min(devicePixelRatio,2),w=Math.max(1,Math.round(c.clientWidth*pixel)),h=Math.max(1,Math.round(c.clientHeight*pixel));
   if(c.width!==w||c.height!==h||!this.depth){c.width=w;c.height=h;this.depth?.destroy();this.depth=this.device.createTexture({size:[w,h],format:'depth24plus',usage:GPUTextureUsage.RENDER_ATTACHMENT});}
   // Preserve the whole mannequin in the narrow inspector dock; expanding the
   // same canvas keeps the user's camera distance and pan unchanged.
@@ -121,6 +121,25 @@ export class Renderer {
    data.set([Math.max(0,kinds.indexOf(spec.kind)),Math.max(.01,Number(spec.scale)||1)*.01,0,0,...linear(spec.fg),0,...linear(spec.bg),0],i*12);
   }
   this.device.queue.writeBuffer(this.fabricData,0,data);this.dirty=true;
+ }
+ async capture(){
+  // Copy the rendered texture before presentation clears a WebGPU canvas.
+  // Reading back the framebuffer avoids blank images from toDataURL races.
+  const encoder=this.device.createCommandEncoder();this.render(encoder);
+  const w=this.canvas.width,h=this.canvas.height,stride=Math.ceil(w*4/256)*256;
+  const readback=this.device.createBuffer({size:stride*h,usage:GPUBufferUsage.COPY_DST|GPUBufferUsage.MAP_READ});
+  try{
+   encoder.copyTextureToBuffer({texture:this.context.getCurrentTexture()},{buffer:readback,bytesPerRow:stride},[w,h]);
+   this.device.queue.submit([encoder.finish()]);await readback.mapAsync(GPUMapMode.READ);
+   const raw=new Uint8Array(readback.getMappedRange()),pixels=new Uint8ClampedArray(w*h*4),bgra=this.format.startsWith('bgra');
+   for(let y=0;y<h;y++)for(let x=0;x<w;x++){
+    const src=y*stride+x*4,dst=(y*w+x)*4;
+    pixels[dst]=raw[src+(bgra?2:0)];pixels[dst+1]=raw[src+1];pixels[dst+2]=raw[src+(bgra?0:2)];pixels[dst+3]=255;
+   }
+   const canvas=document.createElement('canvas');canvas.width=w;canvas.height=h;
+   canvas.getContext('2d').putImageData(new ImageData(pixels,w,h),0,0);
+   return canvas.toDataURL('image/webp',.88);
+  }finally{readback.unmap();readback.destroy();}
  }
  destroy(){this.controls.destroy();this.resizeObserver.disconnect();this.depth?.destroy();this.buttons.destroy();for(const b of this.buffers)b.destroy();}
 }

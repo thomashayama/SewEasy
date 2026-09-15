@@ -4,11 +4,13 @@ import json
 from nicegui import app, ui
 
 from webapp.wardrobe import Wardrobe
-from webapp.garment_catalog import STARTERS, garment_title, starter_item, thumbnail
+from webapp.garment_catalog import STARTERS, garment_title, starter_item
+from webapp.thumbnail_ui import ThumbnailQueue
 
 
 def wardrobe_ui(state):
     store = Wardrobe(state.user['email'] if state.user else None, app.storage.user)
+    previews = ThumbnailQueue(store)
     pattern = state.pattern_state
     selected = []
     saved_signature = None
@@ -49,7 +51,7 @@ def wardrobe_ui(state):
                 with ui.element('div').classes('se-garment-row' + (' is-active' if active else '')):
                     with ui.button(on_click=lambda _, i=index: edit_item(i)).props(
                             f'flat no-caps aria-label="Edit garment {index + 1}"').classes('se-garment-card'):
-                        ui.html(thumbnail(item)).classes('se-garment-thumb')
+                        previews.visual([item], 'se-garment-thumb')
                         with ui.column().classes('se-garment-caption'):
                             ui.label(item['name']).classes('se-garment-name')
                             ui.label(f'Version {item["version"]}' if item.get('version') else 'Working draft').classes('se-garment-version')
@@ -100,6 +102,7 @@ def wardrobe_ui(state):
         else:
             await apply([version])
         refresh_studio()
+        previews.enqueue_library()
         ui.notify(f'Saved {label(version)}', type='positive')
         save_dialog.close()
 
@@ -174,6 +177,7 @@ def wardrobe_ui(state):
         state._outfit_name = outfit['name']
         saved_signature = signature()
         refresh_studio()
+        previews.enqueue_library()
         ui.notify(f'Saved outfit “{outfit["name"]}”', type='positive')
         outfit_dialog.close()
         return True

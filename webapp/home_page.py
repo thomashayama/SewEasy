@@ -1,4 +1,4 @@
-"""Wardrobe home. Browse saved snapshots without drafting or starting WebGPU."""
+"""Wardrobe home with cached renders and a background queue for missing thumbnails."""
 from pathlib import Path
 
 from fastapi import Request
@@ -7,7 +7,8 @@ from nicegui import app, ui
 from gui import theme
 from webapp import auth, config
 from webapp.wardrobe import Wardrobe
-from webapp.garment_catalog import draft_items, library_matches, standard_garments, starter_item, studio_snapshot, thumbnail
+from webapp.garment_catalog import draft_items, library_matches, standard_garments, starter_item, studio_snapshot
+from webapp.thumbnail_ui import ThumbnailQueue
 
 
 @ui.page('/', title='SewEasy — Your wardrobe')
@@ -15,6 +16,7 @@ def home_page(request: Request):
     user = auth.current_user(request)
     storage = app.storage.user
     store = Wardrobe(user['email'] if user else None, storage)
+    previews = ThumbnailQueue(store)
     ui.add_head_html(theme.HEAD_HTML)
     ui.add_css(Path(__file__).with_name('home.css').read_text(encoding='utf-8'))
     ui.colors(primary='#447cad')
@@ -37,10 +39,7 @@ def home_page(request: Request):
 
     def illustrations(items, classes=''):
         with ui.element('div').classes('se-home-flats ' + classes):
-            for item in items[:3]:
-                ui.html(thumbnail(item))
-            if len(items) > 3:
-                ui.label(f'+{len(items)-3}').classes('se-home-more')
+            previews.visual(items)
 
     def standard_cards():
         with ui.element('div').classes('se-library-grid'):
@@ -170,3 +169,4 @@ def home_page(request: Request):
             with ui.element('footer').classes('se-home-footer'):
                 ui.label('Saved to your account.' if user else 'Your saves stay in this browser on this installation.')
                 ui.link('Built on GarmentCode', 'https://github.com/maria-korosteleva/GarmentCode', new_tab=True)
+    previews.enqueue_library(standards=True)

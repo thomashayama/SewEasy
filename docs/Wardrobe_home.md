@@ -25,9 +25,10 @@ Home provides:
 Signed-in libraries continue to use `WardrobeLibrary`; guests use NiceGUI's
 browser-specific user storage. Home uses the same `Wardrobe` service as the
 studio and introduces no new database tables. Saved snapshots are copied before
-editing. The garment flats are illustrations using the saved base color and print,
-not simulated fits or detailed representations of individual panel overrides.
-Home neither drafts a pattern nor creates a WebGPU renderer.
+editing. Library cards use saved WebP renders on the default mannequin, including
+the saved panel colors, prints, stiffness, and all pieces of an outfit together.
+The six standard images are bundled, so a fresh library displays them immediately.
+See `Thumbnail_renders.md` for rendering, caching, and regeneration details.
 
 Garment design edits the active piece's fit and construction. The old Top/Bottom
 composition selectors are removed; waistband style stays within Waistband.
