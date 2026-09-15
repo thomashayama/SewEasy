@@ -49,6 +49,7 @@ if __name__ == '__main__':
             host=os.environ.get('HOST', '0.0.0.0'),
             port=int(os.environ.get('PORT', '8080')),
             reload=False,
+            dark=None,  # Follow the browser/operating-system appearance, including live changes.
             favicon='✂️',
             title='SewEasy',
             # Signs app.storage.user (used to carry the working design

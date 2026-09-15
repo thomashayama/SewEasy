@@ -1,5 +1,5 @@
 import {Cloth} from '/webgpu/physics.js?v=18';
-import {Renderer} from '/webgpu/render.js?v=20';
+import {Renderer} from '/webgpu/render.js?v=22';
 
 // GPU objects live outside Vue's reactive graph. Each mounted stage owns one
 // device and one loop; a serialized loader discards obsolete scene requests.
@@ -114,7 +114,7 @@ export default {
         cloth=await Cloth.create(e.device,scene,()=>{this.progress='Preparing cloth and mannequin in your browser…';});
         if(generation!==e.generation || e.disposed){cloth.destroy();cloth=null;return;}
         e.cloth=cloth;cloth=null;
-        e.renderer=new Renderer(e.device,this.$refs.canvas,e.cloth,navigator.gpu.getPreferredCanvasFormat());
+        e.renderer=new Renderer(e.device,this.$refs.canvas,e.cloth,navigator.gpu.getPreferredCanvasFormat(),{systemTheme:true});
         const height=scene.body_fit?.measurements?.height?.actual_cm/100 || 1.72;
         e.defaultCamera={yaw:0,pitch:0,distance:height*1.9,target:[...e.cloth.motion.center],pan:[0,0]};
         Object.assign(e.renderer.camera,{...(previousCamera || e.defaultCamera),target:[...e.defaultCamera.target],pan:[...(previousCamera?.pan||[0,0])]});

@@ -9,6 +9,7 @@ Tokens live here; gui/callbacks.py consumes them.
 """
 
 from argparse import Namespace
+from pathlib import Path
 
 colors = Namespace(
     # Brand: denim indigo family
@@ -24,7 +25,7 @@ colors = Namespace(
 )
 
 HEAD_HTML = """
-<script type="module" src="/webgpu/scrollbars.js?v=1"></script>
+<script type="module" src="/webgpu/scrollbars.js?v=2"></script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,600;12..96,700&family=Public+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -213,3 +214,5 @@ body {
 }
 </style>
 """
+
+HEAD_HTML += '<style>' + Path(__file__).with_name('appearance.css').read_text(encoding='utf-8') + '</style>'

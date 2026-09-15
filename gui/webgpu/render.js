@@ -1,6 +1,7 @@
 import {buffer} from './physics.js?v=18';
 import {cameraControls,framingScale} from './camera.js?v=15';
 import {Buttons} from './buttons.js?v=3';
+import {lightBackground,watchSystemBackground} from './appearance.js?v=1';
 
 function normalize(v){const l=Math.hypot(...v)||1;return v.map(x=>x/l);}
 function cross(a,b){return [a[1]*b[2]-a[2]*b[1],a[2]*b[0]-a[0]*b[2],a[0]*b[1]-a[1]*b[0]];}
@@ -60,8 +61,11 @@ fn turn(v:vec3<f32>)->vec3<f32>{let cs=view.angle.xy;return vec3<f32>(cs.x*v.x+c
  return vec4<f32>(pow(color*light+rim,vec3<f32>(1.0/2.2)),1);
 }`;
 export class Renderer {
- constructor(device,canvas,cloth,format){
+ constructor(device,canvas,cloth,format,{systemTheme=false}={}){
   this.device=device;this.canvas=canvas;this.cloth=cloth;this.format=format;this.dirty=true;
+  // Saved catalog images keep a consistent backdrop, independent of the OS.
+  this.background=lightBackground;
+  if(systemTheme)this.stopTheme=watchSystemBackground(color=>{this.background=color;this.dirty=true;});
   this.resizeObserver=new ResizeObserver(()=>this.dirty=true);this.resizeObserver.observe(canvas);
   this.context=canvas.getContext('webgpu');this.context.configure({device,format,alphaMode:'opaque',usage:GPUTextureUsage.RENDER_ATTACHMENT|GPUTextureUsage.COPY_SRC});
   this.camera={yaw:0,pitch:0,distance:2.3,target:[0,1.2,0],pan:[0,0]};this.buffers=[];this.showBody=true;
@@ -99,7 +103,7 @@ export class Renderer {
   const v=this.camera,r=v.distance*framingScale(w,h),eye=[v.target[0]+r*Math.sin(v.yaw)*Math.cos(v.pitch),v.target[1]+r*Math.sin(v.pitch),v.target[2]+r*Math.cos(v.yaw)*Math.cos(v.pitch)];
   const mvp=cameraMatrix(eye,v.target,w/h,v.pan);
   for(const view of [this.clothView,this.bodyView]){const a=new Float32Array(32);a.set(mvp);a.set([...eye,1],16);a.set(view.color,20);a.set(view===this.bodyView?this.cloth.motion.uniform():[1,0,1,0,0,0,0,0],24);this.device.queue.writeBuffer(view.buffer,0,a);}
-  const pass=encoder.beginRenderPass({colorAttachments:[{view:this.context.getCurrentTexture().createView(),clearValue:{r:.91,g:.94,b:.96,a:1},loadOp:'clear',storeOp:'store'}],depthStencilAttachment:{view:this.depth.createView(),depthClearValue:1,depthLoadOp:'clear',depthStoreOp:'store'},...(querySet?{timestampWrites:{querySet,beginningOfPassWriteIndex:2,endOfPassWriteIndex:3}}:{})});
+  const pass=encoder.beginRenderPass({colorAttachments:[{view:this.context.getCurrentTexture().createView(),clearValue:this.background,loadOp:'clear',storeOp:'store'}],depthStencilAttachment:{view:this.depth.createView(),depthClearValue:1,depthLoadOp:'clear',depthStoreOp:'store'},...(querySet?{timestampWrites:{querySet,beginningOfPassWriteIndex:2,endOfPassWriteIndex:3}}:{})});
   pass.setPipeline(this.pipeline);
   if(this.showBody){pass.setBindGroup(0,this.bodyBind);pass.setIndexBuffer(this.cloth.bodyFaces,'uint32');pass.drawIndexed(this.cloth.scene.body_faces.length*3);}
   pass.setBindGroup(0,this.clothBind);pass.setIndexBuffer(this.cloth.faces,'uint32');pass.drawIndexed(this.cloth.scene.faces.length*3);this.buttons.render(pass);pass.end();
@@ -141,5 +145,5 @@ export class Renderer {
    return canvas.toDataURL('image/webp',.88);
   }finally{readback.unmap();readback.destroy();}
  }
- destroy(){this.controls.destroy();this.resizeObserver.disconnect();this.depth?.destroy();this.buttons.destroy();for(const b of this.buffers)b.destroy();}
+ destroy(){this.stopTheme?.();this.controls.destroy();this.resizeObserver.disconnect();this.depth?.destroy();this.buttons.destroy();for(const b of this.buffers)b.destroy();}
 }

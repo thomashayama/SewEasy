@@ -98,7 +98,7 @@ async def account_page(request: Request):
     # --- Sidebar navigation ---
     nav_buttons = {}
     with ui.left_drawer(value=True, bordered=True) \
-            .classes('bg-[#fcfcfa] px-2 py-3').props('width=220 breakpoint=640'):
+            .classes('se-account-nav px-2 py-3').props('width=220 breakpoint=640'):
         for key, (icon, label) in SECTIONS.items():
             nav_buttons[key] = ui.button(
                 label, icon=icon,
@@ -131,7 +131,7 @@ async def account_page(request: Request):
         unsaved['dirty'] = False
         for key, btn in nav_buttons.items():
             btn.classes(replace='w-full justify-start rounded-lg'
-                        + (' bg-[#e5ebf4] text-[#35558a] font-medium'
+                        + (' se-account-nav-active font-medium'
                            if key == section else ''))
         content.clear()
         with content:

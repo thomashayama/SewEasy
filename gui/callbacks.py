@@ -330,10 +330,6 @@ class GUIState:
         ui.space()
         with ui.column().classes('se-wardrobe-footer'):
             ui.button('Saved outfits', icon='folder_open', on_click=lambda: self.show_outfits()).props('flat')
-            with ui.button('Help & resources', icon='help_outline').props('flat size=sm'):
-                with ui.menu():
-                    ui.menu_item('About GarmentCode', lambda: ui.navigate.to('https://igl.ethz.ch/projects/garmentcode/', new_tab=True))
-                    ui.menu_item('Source on GitHub', lambda: ui.navigate.to('https://github.com/thomashayama/SewEasy', new_tab=True))
             ui.link('Built on GarmentCode', 'https://github.com/maria-korosteleva/GarmentCode', new_tab=True) \
                 .classes('se-attribution')
 

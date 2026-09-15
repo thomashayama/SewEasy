@@ -1,0 +1,88 @@
+/* Keep the first paint and native controls in sync with Quasar's system mode. */
+:root {color-scheme:light dark;}
+.se-account-nav {background:#fcfcfa;}
+.se-account-nav-active {background:#e5ebf4; color:#35558a;}
+@media (prefers-color-scheme:dark) {
+ :root {
+  color-scheme:dark;
+  --se-paper:#141c24; --se-surface:#1c2630; --se-raised:#24323f;
+  --se-graphite:#e7edf2; --se-navy:#e7edf2; --se-muted:#9caebb;
+  --se-indigo:#91bfe3; --se-chalkline:#354653; --se-cream:#202d38;
+  --se-canvas:#16222d; --se-selected:#293f53;
+  --se-scroll-active:#9caebb80; --se-scroll-hover:#bdcfddb3;
+  --home-ink:var(--se-graphite); --home-muted:var(--se-muted); --home-line:var(--se-chalkline);
+ }
+ body {background:var(--se-paper)!important; color:var(--se-graphite);}
+ body :is(.q-card,.q-menu,.q-dialog__inner>.q-card,.q-drawer,.se-stitch-card) {background:var(--se-surface); color:var(--se-graphite);}
+ body :is(.q-separator,.q-field--outlined .q-field__control:before) {border-color:var(--se-chalkline);}
+ body .q-separator {background:var(--se-chalkline);}
+ body :is(.text-primary,.text-grey-9) {color:var(--se-indigo)!important;}
+ body :is(.text-stone-600,.text-gray-500,.text-grey-7,.text-gray-600) {color:var(--se-muted)!important;}
+ body :is(.q-field__label,.q-field__marginal,.q-field__messages) {color:var(--se-muted);}
+ body :is(.q-field__native,.q-field__input,.q-field--dark .q-field__native) {color:var(--se-graphite);}
+ body .q-field--highlighted .q-field__control {color:var(--se-indigo);}
+ body .q-item--active {color:var(--se-indigo);}
+ body :is(.se-warning-chip) {color:#edce7a; background:#3b3320; border-color:#807047;}
+ body .se-overlay-chip {background:#24323fee;}
+ body :is(button,a,input,summary):focus-visible {outline-color:var(--se-indigo);}
+
+ /* Wardrobe: lit product photographs retain their original fabric colors. */
+ body .se-home {--home-ink:var(--se-graphite); --home-muted:var(--se-muted); --home-line:var(--se-chalkline); background:var(--se-paper);}
+ body .se-home-header {background:var(--se-surface);}
+ body :is(.se-home-logo,.se-library-card.q-btn,.se-new-outfit-dialog,.se-home .se-library-tab.q-tab--active) {color:var(--se-graphite);}
+ body :is(.se-home-header .q-btn,.se-library-search .q-field__control) {color:var(--se-indigo);}
+ body :is(.se-home .se-library-tab,.se-library-count,.se-home-more,.se-home-footer) {color:var(--se-muted);}
+ body :is(.se-home-resume,.se-library-first) {background:var(--se-surface); border-color:var(--se-chalkline);}
+ body .se-home-resume .q-btn {background:var(--se-raised);}
+ body :is(.se-library-art,.se-home-footer,.se-library-search .q-field__control:before) {border-color:var(--se-chalkline);}
+ body .se-library-tab .q-tab__indicator {background:var(--se-indigo);}
+
+ /* Studio tools and garment inspector. */
+ body .se-studio {--studio-line:var(--se-chalkline); --studio-muted:var(--se-muted); color:var(--se-graphite); background:var(--se-paper);}
+ body :is(.se-studio-header,.se-studio-inspector,.se-studio-inspector .se-fabric-panel,.se-preview-dock,.se-pattern-tools) {background:var(--se-surface);}
+ body .se-wardrobe {background:var(--se-paper);}
+ body :is(.se-studio-header .se-wordmark,.se-design-garment-name) {color:var(--se-graphite);}
+ body :is(.se-studio-account .q-btn,.se-studio-account .text-white) {color:var(--se-indigo)!important;}
+ body .se-garment-row.is-active {background:var(--se-selected); border-color:#486782;}
+ body :is(.se-garment-version,.se-attribution,.se-pattern-options,.se-canvas-hint,.se-drape-status) {color:var(--se-muted);}
+ body .se-design-shortcut {background:#24323fee!important;}
+ body .se-view-toggle {background:#1c2630ee; border-color:var(--se-chalkline);}
+ body :is(.se-preview-header .q-btn,.se-preview-dock .se-drape-controls) {background:#24323fee;}
+ body :is(.se-design-dialog .se-stitch-card,.se-design-context) {border-color:var(--se-chalkline);}
+
+ /* Drafting paper stays dark; the printed fabric itself is never inverted. */
+ body :is(.se-main-pattern,.se-pattern-sheet .se-workspace,.se-expanded-3d .se-preview-dock) {background-color:var(--se-canvas);}
+ body .se-pattern-sheet .se-workspace {background-image:linear-gradient(#66839915 1px,transparent 1px),linear-gradient(90deg,#66839915 1px,transparent 1px),linear-gradient(#66839925 1px,transparent 1px),linear-gradient(90deg,#66839925 1px,transparent 1px);}
+ body .se-pattern-rulers rect {fill:var(--se-surface);}
+ body .se-pattern-rulers line {stroke:#617a8d;}
+ body .se-pattern-rulers text {fill:#adc2d2;}
+ body .se-piece-label {fill:#e7edf2; stroke:#16222d;}
+ body .se-pattern-canvas .se-pattern-piece {stroke:#9eafbd; stroke-width:.65;}
+ body .se-pattern-canvas .se-pattern-piece:hover {stroke:#91bfe3; fill:#91bfe326;}
+ body .se-studio .se-pattern-canvas .se-pattern-piece.is-selected {stroke:#91bfe3; fill:#91bfe326;}
+ body .se-pattern-marquee {stroke:#91bfe3; fill:#91bfe322;}
+ body .se-pattern-canvas .se-pattern-piece:focus-visible {stroke:#c4e1f8; stroke-width:3;}
+
+ body .se-fabric-panel {background:var(--se-surface); color:var(--se-graphite); border-color:var(--se-chalkline);}
+ body :is(.se-studio-inspector .se-fabric-field,.se-fabric-empty h3) {color:var(--se-graphite);}
+ body :is(.se-fabric-panel p,.se-fabric-panel small,.se-fabric-empty,.se-fabric-icon,.se-fabric-pieces,.se-fabric-unit) {color:var(--se-muted);}
+ body :is(.se-fabric-field>select,.se-fabric-field>input,.se-fabric-color,.se-select-all) {background:var(--se-raised); color:var(--se-graphite); border-color:var(--se-chalkline);}
+ body .se-fabric-color input[type=text] {color:var(--se-graphite);}
+ body :is(.se-fabric-panel footer,.se-studio-inspector .se-fabric-panel footer) {background:var(--se-paper); color:var(--se-muted); border-color:var(--se-chalkline);}
+ body :is(.se-fabric-drape,.se-fabric-selection,.se-fabric-custom,.se-fabric-stiffness,.se-fabric-panel fieldset) {border-color:var(--se-chalkline);}
+ body :is(.se-fabric-drape summary,.se-fabric-selection summary,.se-fabric-custom summary,.se-fabric-selection-actions button,.se-fabric-reset) {color:var(--se-indigo);}
+ body .se-color-swatches button {box-shadow:0 0 0 3px var(--se-surface); border-color:var(--se-chalkline);}
+ body .se-color-swatches button[aria-pressed=true] {outline-color:var(--se-indigo);}
+ body .se-fabric-empty svg {fill:var(--se-raised); stroke:var(--se-indigo);}
+
+ /* Live 3D overlays; the renderer switches only its background, not lighting. */
+ body .se-browser-drape {background:var(--se-paper); color:var(--se-graphite);}
+ body :is(.se-drape-controls,.se-drape-menu,.se-drape-fit-details,.se-drape-body-note summary,.se-drape-message button) {background:var(--se-raised); color:var(--se-graphite); border-color:var(--se-chalkline);}
+ body :is(.se-drape-menu button,.se-drape-menu label) {color:var(--se-graphite);}
+ body :is(.se-drape-message span,.se-drape-menu small,.se-drape-body-note) {color:var(--se-muted);}
+ body :is(.se-drape-controls button:hover,.se-drape-icon:hover,.se-drape-more[open]>summary,.se-drape-controls button[aria-pressed=true],.se-drape-message button:hover,.se-fabric-icon:hover) {background:var(--se-selected); color:var(--se-indigo);}
+ body :is(.se-drape-fit-details th,.se-drape-fit-details td) {border-color:var(--se-chalkline);}
+ body .se-drape-loader {border-color:var(--se-chalkline); border-top-color:var(--se-indigo);}
+ body .se-account-nav {background:var(--se-surface);}
+ body .se-account-nav-active {background:var(--se-selected); color:var(--se-indigo);}
+}
