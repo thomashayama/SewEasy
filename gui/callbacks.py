@@ -10,6 +10,7 @@ import numpy as np
 import shutil
 from pathlib import Path
 import time
+from copy import deepcopy
 
 from nicegui import ui, app, events, background_tasks
 
@@ -148,6 +149,12 @@ class GUIState:
 
     # --- Design persistence across navigation ---
 
+    def go_home(self):
+        if self.stash_pending_design():
+            ui.navigate.to('/')
+        else:
+            ui.notify('Could not keep the current draft. Save your outfit before leaving the studio.', type='negative')
+
     def stash_pending_design(self):
         """Snapshot the working design into the user's browser storage so
         a sign-in redirect or an account-page visit doesn't discard it"""
@@ -166,13 +173,15 @@ class GUIState:
                 'skin': self.body_color
                         if self.body_color != DEFAULT_BODY_COLOR else None,
             }
+            return True
         except Exception:
-            traceback.print_exc()   # never block navigation on a stash failure
+            traceback.print_exc()
+            return False
 
     def _restore_pending_design(self):
-        """One-shot restore of a stashed design (see stash_pending_design)"""
+        """Restore the current draft; retain it for Home and browser reloads."""
         try:
-            snapshot = app.storage.user.pop('pending_design', None)
+            snapshot = deepcopy(app.storage.user.get('pending_design'))
         except Exception:
             snapshot = None
         if not snapshot:
@@ -243,7 +252,8 @@ class GUIState:
                 with ui.row(wrap=False).classes('items-center gap-3 min-w-0'):
                     ui.button(icon='menu', on_click=self.toggle_wardrobe).props(
                         'flat round dense aria-label="Toggle outfit list"').classes('se-mobile-menu')
-                    ui.label('SewEasy').classes('se-wordmark')
+                    ui.button('SewEasy', on_click=self.go_home).props(
+                        'flat no-caps aria-label="SewEasy home"').classes('se-wordmark se-home-link').tooltip('Home')
                     self.ui_outfit_title = ui.button('Untitled outfit', on_click=lambda: self.show_outfits()) \
                         .props('flat icon-right=expand_more').classes('se-outfit-title')
                 with ui.row(wrap=False).classes('se-header-actions items-center gap-2'):

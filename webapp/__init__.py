@@ -13,3 +13,4 @@ def setup(app):
     init_db()
     auth.register(app)
     from webapp import account_page  # noqa: F401  -- registers @ui.page('/account')
+    from webapp import home_page  # noqa: F401 -- lightweight wardrobe at /

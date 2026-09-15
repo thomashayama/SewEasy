@@ -1,12 +1,10 @@
 """Garment-version library and outfit composer for signed-in and guest users."""
 from copy import deepcopy
 import json
-import re
-from pathlib import Path
-import yaml
 from nicegui import app, ui
 
 from webapp.wardrobe import Wardrobe
+from webapp.garment_catalog import garment_title, starter_item, thumbnail
 
 
 def wardrobe_ui(state):
@@ -16,13 +14,6 @@ def wardrobe_ui(state):
     saved_signature = None
     state._outfit_name = getattr(state, '_outfit_name', 'Untitled outfit')
 
-    def garment_title(params):
-        names = {'DressShirt': 'Dress shirt', 'FittedShirt': 'Fitted shirt', 'Shirt': 'Shirt',
-                 'ElementTubeTop': 'Tube top', 'Pants': 'Trousers', 'SkirtCircle': 'Circle skirt',
-                 'PencilSkirt': 'Pencil skirt'}
-        parts = [v.get('v') for k, v in params.get('meta', {}).items() if k != 'wb' and v.get('v')]
-        return ' + '.join(names.get(v, re.sub(r'(?<!^)(?=[A-Z])', ' ', v)) for v in parts) or 'New garment'
-
     def current_items():
         pattern.sync_outfit_garment()
         return deepcopy(pattern.outfit_items) if pattern.outfit_items else [dict(
@@ -31,22 +22,6 @@ def wardrobe_ui(state):
 
     def signature():
         return json.dumps(current_items(), sort_keys=True)
-
-    def thumbnail(item):
-        meta = item['params'].get('meta', {})
-        color = item.get('appearance', {}).get('fabric_color') or '#b7cde5'
-        if not re.fullmatch(r'#[0-9a-fA-F]{6}', color):
-            color = '#b7cde5'
-        if meta.get('upper', {}).get('v'):
-            outline = 'M24 12 15 16 5 37 16 42 22 31 21 68 51 68 50 31 56 42 67 37 57 16 48 12 42 20 36 24 30 20Z'
-            detail = 'M30 13 36 24 42 13M36 24V68M23 61H49'
-        elif meta.get('bottom', {}).get('v') == 'Pants':
-            outline = 'M22 12H50L55 70H40L36 35 32 70H17Z'
-            detail = 'M22 20H50M36 20V35'
-        else:
-            outline = 'M26 14H46L61 67Q36 74 11 67Z'
-            detail = 'M25 21H47M29 24 23 66M43 24 49 66'
-        return f'<svg viewBox="0 0 72 82" aria-hidden="true"><path d="{outline}" fill="{color}" stroke="#57728f" stroke-width="1.2"/><path d="{detail}" fill="none" stroke="#57728f" stroke-width=".8"/></svg>'
 
     async def edit_item(index):
         if pattern.outfit_items and index != pattern.active_garment:
@@ -62,6 +37,8 @@ def wardrobe_ui(state):
     def refresh_studio():
         if state.ui_outfit_list.client.id not in state.ui_outfit_list.client.instances:
             return
+        if not state._draft_pending and not state._draft_failed and not state._released:
+            state.stash_pending_design()
         items = current_items()
         state.ui_outfit_title.set_text(state._outfit_name)
         state.ui_draft_status.set_text('Saved' if saved_signature == signature() else 'Unsaved changes')
@@ -250,19 +227,10 @@ def wardrobe_ui(state):
         outfit_dialog.open()
 
     async def add_template(kind):
-        params = yaml.safe_load((Path(__file__).resolve().parents[1] / 'assets/design_params/default.yaml').read_text())['design']
-        for key in params['meta']:
-            params['meta'][key]['v'] = None
-        params['meta']['bottom' if kind in ('Pants', 'SkirtCircle') else 'upper']['v'] = kind
-        if kind in ('Pants', 'SkirtCircle'):
-            params['meta']['wb']['v'] = 'FittedWB'
-        if kind == 'Pants':
-            params['pants']['length']['v'] = .9
         items = current_items()
         if not any(v.get('v') for v in items[0]['params']['meta'].values()):
             items = []
-        items.append(dict(id='draft', name=garment_title(params), version=0, params=params,
-                          appearance=dict(fabric_color='#b7cde5' if kind != 'Pants' else '#414e62')))
+        items.append(starter_item(kind))
         add_dialog.close()
         await apply(items, len(items) - 1)
 

@@ -91,7 +91,7 @@ async def account_page(request: Request):
                 with ui.column().classes('gap-0.5'):
                     ui.label('SewEasy').classes('se-wordmark')
                     ui.label('account').classes('se-eyebrow')
-            ui.button('Back to studio', on_click=lambda: ui.navigate.to('/')) \
+            ui.button('Back to studio', on_click=lambda: ui.navigate.to('/studio')) \
                 .props('flat color=white no-caps icon=arrow_back')
         ui.element('div').classes('se-selvedge w-full')
 
@@ -792,4 +792,5 @@ async def account_page(request: Request):
         'shared': build_shared,
         'settings': build_settings,
     }
-    await show('account')
+    section = request.query_params.get('section', 'account')
+    await show(section if section in builders else 'account')

@@ -3,6 +3,7 @@
 .se-studio .q-btn {letter-spacing:0; border-radius:6px; font-size:13px;}
 .se-studio-header {height:58px; flex-shrink:0; padding:0 22px; display:flex; align-items:center; justify-content:space-between; gap:16px; border-bottom:1px solid var(--studio-line); background:#fff; z-index:5;}
 .se-studio-header .se-wordmark {font-size:27px; letter-spacing:-1px; color:#183b62;}
+.se-studio-header .se-home-link {padding:0; min-height:32px; line-height:1.1; font-weight:700;}
 .se-studio-header .se-outfit-title {margin-left:16px; padding-left:24px; border-left:1px solid var(--studio-line); border-radius:0; font-size:17px; font-weight:600; max-width:260px;}
 .se-outfit-title .q-btn__content {flex-wrap:nowrap; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
 .se-header-actions {flex-shrink:0;}
