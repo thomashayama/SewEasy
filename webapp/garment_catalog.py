@@ -13,9 +13,11 @@ import yaml
 
 STARTERS = (
     ('DressShirt', 'Dress shirt', 'Collar, buttons & cuffs', '#a6bfd7'),
-    ('Shirt', 'Everyday shirt', 'A relaxed, versatile layer', '#d2c8b9'),
-    ('Pants', 'Trousers', 'Shape the rise, leg & length', '#53677c'),
-    ('SkirtCircle', 'Circle skirt', 'Volume with a natural drape', '#aabcb2'),
+    ('Shirt', 'T-shirt', 'Crew neck & short sleeves', '#d2c8b9'),
+    ('ElementTubeTop', 'Tube top', 'Strapless, shaped at the waist', '#bcb0c9'),
+    ('Pants', 'Trousers', 'Full length with a fitted waistband', '#53677c'),
+    ('SkirtCircle', 'Circle skirt', 'Flared with a fitted waistband', '#aabcb2'),
+    ('PencilSkirt', 'Pencil skirt', 'Straight silhouette & back slit', '#b7bec7'),
 )
 
 
@@ -40,13 +42,26 @@ def starter_item(kind):
     params = deepcopy(_defaults())
     for value in params['meta'].values():
         value['v'] = None
-    params['meta']['bottom' if kind in ('Pants', 'SkirtCircle') else 'upper']['v'] = kind
-    if kind in ('Pants', 'SkirtCircle'):
+    params['meta']['bottom' if kind in ('Pants', 'SkirtCircle', 'PencilSkirt') else 'upper']['v'] = kind
+    if kind in ('Pants', 'SkirtCircle', 'PencilSkirt'):
         params['meta']['wb']['v'] = 'FittedWB'
     if kind == 'Pants':
         params['pants']['length']['v'] = .9
-    return dict(id='draft', name=garment_title(params), version=0, params=params,
+    if kind == 'Shirt':
+        params['sleeve']['length']['v'] = .28
+        params['sleeve']['end_width']['v'] = .9
+        params['sleeve']['cuff']['type']['v'] = None
+    if kind == 'PencilSkirt':
+        params['pencil-skirt']['length']['v'] = .55
+        params['pencil-skirt']['back_slit']['v'] = .15
+    return dict(id='draft', name=spec[1], version=0, params=params,
                 appearance=dict(fabric_color=spec[3]))
+
+
+def standard_garments():
+    """Read-only catalog entries; editing always starts with an independent copy."""
+    return [dict(starter_item(kind), id=f'standard:{kind}', standard=kind, description=description)
+            for kind, _, description, _ in STARTERS]
 
 
 def _color(value, fallback):
@@ -67,9 +82,15 @@ def thumbnail(item):
         detail = 'M30 13 36 24 42 13M36 24V68M23 61H49'
         if meta['upper']['v'] == 'Shirt':
             detail = 'M25 12Q36 32 47 12M23 63H49'
+        elif meta['upper']['v'] == 'ElementTubeTop':
+            outline = 'M22 24Q36 28 50 24L47 47 50 64H22L25 47Z'
+            detail = 'M23 28Q36 32 49 28M24 60H48'
     elif meta.get('bottom', {}).get('v') == 'Pants':
         outline = 'M22 12H50L55 70H40L36 35 32 70H17Z'
         detail = 'M22 20H50M36 20V35M23 22 21 33M49 22 51 33'
+    elif meta.get('bottom', {}).get('v') == 'PencilSkirt':
+        outline = 'M24 14H48L51 31 47 70H25L21 31Z'
+        detail = 'M23 21H49M36 21V62L39 70M29 23 28 32M43 23 44 32'
     else:
         outline = 'M26 14H46L61 67Q36 74 11 67Z'
         detail = 'M25 21H47M29 24 23 66M43 24 49 66'

@@ -420,15 +420,12 @@ class GUIState:
         'sleeve': 'Sleeves', 'left': 'Asymmetry (left/right)',
         'skirt': 'Skirt', 'flare-skirt': 'Circle skirt',
         'godet-skirt': 'Godet skirt', 'pencil-skirt': 'Pencil skirt',
-        'levels-skirt': 'Levels skirt', 'pants': 'Pants',
+        'levels-skirt': 'Levels skirt', 'pants': 'Trousers',
         'dress_shirt': 'Dress shirt', 'buttons': 'Buttons',
         'element_top': 'Tube top', 'fabric': 'Fabric',
     }
-    META_LABELS = {'upper': 'Top', 'wb': 'Waistband', 'bottom': 'Bottom'}
-
     def def_design_block(self):
-        """Garment composition first, then only the relevant parameter
-        sections as expansions"""
+        """Edit the active garment's details; the outfit sidebar owns composition."""
         design_params = self.pattern_state.design_params
         self.ui_design_refs = {}
         self.ui_design_sections = {}
@@ -439,40 +436,19 @@ class GUIState:
                 self.ui_design_refs, design_params, use_collapsible=True)
             return
 
-        # The core design choice: what garments make up the outfit
+        from webapp.garment_catalog import garment_title
+        with ui.column().classes('se-design-context'):
+            self.ui_design_garment_name = ui.label(garment_title(design_params)).classes('se-design-garment-name')
+            ui.label('Fit and construction for this garment.').classes('se-param-label')
+
+        # A waistband belongs to a garment. Top/bottom composition belongs to
+        # the outfit, so those legacy selectors are intentionally not exposed.
         self.ui_design_refs['meta'] = {}
         meta = design_params['meta']
-        for param in meta:
-            values = meta[param]['range']
-            if 'null' in meta[param]['type'] and None not in values:
-                values.append(None)  # NOTE: Displayable value
-            ui.label(self.META_LABELS.get(param, param.capitalize())) \
-                .classes('p-0 m-0 mt-1 se-param-label')
-            self.ui_design_refs['meta'][param] = ui.select(
-                values, value=meta[param]['v'],
-                on_change=lambda e, dic=meta, param=param: self.design_param_change(dic, param, e.value)
-            ).classes('w-full').props('outlined dense options-dense')
-
-        # Design-level actions
-        with ui.row().classes('gap-2 mt-2'):
-            ui.button('Random', on_click=self.random).props('outline size=sm icon=shuffle')
-            ui.button('Default', on_click=self.default).props('outline size=sm icon=restart_alt')
-            ui.button('Upload', on_click=self.ui_design_dialog.open).props('outline size=sm icon=upload_file')
-            if chatgarment_modal is not None and chatgarment_modal.is_enabled():
-                ui.button('From photo', on_click=self.ui_photo_dialog.open) \
-                    .props('outline size=sm icon=auto_awesome') \
-                    .tooltip('AI: estimate this design from a garment photo')
-            # Restores the design Random/Default just replaced
-            self._design_undo = None
-            self.ui_undo_design_btn = ui.button('Undo', on_click=self.undo_design) \
-                .props('outline size=sm icon=undo') \
-                .tooltip('Restore the design that was just replaced')
-            self.ui_undo_design_btn.set_visibility(False)
-            ui.button('Save garment', on_click=lambda: self.show_save_garment()).props('outline size=sm icon=bookmark_add')
 
         # Parameter sections -- only those the current composition reads
         # are visible (see _refresh_section_relevance)
-        with ui.column().classes('w-full gap-2 mt-3'):
+        with ui.column().classes('w-full gap-2'):
             for section in design_params:
                 if section in ('meta', 'fabric'):
                     continue
@@ -480,6 +456,12 @@ class GUIState:
                     self.SECTION_LABELS.get(section, section)
                 ).classes('w-full se-stitch-card')
                 with expansion:
+                    if section == 'waistband':
+                        self.ui_design_refs['meta']['wb'] = ui.select(
+                            {'StraightWB': 'Straight', 'FittedWB': 'Fitted', None: 'No waistband'},
+                            label='Waistband style', value=meta['wb']['v'],
+                            on_change=lambda e: self.design_param_change(meta, 'wb', e.value)
+                        ).classes('w-full').props('outlined dense options-dense')
                     self.ui_design_refs[section] = {}
                     self.def_flat_design_subtab(
                         self.ui_design_refs[section],
@@ -487,6 +469,18 @@ class GUIState:
                         use_collapsible=(section == 'left')
                     )
                 self.ui_design_sections[section] = expansion
+        with ui.row().classes('se-design-actions'):
+            ui.button('Save garment', on_click=lambda: self.show_save_garment()).props('unelevated')
+            ui.button('Reset details', on_click=self.default).props('flat')
+            with ui.button(icon='more_horiz').props('flat round aria-label="More garment actions"'):
+                with ui.menu():
+                    ui.menu_item('Randomize details', self.random)
+                    ui.menu_item('Import design file', self.ui_design_dialog.open)
+                    if chatgarment_modal is not None and chatgarment_modal.is_enabled():
+                        ui.menu_item('Estimate from photo', self.ui_photo_dialog.open)
+            self._design_undo = None
+            self.ui_undo_design_btn = ui.button('Undo', on_click=self.undo_design).props('flat icon=undo')
+            self.ui_undo_design_btn.set_visibility(False)
         self._refresh_section_relevance()
 
     def _relevant_sections(self):
@@ -507,7 +501,7 @@ class GUIState:
             relevant |= {'element_top'}
         elif upper:
             relevant |= {'shirt', 'collar', 'sleeve', 'left'}
-        if wb:
+        if wb or bottom:
             relevant.add('waistband')
         relevant |= self.BASE_SECTIONS.get(bottom, set())
         if bottom == 'GodetSkirt':
@@ -522,6 +516,10 @@ class GUIState:
         """Show only the parameter sections relevant to the current garments"""
         if not getattr(self, 'ui_design_sections', None):
             return
+        from webapp.garment_catalog import garment_title
+        items = self.pattern_state.outfit_items
+        self.ui_design_garment_name.set_text(items[self.pattern_state.active_garment]['name'] if items
+                                           else garment_title(self.pattern_state.design_params))
         relevant = self._relevant_sections()
         for section, expansion in self.ui_design_sections.items():
             expansion.set_visibility(section in relevant)
@@ -648,9 +646,12 @@ class GUIState:
 
             self.toggle_param_update_events(self.ui_design_refs)  # Don't react to value updates
             try:
-                self.pattern_state.set_new_design(param_dict)
+                self.pattern_state.set_garment_design(param_dict)
                 self.update_design_params_ui_state(self.ui_design_refs, self.pattern_state.design_params)
                 await self.update_pattern_ui_state()
+            except ValueError as error:
+                ui.notify(str(error), type='warning')
+                return
             except Exception:
                 traceback.print_exc()
                 ui.notify('Could not apply this design file',
@@ -701,7 +702,7 @@ class GUIState:
 
             self.toggle_param_update_events(self.ui_design_refs)
             try:
-                self.pattern_state.set_new_design(design)
+                self.pattern_state.set_garment_design(design)
                 self.update_design_params_ui_state(
                     self.ui_design_refs, self.pattern_state.design_params)
                 await self.update_pattern_ui_state()
@@ -713,6 +714,8 @@ class GUIState:
                     ui.notify(f'Design estimated from {name} — drafted '
                               'for the current body measurements',
                               type='positive')
+            except ValueError as error:
+                ui.notify(str(error), type='warning')
             except Exception:
                 traceback.print_exc()
                 ui.notify('The estimated design could not be drafted',
@@ -1024,7 +1027,7 @@ class GUIState:
         # need to assemble the garment twice per click
         await self.loop.run_in_executor(
             self._async_executor,
-            lambda: self.pattern_state.sample_design(reload=False))
+            lambda: self.pattern_state.sample_design(reload=False, preserve_composition=True))
 
     def _snapshot_design_for_undo(self):
         """Remember the design about to be replaced by Random/Default"""
@@ -1071,7 +1074,7 @@ class GUIState:
         self._snapshot_design_for_undo()
         self.toggle_param_update_events(self.ui_design_refs)
         try:
-            self.pattern_state.restore_design(False)
+            self.pattern_state.restore_design(False, preserve_composition=True)
             self.update_design_params_ui_state(self.ui_design_refs, self.pattern_state.design_params)
             await self.update_pattern_ui_state()
         finally:

@@ -7,7 +7,7 @@ from nicegui import app, ui
 from gui import theme
 from webapp import auth, config
 from webapp.wardrobe import Wardrobe
-from webapp.garment_catalog import STARTERS, draft_items, library_matches, starter_item, studio_snapshot, thumbnail
+from webapp.garment_catalog import draft_items, library_matches, standard_garments, starter_item, studio_snapshot, thumbnail
 
 
 @ui.page('/', title='SewEasy — Your wardrobe')
@@ -20,7 +20,8 @@ def home_page(request: Request):
     ui.colors(primary='#447cad')
     current = storage.get('pending_design') or {}
     current_items = draft_items(current)
-    state = {'tab': 'outfits', 'query': ''}
+    standards = standard_garments()
+    state = {'tab': 'garments', 'query': ''}
 
     def open_items(items, name='Untitled outfit'):
         storage['pending_design'] = studio_snapshot(items, name, storage.get('pending_design'))
@@ -41,24 +42,28 @@ def home_page(request: Request):
             if len(items) > 3:
                 ui.label(f'+{len(items)-3}').classes('se-home-more')
 
-    def starters():
-        with ui.element('div').classes('se-starter-grid'):
-            for kind, name, description, _ in STARTERS:
-                with ui.button(on_click=lambda _, k=kind: open_items([starter_item(k)])) \
-                        .props('flat no-caps').classes('se-starter') as button:
-                    button._props['aria-label'] = f'Start with {name.lower()}'
-                    ui.html(thumbnail(starter_item(kind))).classes('se-starter-art')
-                    with ui.column().classes('se-starter-copy'):
-                        ui.label(name).classes('se-starter-name')
-                        ui.label(description).classes('se-home-muted')
-                    ui.icon('add').classes('se-starter-plus')
+    def standard_cards():
+        with ui.element('div').classes('se-library-grid'):
+            for item in standards:
+                garment_card(item)
+
+    def garment_card(item):
+        standard = item.get('standard')
+        with ui.button(on_click=lambda: open_items([starter_item(standard)]) if standard
+                       else open_saved('garments', item['id'])) \
+                .props('flat no-caps').classes('se-library-card') as card:
+            card._props['aria-label'] = f'{"Customize" if standard else "Open garment"} {item["name"]}'
+            illustrations([item], 'se-library-art')
+            with ui.column().classes('se-library-caption'):
+                ui.label(item['name']).classes('se-library-name')
+                ui.label('Standard garment' if standard else f'Saved version {item["version"]}').classes('se-home-muted')
 
     with ui.dialog() as new_dialog, ui.card().classes('se-new-outfit-dialog'):
         with ui.row().classes('w-full items-center justify-between'):
-            ui.label('Start an outfit').classes('se-home-dialog-title')
+            ui.label('Choose the first garment').classes('se-home-dialog-title')
             ui.button(icon='close', on_click=new_dialog.close).props('flat round dense aria-label="Close new outfit"')
-        ui.label('Choose your first garment. Add more in the studio.').classes('se-home-muted')
-        starters()
+        ui.label('Add more pieces from the outfit sidebar in the studio.').classes('se-home-muted')
+        standard_cards()
         saved = store.read()['garments']
         if saved:
             ui.separator()
@@ -81,11 +86,11 @@ def home_page(request: Request):
                     results.refresh()
             with ui.tabs(value=state['tab'], on_change=switch).props(
                     'no-caps dense align=left aria-label="Your library"').classes('se-library-tabs'):
-                for key, title in (('outfits', 'Outfits'), ('garments', 'Garments')):
+                for key, title in (('garments', 'Garments'), ('outfits', 'Outfits')):
                     with ui.tab(key, label='').classes('se-library-tab'):
                         with ui.row(wrap=False).classes('items-center gap-0'):
                             ui.label(title)
-                            ui.label(str(len(data[key]))).classes('se-library-count')
+                            ui.label(str(len(data[key]) + (len(standards) if key == 'garments' else 0))).classes('se-library-count')
             def search(event):
                 state['query'] = event.value
                 results.refresh()
@@ -97,33 +102,35 @@ def home_page(request: Request):
         def results():
             kind = state['tab']
             entries = library_matches(data[kind], state['query'])
-            with ui.element('section').classes('se-library-results').props('aria-label="Saved items" aria-live=polite'):
+            if kind == 'garments':
+                entries += list(reversed(library_matches(standards, state['query'])))
+            with ui.element('section').classes('se-library-results').props('aria-label="Library items" aria-live=polite'):
                 if entries:
                     with ui.element('div').classes('se-library-grid'):
                         for item in entries:
+                            if kind == 'garments':
+                                garment_card(item)
+                                continue
                             with ui.button(on_click=lambda _, k=kind, item_id=item['id']: open_saved(k, item_id)) \
                                     .props('flat no-caps').classes('se-library-card') as card:
-                                card._props['aria-label'] = f'Open {"outfit" if kind == "outfits" else "garment"} {item["name"]}'
-                                illustrations(item['garments'] if kind == 'outfits' else [item], 'se-library-art')
+                                card._props['aria-label'] = f'Open outfit {item["name"]}'
+                                illustrations(item['garments'], 'se-library-art')
                                 with ui.column().classes('se-library-caption'):
                                     ui.label(item['name']).classes('se-library-name')
-                                    count = len(item['garments']) if kind == 'outfits' else 0
-                                    ui.label(f'{count} garment' + ('s' if count != 1 else '') if kind == 'outfits'
-                                             else f'Version {item["version"]}').classes('se-home-muted')
+                                    count = len(item['garments'])
+                                    ui.label(f'{count} garment' + ('s' if count != 1 else '')).classes('se-home-muted')
                 elif state['query']:
                     with ui.column().classes('se-library-empty'):
                         ui.icon('search').classes('se-empty-icon')
                         ui.label('No matches in ' + kind).classes('se-empty-title')
-                        ui.label('Try another name or switch between outfits and garments.').classes('se-home-muted')
+                        ui.label('Try a garment or outfit name.').classes('se-home-muted')
                 else:
                     with ui.element('div').classes('se-library-empty se-library-first'):
-                        ui.icon('checkroom' if kind == 'outfits' else 'style').classes('se-empty-icon')
+                        ui.icon('checkroom').classes('se-empty-icon')
                         with ui.column().classes('gap-1'):
-                            ui.label('A place for your ' + kind).classes('se-empty-title')
-                            ui.label('Save an outfit in the studio to keep its garments together.' if kind == 'outfits'
-                                     else 'Save garment versions in the studio to reuse their colors, fabrics and details.') \
+                            ui.label('No saved outfits yet').classes('se-empty-title')
+                            ui.label('Start with New outfit above, then save your combination in the studio.') \
                                 .classes('se-home-muted')
-                        ui.button('New outfit', icon='add', on_click=new_dialog.open).props('outline')
         results()
 
     with ui.element('main').classes('se-home'):
@@ -145,27 +152,20 @@ def home_page(request: Request):
 
         with ui.element('div').classes('se-home-content'):
             with ui.element('div').classes('se-home-heading'):
-                with ui.column().classes('gap-2'):
+                with ui.column().classes('gap-1'):
                     ui.label('Your wardrobe').classes('se-home-title').props('role=heading aria-level=1')
-                    ui.label('Individual pieces. Outfits that are yours.').classes('se-home-subtitle')
+                    ui.label('Customize a garment or combine pieces into an outfit.').classes('se-home-subtitle')
                 ui.button('New outfit', icon='add', on_click=new_dialog.open).props('unelevated').classes('se-home-create')
 
             if current_items:
                 with ui.element('section').classes('se-home-resume').props('aria-label="Current draft"'):
                     illustrations(current_items, 'se-resume-art')
                     with ui.column().classes('se-resume-copy'):
-                        ui.label('Pick up where you left off').classes('se-home-muted')
+                        ui.label('Current draft').classes('se-home-muted')
                         ui.label(current.get('outfit_name') or 'Untitled outfit').classes('se-resume-title')
-                        ui.label('Your latest design and fabric settings are ready to continue.').classes('se-resume-description')
                     ui.button('Continue editing', icon='edit', on_click=lambda: ui.navigate.to('/studio')).props('outline')
 
             library()
-
-            with ui.element('section').classes('se-home-starters').props('aria-label="Starter garments"'):
-                with ui.row().classes('se-section-heading'):
-                    ui.label('Start with a garment').classes('se-home-section-title').props('role=heading aria-level=2')
-                    ui.label('Make the fit, fabric and details your own.').classes('se-home-muted')
-                starters()
 
             with ui.element('footer').classes('se-home-footer'):
                 ui.label('Saved to your account.' if user else 'Your saves stay in this browser on this installation.')

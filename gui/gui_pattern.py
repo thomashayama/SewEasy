@@ -178,13 +178,28 @@ class GUIPattern:
     def set_new_design(self, design):
         self._nested_sync(design, self.design_params)
 
+    def set_garment_design(self, design):
+        """Import details without replacing the active garment's composition."""
+        for part in ('upper', 'bottom'):
+            current = self.design_params.get('meta', {}).get(part, {}).get('v')
+            incoming = design.get('meta', {}).get(part, {}).get('v', current)
+            if incoming != current:
+                raise ValueError('Choose a design for the same garment type. Add other garments from the outfit sidebar.')
+        self.set_new_design(design)
+
     def set_new_body_params(self, body_params):
         self.body_params.load_from_dict(body_params)
 
-    def sample_design(self, reload=True):
+    def sample_design(self, reload=True, preserve_composition=False):
         """Random design parameters"""
 
         new_design = self.design_sampler.randomize()
+        if preserve_composition:
+            # Studio details must not add a skirt to a shirt, remove a garment,
+            # or recolor it. The dataset sampler keeps its original behavior.
+            for section in ('meta', 'fabric'):
+                if section in self.design_params:
+                    new_design[section] = deepcopy(self.design_params[section])
         # NOTE: re-assign the values instead up overwriting them
         self._nested_sync(new_design, self.design_params)
 
@@ -194,9 +209,20 @@ class GUIPattern:
         if reload:
             self.reload_garment()
 
-    def restore_design(self, reload=True):
+    def restore_design(self, reload=True, preserve_composition=False):
         """Restore design values to match the current loaded file"""
-        new_design = self.design_sampler.default()
+        new_design = deepcopy(self.design_sampler.default())
+        if preserve_composition:
+            from webapp.garment_catalog import STARTERS, starter_item
+            parts = [self.design_params.get('meta', {}).get(part, {}).get('v') for part in ('upper', 'bottom')]
+            parts = [part for part in parts if part]
+            if len(parts) == 1 and parts[0] in {item[0] for item in STARTERS}:
+                # Reset to this garment's standard, not the startup dress-shirt
+                # file (whose inactive pants and sleeves have different defaults).
+                new_design = starter_item(parts[0])['params']
+            for section in ('meta', 'fabric'):
+                if section in self.design_params:
+                    new_design[section] = deepcopy(self.design_params[section])
         # re-assign the values instead up overwriting them
         self._nested_sync(new_design, self.design_params)
         

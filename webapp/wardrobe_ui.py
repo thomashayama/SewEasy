@@ -4,7 +4,7 @@ import json
 from nicegui import app, ui
 
 from webapp.wardrobe import Wardrobe
-from webapp.garment_catalog import garment_title, starter_item, thumbnail
+from webapp.garment_catalog import STARTERS, garment_title, starter_item, thumbnail
 
 
 def wardrobe_ui(state):
@@ -76,6 +76,10 @@ def wardrobe_ui(state):
         state.toggle_param_update_events(state.ui_design_refs)
         try:
             pattern.load_outfit(items, active)
+            # Undo belongs to the piece being edited, never the next selected
+            # garment (e.g. a trousers reset must not replace a T-shirt).
+            state._design_undo = None
+            state.ui_undo_design_btn.set_visibility(False)
             if solo:
                 pattern.outfit_items = []
             state.update_design_params_ui_state(state.ui_design_refs, pattern.design_params)
@@ -240,13 +244,13 @@ def wardrobe_ui(state):
         add_dialog.close()
         await apply(items, len(items) - 1)
 
-    with ui.dialog() as add_dialog, ui.card().classes('w-96 max-w-full gap-4'):
+    with ui.dialog() as add_dialog, ui.card().classes('w-96 max-w-full gap-4 se-garment-picker'):
         with ui.row().classes('w-full items-center justify-between'):
             ui.label('Add garment').classes('text-lg font-semibold')
             ui.button(icon='close', on_click=add_dialog.close).props('flat round dense aria-label="Close add garment"')
-        ui.label('Start with a garment').classes('se-param-label')
+        ui.label('Standard garments').classes('se-param-label')
         with ui.element('div').classes('grid grid-cols-2 gap-2 w-full'):
-            for kind, name in [('DressShirt', 'Dress shirt'), ('Shirt', 'Shirt'), ('Pants', 'Trousers'), ('SkirtCircle', 'Circle skirt')]:
+            for kind, name, _, _ in STARTERS:
                 ui.button(name, on_click=lambda _, k=kind: add_template(k)).props('outline icon=add')
         ui.separator()
         ui.label('Your saved garments').classes('se-param-label')

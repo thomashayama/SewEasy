@@ -5,7 +5,7 @@ import unittest
 from unittest.mock import Mock, patch
 import xml.etree.ElementTree as ET
 
-from webapp.garment_catalog import STARTERS, draft_items, library_matches, starter_item, studio_snapshot, thumbnail
+from webapp.garment_catalog import STARTERS, draft_items, library_matches, standard_garments, starter_item, studio_snapshot, thumbnail
 from webapp.wardrobe import Wardrobe
 
 
@@ -34,12 +34,27 @@ class HomeLibraryTest(unittest.TestCase):
             first, second = starter_item(kind), starter_item(kind)
             self.assertEqual(first, second)
             meta = first['params']['meta']
-            self.assertEqual(meta['bottom' if kind in ('Pants', 'SkirtCircle') else 'upper']['v'], kind)
-            self.assertEqual(meta['upper' if kind in ('Pants', 'SkirtCircle') else 'bottom']['v'], None)
+            self.assertEqual(meta['bottom' if kind in ('Pants', 'SkirtCircle', 'PencilSkirt') else 'upper']['v'], kind)
+            self.assertEqual(meta['upper' if kind in ('Pants', 'SkirtCircle', 'PencilSkirt') else 'bottom']['v'], None)
             first['params']['meta']['upper']['v'] = 'changed'
             self.assertNotEqual(first['params'], second['params'])
         with self.assertRaises(ValueError):
             starter_item('../../private')
+
+    def test_standard_library_is_available_without_seeding_or_mutating_user_saves(self):
+        storage = {}
+        store = Wardrobe(storage=storage)
+        catalog = standard_garments()
+        self.assertEqual(len(catalog), 6)
+        self.assertEqual(len({g['id'] for g in catalog}), 6)
+        item = next(g for g in catalog if g['standard'] == 'Shirt')
+        self.assertLess(item['params']['sleeve']['length']['v'], .4)
+        self.assertIsNone(item['params']['sleeve']['cuff']['type']['v'])
+        saved = store.save_garment('My tee', item['params'], item['appearance'])
+        saved['params']['shirt']['width']['v'] = 1.3
+        self.assertNotEqual(saved['params'], standard_garments()[1]['params'])
+        self.assertEqual(len(store.read()['garments']), 1)
+        self.assertEqual(len(library_matches(catalog, 'pencil')), 1)
 
     def test_home_accepts_single_garment_and_outfit_draft_snapshots(self):
         garment = starter_item('DressShirt')
@@ -67,6 +82,56 @@ class HomeLibraryTest(unittest.TestCase):
         self.assertIn('#123456', svg)
         self.assertNotEqual(svg, thumbnail(item))
         ET.fromstring(svg)
+
+
+class GarmentDetailsTest(unittest.TestCase):
+    def setUp(self):
+        from gui.gui_pattern import GUIPattern
+        self.pattern = GUIPattern(draft=False)
+
+    def tearDown(self):
+        self.pattern.release()
+
+    def test_reset_and_randomize_keep_composition_and_fabric_on_active_outfit_item(self):
+        p = self.pattern
+        items = [starter_item('DressShirt'), starter_item('Pants')]
+        p.load_outfit(items, 1)
+        p.design_params['fabric']['kind']['v'] = 'gingham'
+        meta, fabric = deepcopy(p.design_params['meta']), deepcopy(p.design_params['fabric'])
+        defaults = deepcopy(p.design_sampler.default())
+        for operation in (p.sample_design, p.restore_design):
+            operation(reload=False, preserve_composition=True)
+            p.sync_outfit_garment()
+            self.assertEqual(p.design_params['meta'], meta)
+            self.assertEqual(p.design_params['fabric'], fabric)
+            self.assertEqual(p.outfit_items[0], items[0])
+            self.assertEqual(p.outfit_items[1]['params']['meta'], meta)
+            self.assertEqual(p.design_sampler.default(), defaults)
+        self.assertEqual(p.design_params['pants']['length']['v'], .9)
+        p.load_outfit([starter_item('Shirt')])
+        p.design_params['sleeve']['length']['v'] = 1.0
+        p.restore_design(reload=False, preserve_composition=True)
+        self.assertEqual(p.design_params['sleeve']['length']['v'], .28)
+        self.assertIsNone(p.design_params['sleeve']['cuff']['type']['v'])
+
+    def test_import_cannot_add_another_garment_to_active_piece(self):
+        p = self.pattern
+        p.load_outfit([starter_item('Pants')])
+        original = deepcopy(p.design_params)
+        with self.assertRaisesRegex(ValueError, 'same garment type'):
+            p.set_garment_design(starter_item('DressShirt')['params'])
+        self.assertEqual(p.design_params, original)
+        p.set_garment_design({'pants': {'length': {'v': .8}}})
+        self.assertEqual(p.design_params['pants']['length']['v'], .8)
+        self.assertEqual(p.design_params['meta'], original['meta'])
+
+    def test_all_standard_garments_draft_nonempty_patterns(self):
+        for item in standard_garments():
+            with self.subTest(garment=item['name']):
+                self.pattern.load_outfit([item])
+                self.pattern.reload_garment()
+                self.assertTrue(self.pattern.panel_svg_paths)
+                self.assertTrue(self.pattern.svg_path().exists())
 
 
 class HomeNavigationTest(unittest.TestCase):

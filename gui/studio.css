@@ -27,7 +27,9 @@
 .se-garment-name {font-size:13px; font-weight:600; line-height:1.35;}
 .se-garment-version {font-size:11px; color:#67788c;}
 .se-garment-more {position:absolute; right:1px; top:26px;}
-.se-add-garment {align-self:flex-start; margin-top:3px;}
+.se-studio .se-add-garment {align-self:flex-start; margin-top:3px; padding:8px 12px; min-height:40px;}
+.se-add-garment .q-icon.on-left, .se-garment-picker .q-icon.on-left {margin-right:9px;}
+.se-garment-picker .q-btn:not(.q-btn--round) {padding:8px 12px; min-height:40px;}
 .se-wardrobe-footer {border-top:1px solid var(--studio-line); padding-top:12px; gap:5px; width:100%;}
 .se-wardrobe-footer .q-btn {width:100%; justify-content:flex-start;}
 .se-wardrobe-footer .q-btn__content {justify-content:flex-start; gap:13px;}
@@ -99,6 +101,10 @@
 .se-expanded-3d .se-drape-fit-details {top:auto; bottom:100%;}
 .se-design-dialog {width:390px; max-width:95vw; height:100dvh; max-height:100dvh!important; border-radius:0!important; gap:16px; padding:24px;}
 .se-design-dialog .se-stitch-card {border:1px solid #d7e1eb; border-radius:6px;}
+.se-design-context {width:100%; gap:4px; padding-bottom:14px; border-bottom:1px solid #d7e1eb;}
+.se-design-garment-name {font-size:18px; font-weight:600; color:#183452;}
+.se-design-actions {width:100%; align-items:center; gap:6px; padding-top:8px;}
+.se-design-actions .q-btn:not(.q-btn--round) {padding:7px 12px; font-size:12px;}
 .se-mobile-menu {display:none;}
 .se-studio :is(button,a,summary):focus-visible {outline:2px solid #447cad; outline-offset:3px;}
 @media(max-width:1200px) {
