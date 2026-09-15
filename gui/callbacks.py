@@ -269,7 +269,6 @@ class GUIState:
                     self.ui_view_toggle = ui.toggle({'Sewing pattern': 'Pattern', '3D view': '3D'},
                         value='Sewing pattern', on_change=lambda e: self.switch_view(e.value)) \
                         .props('no-caps unelevated toggle-color=primary').classes('se-view-toggle')
-                    self.ui_preview_status = ui.label('Preparing 3D').classes('se-preview-status').props('role=status')
                 ui.button(icon='tune', on_click=self.ui_design_settings.open).props(
                     'flat dense round aria-label="Garment design settings"').classes('se-design-shortcut').tooltip('Garment design')
             with ui.element('div').classes('se-main-pattern') as self.ui_pattern_stage:
@@ -541,14 +540,6 @@ class GUIState:
         self.ui_browser_drape.configure(docked=True)
         self.ui_browser_drape.on('retry', self.retry_3d_scene)
         self.ui_browser_drape.on('show-body', lambda e: self.ui_browser_drape.configure(show_body=e.args['value']))
-        self.ui_browser_drape.on('state', self.preview_state_changed)
-
-    def preview_state_changed(self, e):
-        value = e.args.get('value', 'preparing')
-        self.ui_preview_status.set_text({'ready': '3D ready', 'warming': 'Settling',
-            'running': 'Live 3D', 'paused': 'Paused', 'error': 'Preview unavailable',
-            'empty': 'No preview'}.get(value, 'Preparing 3D'))
-        self.ui_preview_status.props(f'data-state={value}')
 
     # !SECTION
     # SECTION -- Other UI details

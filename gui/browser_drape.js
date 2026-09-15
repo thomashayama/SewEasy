@@ -13,7 +13,6 @@ export default {
   template: `<div class="se-browser-drape" :data-state="state" :data-scene="loadedScene" :data-frames="frames">
     <canvas ref="canvas" aria-label="Interactive 3D garment" :style="{visibility: ready && !preparing && !error ? 'visible' : 'hidden', cursor: 'grab'}"
       @pointerdown="wake" @pointermove="$event.buttons && wake()" @wheel="wake" @keydown="wake"></canvas>
-    <span v-if="ready && !preparing && !error && !failure" class="se-drape-state-label" role="status">{{paused?'Paused':active?'Live drape':warmed?'3D ready':'Settling…'}}</span>
     <div v-if="!ready || preparing || error || failure" class="se-drape-message" role="status">
       <div v-if="!(error || failure) && (preparing || scene_url)" class="se-drape-loader"></div>
       <strong>{{ error || failure || (preparing ? 'Preparing your pattern for 3D…' : progress) }}</strong>
@@ -74,7 +73,6 @@ export default {
     cancelAnimationFrame(e.frame); e.renderer?.destroy(); e.cloth?.destroy(); e.device?.destroy();
   },
   watch: {
-    state: {immediate:true, handler(value) {this.$emit('state',{value});}},
     scene_url() {const e=engines.get(this); if(e){e.generation++; e.abort?.abort(); this.load();}},
     active() {const e=engines.get(this);if(e?.cloth)this.frames=e.cloth.frame;if(e){e.last=null;e.stats=performance.now();e.count=0;if(e.renderer)e.renderer.dirty=true;}this.load();},
     paused() {const e=engines.get(this);if(e?.cloth)this.frames=e.cloth.frame;if(e?.renderer)e.renderer.controls.viewOnly=this.paused;if(e){e.last=null;e.stats=performance.now();e.count=0;}if(!this.paused)this.wake();},
