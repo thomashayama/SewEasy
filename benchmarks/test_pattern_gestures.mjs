@@ -1,6 +1,15 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import PatternCanvas from '../gui/pattern_canvas.js';
+import PatternCanvas, {rulerTicks} from '../gui/pattern_canvas.js';
+
+test('rulers retain centimetre values through zoom and pan, including a negative origin',()=>{
+  const before=rulerTicks(100,4,500), after=rulerTicks(60,8,500);
+  const a=before.find(t=>t.label==='20'), b=after.find(t=>t.label==='20');
+  assert.equal(a.position,180);assert.equal(b.position,220);
+  assert.ok(before.some(t=>t.label==='-20'));
+  assert.ok(after.every(t=>t.position>=0&&t.position<=500));
+  assert.deepEqual(rulerTicks(0,0,500),[]);
+});
 
 function canvasHarness(t) {
   const originals={window:globalThis.window,document:globalThis.document,DOMPoint:globalThis.DOMPoint,ResizeObserver:globalThis.ResizeObserver};

@@ -82,15 +82,6 @@ class GUIState:
         # renders instantly and the heavy assembly runs off the event loop
         self.pattern_state = GUIPattern(draft=False)
 
-        # Pattern display constants
-        self.canvas_aspect_ratio = 1500. / 900   # Millimiter paper
-        self.w_rel_body_size = 0.5  # Body size as fraction of horisontal canvas axis
-        self.h_rel_body_size = 0.95
-        self.background_body_scale = 1 / 171.99   # Inverse of the mean_all body height from GGG
-        self.background_body_canvas_center = 0.273  # Fraction of the canvas (millimiter paper)
-        self.w_canvas_pad, self.h_canvas_pad = 0.011, 0.04
-        self.body_outline_classes = ''   # Application of pattern&body scaling when it overflows
-
         # Paths setup (static mounts are registered once at module scope)
         self.path_static_img = PATH_STATIC_IMG
         self.body_color = DEFAULT_BODY_COLOR
@@ -274,12 +265,13 @@ class GUIState:
         """The same live GPU canvas moves between its dock and the main stage."""
         with ui.element('section').classes('se-studio-stage').props('aria-label="Pattern studio"') as self.ui_stage:
             with ui.row(wrap=False).classes('se-stage-toolbar'):
-                self.ui_view_toggle = ui.toggle({'Sewing pattern': 'Pattern', '3D view': '3D'},
-                    value='Sewing pattern', on_change=lambda e: self.switch_view(e.value)) \
-                    .props('no-caps unelevated toggle-color=primary').classes('se-view-toggle')
-                ui.space()
+                with ui.row(wrap=False).classes('se-view-controls'):
+                    self.ui_view_toggle = ui.toggle({'Sewing pattern': 'Pattern', '3D view': '3D'},
+                        value='Sewing pattern', on_change=lambda e: self.switch_view(e.value)) \
+                        .props('no-caps unelevated toggle-color=primary').classes('se-view-toggle')
+                    self.ui_preview_status = ui.label('Preparing 3D').classes('se-preview-status').props('role=status')
                 ui.button(icon='tune', on_click=self.ui_design_settings.open).props(
-                    'flat dense round aria-label="Garment design settings"').tooltip('Garment design')
+                    'flat dense round aria-label="Garment design settings"').classes('se-design-shortcut').tooltip('Garment design')
             with ui.element('div').classes('se-main-pattern') as self.ui_pattern_stage:
                 self.def_pattern_display()
             with ui.element('div').classes('se-studio-inspector'):
@@ -528,12 +520,7 @@ class GUIState:
             with ui.element('div').classes('se-pattern-sheet'):
                 with ui.element('div').classes('se-workspace w-full h-full').props(
                         'tabindex="0" aria-label="Sewing pattern workspace"'), ui.element('div').classes(
-                        'se-pattern-paper').style('width:1400px; height:840px') as self.ui_pattern_bg:
-                    with ui.element('div').classes('se-body-outline absolute inset-0') as body_outline:
-                        self.body_outline_classes = 'bg-transparent h-full absolute top-0 left-0 p-0 m-0'
-                        self.ui_body_outline = ui.image(f'{self.path_static_img}/ggg_outline_mean_all.svg') \
-                            .props('alt="Body silhouette behind the pattern"').classes(self.body_outline_classes)
-                    body_outline.set_visibility(False)
+                        'se-pattern-paper').style('width:1000px') as self.ui_pattern_bg:
                     self.ui_pattern_display = PatternCanvas().classes('bg-transparent p-0 m-0')
                     self.ui_pattern_display.on('selection', self.on_pattern_selection)
                 with ui.row(wrap=False).classes('se-pattern-tools'):
@@ -546,7 +533,6 @@ class GUIState:
                 with ui.column().classes('se-pattern-options'):
                     self.ui_self_intersect = ui.label('Panels overlap in this design').classes('se-warning-chip') \
                         .bind_visibility(self.pattern_state, 'is_self_intersecting')
-                    ui.switch('Body outline', value=False).props('dense').bind_value(body_outline, 'visible')
                 ui.label('Drag to select • Shift/Ctrl to add').classes('se-canvas-hint')
 
     def def_3d_scene(self):
@@ -555,6 +541,14 @@ class GUIState:
         self.ui_browser_drape.configure(docked=True)
         self.ui_browser_drape.on('retry', self.retry_3d_scene)
         self.ui_browser_drape.on('show-body', lambda e: self.ui_browser_drape.configure(show_body=e.args['value']))
+        self.ui_browser_drape.on('state', self.preview_state_changed)
+
+    def preview_state_changed(self, e):
+        value = e.args.get('value', 'preparing')
+        self.ui_preview_status.set_text({'ready': '3D ready', 'warming': 'Settling',
+            'running': 'Live 3D', 'paused': 'Paused', 'error': 'Preview unavailable',
+            'empty': 'No preview'}.get(value, 'Preparing 3D'))
+        self.ui_preview_status.props(f'data-state={value}')
 
     # !SECTION
     # SECTION -- Other UI details
@@ -816,83 +810,23 @@ class GUIState:
         self.update_pattern_display()
 
     def update_pattern_display(self):
-        """Sync the pattern canvas with the current pattern state"""
-        # TODOLOW the pattern is floating around when collars are added..
-        if self.ui_pattern_display is not None:
-
-            if self.pattern_state.svg_filename:
-                # Re-align the canvas and body with the new pattern
-                p_bbox_size = self.pattern_state.svg_bbox_size
-                p_bbox = self.pattern_state.svg_bbox
-
-                # Margin calculations w.r.t. canvas size
-                # s.t. the pattern scales correctly
-                w_shift = abs(p_bbox[0])  # Body feet location in width direction w.r.t top-left corner of the pattern
-                m_top = (1. - abs(p_bbox[2]) * self.background_body_scale) * self.h_rel_body_size + (1. - self.h_rel_body_size) / 2 
-                m_left = self.background_body_canvas_center - w_shift * self.background_body_scale * self.w_rel_body_size
-                m_right = 1 - m_left - p_bbox_size[0] * self.background_body_scale * self.w_rel_body_size
-                m_bottom = 1 - m_top - p_bbox_size[1] * self.background_body_scale * self.h_rel_body_size
-
-                # Canvas padding adjustment
-                m_top -= self.h_canvas_pad
-                m_left -= self.w_canvas_pad
-                m_right += self.w_canvas_pad  # preserve evaluated width
-                m_bottom -= self.h_canvas_pad
-
-                # New placement
-                if m_top < 0 or m_bottom < 0 or m_left < 0 or m_right < 0:
-                    # Calculate the fraction
-                    scale_margin = 1.2
-                    y_top_scale = abs(min(m_top * scale_margin, 0.)) + 1.
-                    y_bot_scale = 1. + abs(min(m_bottom * scale_margin, 0.))
-                    x_left_scale = abs(min(m_left * scale_margin, 0.)) + 1.
-                    x_right_scale = abs(min(m_right * scale_margin, 0.)) + 1.
-                    scale = min(1. / y_top_scale, 1. / y_bot_scale, 1. / x_left_scale, 1. / x_right_scale)
-
-                    # Rescale the body
-                    self.ui_body_outline.classes(
-                        replace=self.body_outline_classes + f' origin-center scale-[{scale}]'
-                    )
-
-                    # Recalculate positioning & width
-                    body_center = 0.5 - self.background_body_canvas_center
-                    m_top = (1. - abs(p_bbox[2]) * self.background_body_scale) * self.h_rel_body_size * scale + (1. - self.h_rel_body_size * scale) / 2 
-                    m_left = (0.5 - body_center * scale) - w_shift * self.background_body_scale * self.w_rel_body_size * scale
-                    m_right = 1 - m_left - p_bbox_size[0] * self.background_body_scale * self.w_rel_body_size * scale
-
-                    # Canvas padding adjustment
-                    # TODOLOW For some reason top adjustment is not needed here: m_top -= self.h_canvas_pad * scale
-                    m_left -= self.w_canvas_pad * scale
-                    m_right += self.w_canvas_pad * scale
-
-                else:  # Display normally 
-                    # Remove body transforms if any were applied
-                    self.ui_body_outline.classes(replace=self.body_outline_classes)
-
-                # New pattern image
-                self.ui_pattern_display.set_source(
-                    str(self.pattern_state.svg_path()) if self.pattern_state.svg_filename else '')
-                self.ui_pattern_display.configure(
-                    viewbox=f'{p_bbox[0]} {p_bbox[2]} {p_bbox_size[0]} {p_bbox_size[1]}',
-                    pieces=[{'id':name, 'label':self.panel_label(name), 'path':path.d()+' Z'}
-                            for name,path in self.pattern_state.panel_svg_paths.items()])
-                self.set_pattern_selection(self.selected_panels, open_panel=False)
-                self.ui_pattern_display.classes(
-                        replace=f"""bg-transparent p-0 m-0
-                                absolute 
-                                left-[{m_left * 100}%]
-                                top-[{m_top * 100}%] 
-                                w-[{(1. - m_right - m_left) * 100}%]
-                                height-auto
-                        """)  
-                    
-            else:
-                # Restore default state
-                self.ui_pattern_display.set_source('')
-                self.ui_pattern_display.configure(pieces=[], selected=[])
-                self.selected_panels = []
-                self.ui_fabric_panel.configure(selection=[], available=0)
-                self.ui_body_outline.classes(replace=self.body_outline_classes)
+        """Display the laid-out cutting pieces without changing assembly geometry."""
+        if self.ui_pattern_display is None:
+            return
+        if self.pattern_state.svg_filename:
+            width, height = self.pattern_state.svg_bbox_size
+            self.ui_pattern_display.set_source(str(self.pattern_state.svg_path()))
+            self.ui_pattern_display.configure(
+                viewbox=f'0 0 {width} {height}',
+                pieces=[{'id': name, 'label': self.panel_label(name), 'path': path.d() + ' Z',
+                         **self.pattern_state.panel_svg_labels[name]}
+                        for name, path in self.pattern_state.panel_svg_paths.items()])
+            self.set_pattern_selection(self.selected_panels, open_panel=False)
+        else:
+            self.ui_pattern_display.set_source('')
+            self.ui_pattern_display.configure(pieces=[], selected=[])
+            self.selected_panels = []
+            self.ui_fabric_panel.configure(selection=[], available=0)
 
     def panel_label(self, name):
         prefix = ''

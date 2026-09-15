@@ -74,6 +74,7 @@ export default {
     cancelAnimationFrame(e.frame); e.renderer?.destroy(); e.cloth?.destroy(); e.device?.destroy();
   },
   watch: {
+    state: {immediate:true, handler(value) {this.$emit('state',{value});}},
     scene_url() {const e=engines.get(this); if(e){e.generation++; e.abort?.abort(); this.load();}},
     active() {const e=engines.get(this);if(e?.cloth)this.frames=e.cloth.frame;if(e){e.last=null;e.stats=performance.now();e.count=0;if(e.renderer)e.renderer.dirty=true;}this.load();},
     paused() {const e=engines.get(this);if(e?.cloth)this.frames=e.cloth.frame;if(e?.renderer)e.renderer.controls.viewOnly=this.paused;if(e){e.last=null;e.stats=performance.now();e.count=0;}if(!this.paused)this.wake();},

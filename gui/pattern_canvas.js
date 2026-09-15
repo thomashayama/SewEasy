@@ -15,6 +15,17 @@ export function selectEnclosed(selected, bounds, box, additive = false) {
   return additive ? [...new Set([...selected,...enclosed])] : enclosed;
 }
 
+export function rulerTicks(origin, scale, length) {
+  if (!(scale > 0) || !(length > 0)) return [];
+  const major = 10 ** Math.floor(Math.log10(55 / scale));
+  const step = [1, 2, 5, 10].map(n => n * major).find(n => n * scale >= 45);
+  const minor = step / 5, start = Math.ceil(-origin / scale / minor), end = Math.floor((length - origin) / scale / minor);
+  return Array.from({length:Math.max(0, end-start+1)}, (_, i) => {
+    const n=start+i, value=Number((n*minor).toFixed(3));
+    return {position:origin+value*scale, label:n%5===0 ? String(value) : null};
+  });
+}
+
 // Keep DOM nodes, pointer capture and listeners outside Vue's reactive state.
 const workspaces=new WeakMap();
 
@@ -27,19 +38,40 @@ export default {
         :class="['se-pattern-piece', {'is-selected':picked.includes(piece.id)}]" vector-effect="non-scaling-stroke"
         @click.stop="choose($event,piece.id)" @keydown.enter.stop.prevent="choose($event,piece.id)"
         @keydown.space.stop.prevent="choose($event,piece.id)"><title>{{piece.label}}</title></path>
+      <text v-for="piece in pieces" :key="'label-'+piece.id" :x="piece.x" :y="piece.y"
+        class="se-piece-label" :style="{fontSize:labelSize+'px'}" text-anchor="middle" aria-hidden="true">
+        <tspan v-for="(line,i) in caption(piece.label)" :key="i" :x="piece.x" :dy="i ? labelSize*1.15 : 0">{{line}}</tspan>
+      </text>
       <rect v-if="marquee" class="se-pattern-marquee" :x="marquee.x" :y="marquee.y"
         :width="marquee.width" :height="marquee.height" vector-effect="non-scaling-stroke" aria-hidden="true"/>
     </svg>
+    <Teleport v-if="rulerTarget && src" :to="rulerTarget">
+      <svg class="se-pattern-rulers" :viewBox="'0 0 '+rulers.width+' '+rulers.height" aria-hidden="true">
+        <rect x="0" y="0" :width="rulers.width" height="28"/><rect x="0" y="0" width="28" :height="rulers.height"/>
+        <g v-for="(tick,i) in rulers.x" :key="'x'+i" v-show="tick.position>30">
+          <line :x1="tick.position" :x2="tick.position" :y1="tick.label===null?23:19" y2="28"/>
+          <text v-if="tick.label!==null" :x="tick.position" y="13" text-anchor="middle">{{tick.label}}</text>
+        </g>
+        <g v-for="(tick,i) in rulers.y" :key="'y'+i" v-show="tick.position>35">
+          <line :y1="tick.position" :y2="tick.position" :x1="tick.label===null?23:19" x2="28"/>
+          <text v-if="tick.label!==null" x="13" :y="tick.position" text-anchor="middle" dominant-baseline="middle">{{tick.label}}</text>
+        </g>
+        <text x="6" y="14">cm</text>
+      </svg>
+    </Teleport>
   </div>`,
   props: {src:String, pieces:Array, selected:Array, viewbox:String},
-  data: () => ({picked:[], origin:null, marquee:null, suppressClick:false}),
+  data: () => ({picked:[], origin:null, marquee:null, suppressClick:false, rulerTarget:null,
+    rulers:{width:1,height:1,x:[],y:[]},labelSize:2.6}),
   mounted() {
     const ws=this.$el.closest('.se-workspace'), abort=new AbortController();
     if(!ws)return;
-    const resize=new ResizeObserver(()=>this.autoFit());
+    const resize=new ResizeObserver(()=>{this.autoFit();this.updateRulers();});
     workspaces.set(this,{ws,abort,resize,gesture:null,fitting:true});
     resize.observe(ws);
     const opts={signal:abort.signal};
+    this.rulerTarget=ws.parentElement;
+    ws.addEventListener('scroll',this.updateRulers,{...opts,passive:true});
     for(const [event,handler] of Object.entries({pointerdown:this.start,click:this.background,
       keydown:this.keys,contextmenu:e=>e.preventDefault()}))ws.addEventListener(event,handler,opts);
     for(const [event,handler] of Object.entries({pointermove:this.move,pointerup:this.finish,
@@ -53,6 +85,24 @@ export default {
     src() {this.cancel();},
   },
   methods: {
+    caption(label) {
+      const words=label.split(' · ').pop().split(' ');
+      return words.length<3 ? [words.join(' ')] : [words.slice(0,-1).join(' '),words.at(-1)];
+    },
+    updateRulers() {
+      const state=workspaces.get(this);
+      if(!state||!this.src)return;
+      const r=this.$el.getBoundingClientRect(), ws=state.ws, viewport=ws.getBoundingClientRect();
+      const [x,y,width,height]=this.viewbox.split(' ').map(Number), scale=r.width/width;
+      if(!(scale>0))return;
+      this.labelSize=Math.min(4,Math.max(2.6,8.5/scale));
+      const originX=r.left-viewport.left-x*scale, originY=r.top-viewport.top-y*r.height/height;
+      this.rulers={width:ws.clientWidth,height:ws.clientHeight,
+        x:rulerTicks(originX,scale,ws.clientWidth),y:rulerTicks(originY,r.height/height,ws.clientHeight)};
+      ws.style.setProperty('--grid-step',scale+'px');
+      ws.style.setProperty('--grid-major',scale*10+'px');
+      ws.style.setProperty('--grid-position',originX+'px '+originY+'px');
+    },
     autoFit() {if(workspaces.get(this)?.fitting)this.$nextTick(()=>this.fit());},
     fit() {
       const state=workspaces.get(this), paper=this.$el.closest('.se-pattern-paper');
@@ -60,23 +110,25 @@ export default {
       const r=this.$el.getBoundingClientRect();
       if(r.width<1||r.height<1||state.ws.clientWidth<1)return;
       paper.style.margin=state.ws.clientHeight/2+'px '+state.ws.clientWidth/2+'px';
-      this.zoom(Math.min((state.ws.clientWidth-50)/r.width,(state.ws.clientHeight-100)/r.height));
+      this.zoom(Math.min((state.ws.clientWidth-64)/r.width,(state.ws.clientHeight-160)/r.height));
       state.fitting=true;
       const next=this.$el.getBoundingClientRect(), viewport=state.ws.getBoundingClientRect();
-      state.ws.scrollLeft+=next.left+next.width/2-viewport.left-state.ws.clientWidth/2;
-      state.ws.scrollTop+=next.top+next.height/2-viewport.top-state.ws.clientHeight/2;
+      state.ws.scrollLeft+=next.left+next.width/2-viewport.left-(state.ws.clientWidth+28)/2;
+      state.ws.scrollTop+=next.top+next.height/2-viewport.top-(state.ws.clientHeight+40)/2;
+      this.updateRulers();
     },
     zoom(factor) {
       const state=workspaces.get(this), paper=this.$el.closest('.se-pattern-paper');
       if(!state||!paper)return;
       this.cancel();state.fitting=false;
-      const width=paper.offsetWidth, next=Math.max(250,Math.min(10000,width*factor)), ratio=next/width;
+      const width=paper.offsetWidth, next=Math.max(80,Math.min(10000,width*factor)), ratio=next/width;
       const before=paper.getBoundingClientRect(), viewport=state.ws.getBoundingClientRect();
       const x=viewport.left+state.ws.clientWidth/2-before.left, y=viewport.top+state.ws.clientHeight/2-before.top;
-      paper.style.width=next+'px';paper.style.height=next*.6+'px';
+      paper.style.width=next+'px';
       const after=paper.getBoundingClientRect();
       state.ws.scrollLeft+=after.left+x*ratio-viewport.left-state.ws.clientWidth/2;
       state.ws.scrollTop+=after.top+y*ratio-viewport.top-state.ws.clientHeight/2;
+      this.updateRulers();
     },
     start(e) {
       const state=workspaces.get(this);
@@ -85,6 +137,9 @@ export default {
       // Touch continues to use native scrolling and tap selection.
       if(e.pointerType==='touch'||!this.$refs.svg)return;
       const piece=e.target.closest('[data-pattern-piece]'), additive=e.shiftKey||e.ctrlKey||e.metaKey;
+      // Native SVG focus can scroll the entire image to its top on a click.
+      // Keep the clicked piece focused without moving the cutting table.
+      if(piece){e.preventDefault();piece.focus?.({preventScroll:true});}
       if(e.button===0&&piece&&additive)return;
       const mode=e.button!==0||piece ? 'pan' : 'box';
       if(e.button!==0)e.preventDefault();
@@ -93,7 +148,7 @@ export default {
       }) : [];
       state.gesture={id:e.pointerId,mode,additive,bounds,base:[...this.picked],
         start:{x:e.clientX,y:e.clientY},scroll:[state.ws.scrollLeft,state.ws.scrollTop],dragging:false};
-      state.ws.focus({preventScroll:true});
+      if(!piece)state.ws.focus({preventScroll:true});
     },
     move(e) {
       const state=workspaces.get(this),g=state?.gesture;

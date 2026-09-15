@@ -16,6 +16,7 @@ import seweasy as pyg
 import seweasy.data_config as data_config
 from seweasy.meshgen.sim_config import PathCofig
 from seweasy.pattern.print_export import save_print_pdf
+from gui.pattern_layout import studio_svg
 
 # The legacy simulation stack is imported lazily in drape_3d(). The studio's
 # live 3D view instead uses gui.browser_drape (CPU meshing + browser WebGPU).
@@ -443,22 +444,19 @@ class GUIPattern:
         self.clear_previous_svg()
         try:
             self.svg_filename = f'pattern_{time.time()}.svg'
-            dwg = pattern.get_svg(self.tmp_path / self.svg_filename,
-                                  with_text=False,
-                                  view_ids=False,
-                                  flat=False,
-                                  panel_fill_color=self.fabric_color,
-                                  panel_colors=self.display_panel_colors(),
-                                  fabric=None if self.outfit_items else self._fabric_spec(),
-                                  panel_fabrics=self.display_panel_fabrics(),
-                                  margin=0
-            )
+            dwg, paths, labels, size = studio_svg(
+                pattern, self.tmp_path / self.svg_filename,
+                panel_fill_color=self.fabric_color,
+                panel_colors=self.display_panel_colors(),
+                fabric=None if self.outfit_items else self._fabric_spec(),
+                panel_fabrics=self.display_panel_fabrics())
             dwg.save()
 
-            self.svg_bbox_size = pattern.svg_bbox_size
-            self.svg_bbox = pattern.svg_bbox
+            self.svg_bbox_size = size
+            self.svg_bbox = [0, size[0], 0, size[1]]
+            self.panel_svg_labels = labels
             # Panel paths (SVG coords) for click hit-testing in the 2D view
-            self.panel_svg_paths = pattern.last_panel_svg_paths
+            self.panel_svg_paths = paths
         except pyg.EmptyPatternError:
             self.svg_filename = ''
     

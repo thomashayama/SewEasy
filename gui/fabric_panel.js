@@ -6,12 +6,12 @@ export function sharedValue(selection, field) {
 
 export default {
   template: `<aside v-if="open || docked" class="se-fabric-panel" :class="{'is-empty':!selection.length}" aria-label="Fabric settings" :aria-busy="busy">
-    <header><h2>{{selection.length ? selection.length===1 ? '1 section selected' : selection.length+' sections selected' : 'Fabric'}}</h2><button v-if="selection.length" class="se-fabric-icon" aria-label="Close fabric settings" @click="$emit('close')">×</button></header>
+    <header><h2>{{selectionTitle}}</h2><button v-if="selection.length" class="se-fabric-icon" aria-label="Close fabric settings" @click="$emit('close')">×</button></header>
     <div class="se-fabric-scroll">
       <div v-if="!selection.length" class="se-fabric-empty">
         <svg viewBox="0 0 44 44" aria-hidden="true"><path d="M8 6h19v7h9v25H8Z"/><path d="m17 18 14 8-7 2-3 7Z"/></svg>
-        <h3>Make it your fabric</h3>
-        <p>Select a pattern piece to choose its fabric, color and print.</p>
+        <h3>Select a pattern piece</h3>
+        <p>Choose a fabric, then make it your own with color and print.</p>
         <p>Drag a box to select a group.<br>Hold Shift or Ctrl to add pieces.</p>
         <button :disabled="!available" class="se-select-all" @click="$emit('select-all')">Select all pieces</button>
       </div>
@@ -23,7 +23,6 @@ export default {
             <option v-for="fabric in materials" :key="fabric.id" :value="fabric.id">{{fabric.label}}</option>
             <option value="custom">Custom</option>
           </select>
-          <small>{{materialDescription}}</small>
         </label>
         <div class="se-color-swatches" aria-label="Fabric colors">
           <button v-for="swatch in swatches" :key="swatch.color" :style="{'--swatch':swatch.color}" :aria-label="swatch.name+' fabric'"
@@ -36,6 +35,14 @@ export default {
             <option value="polka_dot">Polka dot</option><option value="gingham">Gingham</option><option value="windowpane">Windowpane</option>
           </select>
         </label>
+        <details class="se-fabric-drape"><summary>Drape</summary>
+          <p>{{materialDescription}}</p>
+          <label class="se-fabric-field se-fabric-stiffness">Bending stiffness
+            <input type="number" aria-label="Bending stiffness" min="0.5" max="30" step="0.5" :placeholder="shared('stiffness')===null?'Mixed':''" :value="shared('stiffness')??''" @input="number('stiffness',$event)" @blur="restoreInvalid('stiffness',$event)">
+            <small>Higher values hold their shape more. Presets approximate drape.</small>
+          </label>
+        </details>
+        <details class="se-fabric-custom"><summary>Custom colors &amp; spacing</summary>
         <label v-for="field in colorFields" :key="field.key" class="se-fabric-field">{{field.label}}
           <span class="se-fabric-color" :class="{'is-mixed':shared(field.key)===null}">
             <input type="color" :aria-label="field.label+' swatch'" :value="shared(field.key)||'#b7cde5'" @input="color(field.key,$event)">
@@ -45,17 +52,12 @@ export default {
         <label v-if="shared('kind')!=='plain'" class="se-fabric-field">Pattern spacing <span class="se-fabric-unit">cm</span>
           <input type="number" aria-label="Pattern spacing" min="0.2" max="4" step="0.1" :placeholder="shared('scale')===null?'Mixed':''" :value="shared('scale')??''" @input="number('scale',$event)" @blur="restoreInvalid('scale',$event)">
         </label>
-        <details class="se-fabric-drape"><summary>Drape</summary>
-          <label class="se-fabric-field se-fabric-stiffness">Bending stiffness
-            <input type="number" aria-label="Bending stiffness" min="0.5" max="30" step="0.5" :placeholder="shared('stiffness')===null?'Mixed':''" :value="shared('stiffness')??''" @input="number('stiffness',$event)" @blur="restoreInvalid('stiffness',$event)">
-            <small>Higher values hold their shape more. Presets approximate drape.</small>
-          </label>
         </details>
         <details class="se-fabric-selection"><summary>Selected pieces ({{selection.length}})</summary>
           <ul class="se-fabric-pieces"><li v-for="p in selection" :key="p.id">{{p.label}}</li></ul>
           <div class="se-fabric-selection-actions"><button :disabled="!available" @click="$emit('select-all')">Select all</button><button @click="$emit('clear')">Clear selection</button></div>
+          <button class="se-fabric-reset" @click="edit('reset')">Reset fabric settings</button>
         </details>
-        <button class="se-fabric-reset" @click="edit('reset')">Reset fabric settings</button>
       </fieldset>
     </div>
     <footer v-if="selection.length" role="status">{{busy?'Applying fabric…':'Applied to all selected pieces'}}</footer>
@@ -65,6 +67,11 @@ export default {
     {name:'Silver',color:'#bfc6cf'},{name:'Rose',color:'#deb5c0'},{name:'Navy',color:'#263f5d'}]}),
   beforeUnmount() {Object.values(this.pending).forEach(p=>clearTimeout(p.timer));},
   computed: {
+    selectionTitle() {
+      if(!this.selection.length)return 'Fabric';
+      const noun=['cuff','sleeve','collar'].find(word=>this.selection.every(p=>p.label.toLowerCase().includes(word)))||'piece';
+      return this.selection.length+' '+noun+(this.selection.length===1?'':'s')+' selected';
+    },
     colorFields() {return this.shared('kind')==='plain' ? [{key:'bg',label:'Fabric color'}] : [{key:'bg',label:'Base color'},{key:'fg',label:'Print color'}];},
     materialDescription() {
       const id=this.shared('material');
