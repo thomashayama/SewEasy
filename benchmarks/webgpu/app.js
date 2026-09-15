@@ -1,4 +1,5 @@
 import {Cloth} from './physics.js?v=9';
+import './scrollbars.js?v=1';
 import {Renderer} from './render.js?v=9';
 
 const $=id=>document.getElementById(id);

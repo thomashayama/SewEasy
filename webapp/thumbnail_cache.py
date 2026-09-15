@@ -7,7 +7,7 @@ import json
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-THUMBNAIL_VERSION = 'default-mannequin-webgpu-v1'
+THUMBNAIL_VERSION = 'default-mannequin-webgpu-v2'
 SIZE = (384, 448)
 
 

@@ -1,3 +1,5 @@
+import {placeTrouserLegs} from './trousers.js?v=1';
+
 // Maximum principal stretch of F = Ds * inverse(Dm). Unlike edge lengths,
 // this also detects shearing and distortion of thin triangles.
 export const strainShader = `
@@ -55,6 +57,34 @@ export function contactNeighbors(scene) {
  return scene.sewn_ids.map(id=>[...rings.get(id)]);
 }
 
+// Propagate tension across a waistband faster than a chain of tiny mesh edges.
+// These are maximum-distance material constraints, not pins: folding and rigid
+// motion remain free, and every correction is shared by both cloth particles.
+export function waistbandTethers(scene) {
+ const panels=new Map(),pairs=new Map();
+ (scene.vertex_panels||[]).forEach((name,i)=>{
+  if(!/(^|__)wb_/.test(name))return;
+  if(!panels.has(name))panels.set(name,[]);panels.get(name).push(i);
+ });
+ for(const ids of panels.values())for(const a of ids)for(const span of [.06,.10]){
+  const [x,y]=scene.uv[a];let best=-1,error=Infinity;
+  for(const b of ids){
+   const dx=scene.uv[b][0]-x,dy=scene.uv[b][1]-y;
+   if(dx<span*.65||dx>span*1.35||Math.abs(dy)>.02)continue;
+   const score=(dx-span)**2+dy*dy;
+   if(score<error){best=b;error=score;}
+  }
+  if(best>=0)pairs.set(`${a}:${best}`,[a,best,3,scene.uv[best][0]-x,scene.uv[best][1]-y,0,0]);
+ }
+ const colors=[],used=Array.from({length:scene.vertices.length},()=>new Set());
+ for(const c of pairs.values()){
+  let color=0;while(used[c[0]].has(color)||used[c[1]].has(color))color++;
+  while(colors.length<=color)colors.push([]);colors[color].push(c);
+  used[c[0]].add(color);used[c[1]].add(color);
+ }
+ return colors;
+}
+
 export function placePanels(scene) {
  // A collared shirt already has a drafted neck height. Raising it can sew
  // the stand around the jaw on larger profiles and trap the whole shirt.
@@ -80,6 +110,7 @@ export function placePanels(scene) {
   for(let i=0;i<names.length;i++)if(names[i].startsWith(`${prefix}${side}_sleeve_`)||names[i].startsWith(`${prefix}sl_${side}_cuff_`))positions[i]=positions[i].map((v,j)=>v+delta[j]);
   adjustments.push({prefix,side,translation_m:delta});
  }
+ adjustments.push(...placeTrouserLegs(scene,positions));
  const support=[];
  for(const prefix of prefixes)if((scene.garment==='element-top'||scene.garment_types?.[prefix]==='ElementTubeTop')&&scene.vertex_panels){
   const ring=new Map();

@@ -1,4 +1,4 @@
-import {buffer} from './physics.js?v=17';
+import {buffer} from './physics.js?v=18';
 import {cameraControls,framingScale} from './camera.js?v=15';
 import {Buttons} from './buttons.js?v=3';
 

@@ -59,6 +59,12 @@ class MetaGarment(pyg.Component):
             # Adjust rise to match the Lower garment if needed
             Belt = Belt_class(body, design, Lower.get_rise() if Lower else 1.)
 
+            # A trouser waistband occupies part of the rise. Draft the leg
+            # panels to its lower edge instead of adding another band below
+            # a full waist-to-hip rise (which lowers the crotch and hems).
+            if self.lower_name == 'Pants' and Belt.rise != Lower.get_rise():
+                Lower = Lower_class(body, design, rise=Belt.rise)
+
             self.subs.append(Belt)
 
             # Place below the upper garment 
@@ -86,7 +92,10 @@ class MetaGarment(pyg.Component):
                 self.subs[-1].place_by_interface(
                     self.subs[-1].interfaces['top'],
                     self.subs[-2].interfaces['bottom'], 
-                    gap=5
+                    # Trouser hems must start above the feet. Their front/back
+                    # planes already have clearance; a vertical sewing gap
+                    # unnecessarily drops the whole leg onto the heel.
+                    gap=0 if self.lower_name == 'Pants' else 5
                 )
                 self.stitching_rules.append(
                     (self.subs[-2].interfaces['bottom'],

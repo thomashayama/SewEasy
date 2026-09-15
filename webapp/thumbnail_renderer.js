@@ -1,4 +1,4 @@
-import {Cloth} from '/webgpu/physics.js?v=17';
+import {Cloth} from '/webgpu/physics.js?v=18';
 import {Renderer} from '/webgpu/render.js?v=21';
 
 const engines=new WeakMap();

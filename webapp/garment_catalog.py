@@ -47,6 +47,7 @@ def starter_item(kind):
         params['meta']['wb']['v'] = 'FittedWB'
     if kind == 'Pants':
         params['pants']['length']['v'] = .9
+        params['pants']['flare']['v'] = .7
     if kind == 'Shirt':
         params['sleeve']['length']['v'] = .28
         params['sleeve']['end_width']['v'] = .9

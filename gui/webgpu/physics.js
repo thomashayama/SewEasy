@@ -1,6 +1,6 @@
 // SewEasy browser cloth experiment. Original WGSL implementation of small-step
 // XPBD distance constraints; see README.md for paper references and limits.
-import {strainShader, strainTopology, contactNeighbors, placePanels} from './strain.js?v=13';
+import {strainShader, strainTopology, contactNeighbors, placePanels, waistbandTethers} from './strain.js?v=14';
 import {hingeShader, collarWeldShader} from './bending.js?v=2';
 import {MannequinMotion,bodyMotionWGSL} from './motion.js?v=2';
 import {buttonClosureShader,closureColors,closureRest} from './closures.js?v=2';
@@ -41,6 +41,11 @@ struct Batch { start: u32, count: u32, pad: vec2<u32> }
  if (c.ids.z == 2u) {
    rest = c.rest.w * (1.0 - clamp(params.motion.y / params.contact.w, 0.0, 1.0));
    compliance = params.material.z;
+ }
+ if (c.ids.z == 3u) {
+   rest *= params.limits.x;
+   if (length_now <= rest) { return; }
+   compliance = 0.0;
  }
  let alpha = compliance / (params.motion.x * params.motion.x);
  let lambda = -(length_now - rest) / (pa.w + pb.w + alpha);
@@ -298,6 +303,8 @@ export class Cloth {
   }
   async initialize(){
     const d=this.device,s=this.scene;
+    const placedConstraints=s.constraints.map(c=>c[2]===2?
+      [...c.slice(0,6),Math.hypot(...this.initialPositions[c[0]].map((v,a)=>v-this.initialPositions[c[1]][a]))]:c);
     this.motionStride=Math.max(256,d.limits.minUniformBufferOffsetAlignment);
     this.motionRaw=new Float32Array(this.motionStride/4*64);
     this.motionBuffer=this.make(this.motionRaw,GPUBufferUsage.UNIFORM);this.writeMotion(false);
@@ -310,7 +317,7 @@ export class Cloth {
     this.body=this.make(vec4(s.body_vertices));this.bodyNormals=this.make(vec4(s.body_normals));
     this.bodyFaces=this.make(new Uint32Array(s.body_faces.flat()),GPUBufferUsage.STORAGE|GPUBufferUsage.INDEX);
     const raw=new ArrayBuffer(s.constraints.length*32),u=new Uint32Array(raw),f=new Float32Array(raw);
-    s.constraints.forEach((c,i)=>{u.set([c[0],c[1],c[2],0],i*8);f.set(c.slice(3),i*8+4);});
+    placedConstraints.forEach((c,i)=>{u.set([c[0],c[1],c[2],0],i*8);f.set(c.slice(3),i*8+4);});
     this.edges=this.make(new Uint8Array(raw));
     const nodeRaw=new ArrayBuffer(s.body_bvh.length*48),nf=new Float32Array(nodeRaw),nu=new Uint32Array(nodeRaw);
     s.body_bvh.forEach((n,i)=>{nf.set(n.lo,i*12);nf.set(n.hi,i*12+4);nu.set([n.escape,n.start,n.count,0],i*12+8);});
@@ -366,10 +373,17 @@ export class Cloth {
       let offset=0;for(const color of waistColors){if(color.length)this.waistBatches.push({count:color.length,bind:d.createBindGroup({layout:this.waistSolve.pipeline.getBindGroupLayout(1),entries:[{binding:0,resource:{buffer:this.make(new Uint32Array([offset,color.length,0,0]),GPUBufferUsage.UNIFORM)}}]})});offset+=color.length;}
     }
     this.collide=await this.pipeline(bodyCollision,[...base,[2,this.nodes],[3,this.body],[4,this.bodyFaces],[5,this.bodyNormals],[6,this.previous]],'Mannequin BVH contact',7);
+    const tetherColors=waistbandTethers(s),tethers=tetherColors.flat();this.waistTetherBatches=[];
+    if(tethers.length){
+      const raw=new ArrayBuffer(tethers.length*32),u=new Uint32Array(raw),f=new Float32Array(raw);
+      tethers.forEach((c,i)=>{u.set(c.slice(0,3),i*8);f.set(c.slice(3),i*8+4);});
+      this.waistTetherSolve={...this.solve,bind:d.createBindGroup({layout:this.solve.pipeline.getBindGroupLayout(0),entries:[...base,[2,this.make(new Uint8Array(raw))]].map(([binding,b])=>({binding,resource:{buffer:b}}))})};
+      let offset=0;this.waistTetherBatches=tetherColors.map(color=>{const batch={count:color.length,bind:d.createBindGroup({layout:this.solve.pipeline.getBindGroupLayout(1),entries:[{binding:0,resource:{buffer:this.make(new Uint32Array([offset,color.length,0,0]),GPUBufferUsage.UNIFORM)}}]})};offset+=color.length;return batch;});
+    }
     // Resolve stitches again after other projections; these batches are also
     // graph-colored, so their endpoint writes cannot race.
     const seamColors=[],used=Array.from({length:this.n},()=>new Set());
-    for(const c of s.constraints.filter(c=>c[2]===2)){
+    for(const c of placedConstraints.filter(c=>c[2]===2)){
       let color=0;while(used[c[0]].has(color)||used[c[1]].has(color))color++;
       while(seamColors.length<=color)seamColors.push([]);seamColors[color].push(c);used[c[0]].add(color);used[c[1]].add(color);
     }
@@ -378,6 +392,14 @@ export class Cloth {
     this.seamEdges=this.make(new Uint8Array(sr));
     this.seamSolve={...this.solve,bind:d.createBindGroup({layout:this.solve.pipeline.getBindGroupLayout(0),entries:[...base,[2,this.seamEdges]].map(([binding,b])=>({binding,resource:{buffer:b}}))})};
     let offset=0;this.seamBatches=seamColors.map(color=>{const batch={count:color.length,bind:d.createBindGroup({layout:this.solve.pipeline.getBindGroupLayout(1),entries:[{binding:0,resource:{buffer:this.make(new Uint32Array([offset,color.length,0,0]),GPUBufferUsage.UNIFORM)}}]})};offset+=color.length;return batch;});
+    const waistSeams=seamColors.map(color=>color.filter(c=>c.slice(0,2).some(i=>/(^|__)wb_/.test(s.vertex_panels?.[i]||''))));
+    const ws=waistSeams.flat(),wr=new ArrayBuffer(ws.length*32),wu=new Uint32Array(wr),wf=new Float32Array(wr);
+    this.waistSeamBatches=[];
+    if(ws.length){
+      ws.forEach((c,i)=>{wu.set(c.slice(0,3),i*8);wf.set(c.slice(3),i*8+4);});
+      this.waistSeamSolve={...this.solve,bind:d.createBindGroup({layout:this.solve.pipeline.getBindGroupLayout(0),entries:[...base,[2,this.make(new Uint8Array(wr))]].map(([binding,b])=>({binding,resource:{buffer:b}}))})};
+      let offset=0;for(const color of waistSeams){if(color.length)this.waistSeamBatches.push({count:color.length,bind:d.createBindGroup({layout:this.solve.pipeline.getBindGroupLayout(1),entries:[{binding:0,resource:{buffer:this.make(new Uint32Array([offset,color.length,0,0]),GPUBufferUsage.UNIFORM)}}]})});offset+=color.length;}
+    }
     this.gridSize=[160,224,64];const lo=[0,1,2].map(a=>Math.min(...s.body_vertices.map(p=>p[a]))-.07),hi=[0,1,2].map(a=>Math.max(...s.body_vertices.map(p=>p[a]))+.07);
     this.gridRaw=new ArrayBuffer(48);new Float32Array(this.gridRaw).set([...lo,0,...lo.map((v,i)=>(hi[i]-v)/(this.gridSize[i]-1)),0]);
     new Uint32Array(this.gridRaw).set([...this.gridSize,0],8);this.grid=this.make(new Uint8Array(this.gridRaw),GPUBufferUsage.UNIFORM);
@@ -593,7 +615,9 @@ export class Cloth {
       if(this.settings.holdNeckline&&this.supportPass)this.dispatchInPass(pass,this.supportPass,this.supportTargets.length);
       if(this.settings.bodyCollision)this.dispatchInPass(pass,this.settings.bodyMethod==='sdf'?this.sdfCollide:this.collide);
       if(this.waistBatches.length)for(let iteration=0;iteration<6;iteration++){
+        for(const batch of this.waistTetherBatches)this.dispatchInPass(pass,this.waistTetherSolve,batch.count,batch.bind);
         for(const batch of this.waistBatches)this.dispatchInPass(pass,this.waistSolve,batch.count,batch.bind);
+        for(const batch of this.waistSeamBatches)this.dispatchInPass(pass,this.waistSeamSolve,batch.count,batch.bind);
         if(this.settings.bodyCollision)this.dispatchInPass(pass,this.settings.bodyMethod==='sdf'?this.sdfCollide:this.collide);
       }
       if(this.buttonBatches.length&&this.collarWeld){
