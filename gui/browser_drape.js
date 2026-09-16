@@ -11,7 +11,7 @@ const WARMUP_SECONDS=6;
 
 export default {
   template: `<div class="se-browser-drape" :data-state="state" :data-scene="loadedScene" :data-frames="frames">
-    <canvas ref="canvas" aria-label="Interactive 3D garment" :style="{visibility: ready && !preparing && !error ? 'visible' : 'hidden', cursor: 'grab'}"
+    <canvas ref="canvas" data-se-local aria-label="Interactive 3D garment" :style="{visibility: ready && !preparing && !error ? 'visible' : 'hidden', cursor: 'grab'}"
       @pointerdown="wake" @pointermove="$event.buttons && wake()" @wheel="wake" @keydown="wake"></canvas>
     <div v-if="!ready || preparing || error || failure" class="se-drape-message" role="status">
       <div v-if="!(error || failure) && (preparing || scene_url)" class="se-drape-loader"></div>
@@ -21,13 +21,13 @@ export default {
     </div>
     <div v-if="ready && !preparing && !error && !failure" class="se-drape-controls">
       <span v-if="hasSupport && support" class="se-drape-support-note">Neckline held · fitting aid</span>
-      <button class="se-drape-icon" @click="paused = !paused" :aria-label="paused ? 'Resume' : 'Pause'" :title="paused ? 'Resume simulation' : 'Pause simulation'" :aria-pressed="paused">
+      <button data-se-local class="se-drape-icon" @click="paused = !paused" :aria-label="paused ? 'Resume' : 'Pause'" :title="paused ? 'Resume simulation' : 'Pause simulation'" :aria-pressed="paused">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path v-if="paused" d="m9 5 10 7-10 7Z"/><path v-else d="M9 5v14M15 5v14"/></svg>
       </button>
-      <button class="se-drape-icon" @click="reset" aria-label="Reset" title="Reset simulation">
+      <button data-se-local class="se-drape-icon" @click="reset" aria-label="Reset" title="Reset simulation">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 10a8 8 0 1 1 1.8 7M4 4v6h6"/></svg>
       </button>
-      <button class="se-drape-icon" @click="center" aria-label="Recenter" title="Recenter view">
+      <button data-se-local class="se-drape-icon" @click="center" aria-label="Recenter" title="Recenter view">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 4H4v4m12-4h4v4M4 16v4h4m12-4v4h-4"/><circle cx="12" cy="12" r="3"/></svg>
       </button>
       <details class="se-drape-more" @keydown.esc.prevent="$event.currentTarget.open = false">

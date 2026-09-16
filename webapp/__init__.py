@@ -11,6 +11,8 @@ from webapp import auth
 def setup(app):
     """Initialize the database and register auth routes + account page"""
     init_db()
+    from webapp import connection
+    connection.setup(app)
     auth.register(app)
     from webapp import account_page  # noqa: F401  -- registers @ui.page('/account')
     from webapp import home_page  # noqa: F401 -- lightweight wardrobe at /

@@ -20,13 +20,14 @@ icon_image_b64 = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAQAAAAEACAYAAABc
 
 @ui.page('/studio')
 async def index(client: Client, request: Request):
+    from webapp.connection import INITIAL_CONNECT_TIMEOUT, wait_for_session_end
     # Build the page immediately; the (expensive) first pattern draft runs
     # off the event loop after the page is delivered
     gui_st = GUIState(user=webapp.auth.current_user(request))
 
     try:
         try:
-            await client.connected()   # response sent, websocket live
+            await client.connected(timeout=INITIAL_CONNECT_TIMEOUT)
         except (TimeoutError, asyncio.TimeoutError):
             return   # crawler/bot never opened the websocket; just clean up
         await gui_st.initial_draft()
@@ -35,7 +36,7 @@ async def index(client: Client, request: Request):
 
         # Connection end
         # https://github.com/zauberzeug/nicegui/discussions/1379
-        await client.disconnected()
+        await wait_for_session_end(client)
     finally:
         print('Closed connection ', gui_st.pattern_state.id, '. Deleting files...')
         gui_st.release()
@@ -45,10 +46,12 @@ if __name__ == '__main__':
     sweep_stale_tmp()   # session dirs leaked by unclean disconnects
 
     webapp.setup(app)
+    from webapp.connection import RECONNECT_TIMEOUT
     ui.run(
             host=os.environ.get('HOST', '0.0.0.0'),
             port=int(os.environ.get('PORT', '8080')),
             reload=False,
+            reconnect_timeout=RECONNECT_TIMEOUT,
             dark=None,  # Follow the browser/operating-system appearance, including live changes.
             favicon='✂️',
             title='SewEasy',
