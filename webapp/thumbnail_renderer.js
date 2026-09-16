@@ -65,12 +65,12 @@ export default {
         const distance=Math.max((high-low)/2,(maxX-minX)/2/(384/448))/Math.tan(35*Math.PI/360)*1.12;
         Object.assign(renderer.camera,{yaw:.2,pitch:.02,distance:Math.max(1,distance),target:[(minX+maxX)/2,(low+high)/2,0],pan:[0,0]});
         const image=await renderer.capture();
-        if(!e.disposed){this.state='saved';this.$emit('thumbnail',{key:job.key,image});}
+        if(!e.disposed){this.state='saved';this.$emit('thumbnail',{key:job.key,url:job.url,image});}
       }catch(error){
-        if(!e.disposed){this.state='failed';this.$emit('failed',{key:job.key,message:error.message || String(error),fatal:!e.device || e.lost});}
+        if(!e.disposed){this.state='failed';this.$emit('failed',{key:job.key,url:job.url,message:error.message || String(error),fatal:!e.device || e.lost});}
       }finally{
         renderer?.destroy();cloth?.destroy();e.loading=false;
-        if(this.job && this.job.key!==job.key && !e.disposed)this.renderJob();
+        if(this.job && this.job.url!==job.url && !e.disposed)this.renderJob();
       }
     },
   },

@@ -116,7 +116,7 @@ class Design(TimestampMixin, Base):
 
 
 class WardrobeLibrary(Base):
-    """Versioned garments and the outfits that reference their snapshots."""
+    """Named garments and outfits with independent appearance snapshots."""
     __tablename__ = 'wardrobe_libraries'
     owner_email = Column(String, ForeignKey('users.email', ondelete='CASCADE'), primary_key=True)
     content = Column(JSON, nullable=False)
@@ -124,7 +124,7 @@ class WardrobeLibrary(Base):
 
 
 class WardrobeShare(TimestampMixin, Base):
-    """An explicitly shared, immutable garment or outfit revision."""
+    """Access to a named item. revision_id is its stable ID (legacy column name)."""
     __tablename__ = 'wardrobe_shares'
     __table_args__ = (UniqueConstraint('owner_key', 'kind', 'revision_id', name='uq_wardrobe_share_revision'),)
     id = Column(String, primary_key=True)  # Unguessable capability for link access.

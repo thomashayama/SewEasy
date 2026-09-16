@@ -76,3 +76,8 @@
  .se-new-outfit-dialog .se-library-art {height:82px;}
 }
 @media(prefers-reduced-motion:reduce) {.se-home *, .se-new-outfit-dialog * {transition:none!important;}}
+@media(max-width:620px) {
+ .se-home-heading {flex-direction:column; align-items:stretch;}
+ .se-home-heading .se-home-subtitle {max-width:none;}
+ .se-home-create-actions {flex-wrap:nowrap;}
+}

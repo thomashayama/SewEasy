@@ -1,4 +1,4 @@
-"""Thumbnails attached to garment/outfit revision IDs, on the default mannequin."""
+"""Thumbnails attached to garment/outfit IDs, on the default mannequin."""
 import base64
 from io import BytesIO
 from pathlib import Path
@@ -8,7 +8,7 @@ SIZE = (384, 448)
 
 
 def thumbnail_key(kind, revision_id):
-    """The immutable saved version owns its image; no design/file hashing."""
+    """The named item owns its image; no design/file hashing."""
     if kind not in ('garment', 'outfit') or not revision_id or revision_id == 'draft':
         raise ValueError('A thumbnail needs a saved garment or outfit ID.')
     return f'{kind}:{revision_id}'

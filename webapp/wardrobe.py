@@ -1,50 +1,78 @@
-"""Saved garment versions and outfits made from those immutable snapshots.
-
-Account libraries live in SQL; guest libraries use the browser's existing
-NiceGUI user storage. Neither includes body measurements.
-"""
+"""Named, independently owned garments and outfits; Save updates an existing item."""
 from copy import deepcopy
 from datetime import datetime, timezone
 from uuid import uuid4
 from contextlib import contextmanager
 from threading import RLock
+import re
 from sqlalchemy import text
 
 from webapp.db import SessionLocal
-from webapp.models import WardrobeLibrary
+from webapp.models import WardrobeLibrary, WardrobeShare
 from webapp.designs import snapshot_design_params
 
 
 def empty_library():
-    return {'garments': [], 'outfits': [], 'outfit_revisions': []}
+    return {'format': 2, 'garments': [], 'outfits': []}
+
+
+def copy_name(name, records):
+    name = re.sub(r' \(copy(?: \d+)?\)$', '', name, flags=re.IGNORECASE)
+    used = {r['name'].casefold() for r in records}
+    candidate = f'{name} (copy)'
+    number = 2
+    while candidate.casefold() in used:
+        candidate = f'{name} (copy {number})'
+        number += 1
+    return candidate
 
 
 def normalize_library(content):
-    """Give pre-versioning saves deterministic identities, without changing designs."""
     library = deepcopy(content or empty_library())
-    groups = {}
-    for garment in library['garments']:
-        previous = groups.get(garment['name'])
-        garment.setdefault('lineage_id', previous['lineage_id'] if previous else garment['id'])
-        garment.setdefault('parent_revision_id', previous['id'] if previous else None)
-        groups[garment['name']] = garment
-    history = library.setdefault('outfit_revisions', [])
-    for outfit in library['outfits']:
-        outfit.setdefault('revision_id', outfit['id'])
-        outfit.setdefault('version', 1)
-        outfit.setdefault('parent_revision_id', None)
-        if not any(o['revision_id'] == outfit['revision_id'] for o in history):
-            history.append(deepcopy(outfit))
+    library.setdefault('garments', [])
+    library.setdefault('outfits', [])
     from webapp.thumbnail_migration import migrate_thumbnails
     migrate_thumbnails(library)
+    if library.get('format') == 2:
+        return library
+    # Preserve every old save as a named item. Existing IDs retain their images,
+    # shares and outfit references. Newest saves retain the original name.
+    live = {o['id'] for o in library['outfits']}
+    outfits = {o.get('revision_id', o['id']): o for o in library.get('outfit_revisions', []) if o['id'] in live}
+    outfits.update({o.get('revision_id', o['id']): o for o in library['outfits']})
+    library['outfits'] = list(outfits.values())
+    for key in ('garments', 'outfits'):
+        named = []
+        for item in reversed(library[key]):
+            if key == 'outfits':
+                item['id'] = item.get('revision_id', item['id'])
+                item['revision_id'] = item['id']  # compatibility alias, never incremented
+            if any(r['name'].casefold() == item['name'].casefold() for r in named):
+                item['name'] = copy_name(item['name'], named)
+            for field in ('version', 'lineage_id', 'parent_revision_id'):
+                item.pop(field, None)
+            if key == 'outfits':
+                for garment in item['garments']:
+                    for field in ('version', 'lineage_id', 'parent_revision_id'):
+                        garment.pop(field, None)
+            item.setdefault('updated_at', item.get('created_at', ''))
+            named.append(item)
+        library[key] = list(reversed(named))
+    library.pop('outfit_revisions', None)
+    library['format'] = 2
     return library
 
 
 def latest_garments(library):
-    latest = {}
-    for garment in library['garments']:
-        latest[garment['lineage_id']] = garment
-    return list(latest.values())
+    return library['garments']
+
+
+def same_design(a, b):
+    return all(a.get(k) == b.get(k) for k in ('params', 'appearance'))
+
+
+def same_items(a, b):
+    return len(a) == len(b) and all(same_design(x, y) for x, y in zip(a, b))
 
 
 _guest_lock = RLock()
@@ -59,8 +87,6 @@ class Wardrobe:
     def owner_key(self):
         if self.email:
             return 'account:' + self.email
-        # Stored server-side in signed-session user storage, never accepted
-        # from share URLs or garment metadata.
         with _guest_lock:
             if not self.storage.get('wardrobe_owner'):
                 self.storage['wardrobe_owner'] = uuid4().hex
@@ -74,21 +100,27 @@ class Wardrobe:
         else:
             content = self.storage.get('wardrobe')
         library = normalize_library(content)
-        if library.get('thumbnails') != (content or {}).get('thumbnails'):
-            # Persist the one-time image migration under the normal write lock.
+        if content is not None and library != content:
             with self._edit() as migrated:
                 return deepcopy(migrated)
         return library
 
+    def _sync_shares(self, db, library):
+        from webapp.wardrobe_sharing import _snapshot
+        for row in db.query(WardrobeShare).filter_by(owner_key=self.owner_key):
+            records = library['garments' if row.kind == 'garment' else 'outfits']
+            item = next((x for x in records if x['id'] == row.revision_id), None)
+            if item:
+                row.snapshot = _snapshot(item, row.kind)
+                row.thumbnail = library.get('thumbnails', {}).get(f'{row.kind}:{item["id"]}')
+
     @contextmanager
     def _edit(self):
-        """Allocate versions and update JSON in one transaction, including thumbnails."""
         if self.email:
             with SessionLocal() as db:
                 if db.bind.dialect.name == 'sqlite':
                     db.execute(text('BEGIN IMMEDIATE'))
                 else:
-                    # Lock the parent even before its library row exists.
                     from webapp.models import User
                     db.query(User).filter_by(email=self.email).with_for_update().one()
                 row = db.get(WardrobeLibrary, self.email)
@@ -98,102 +130,108 @@ class Wardrobe:
                     row = WardrobeLibrary(owner_email=self.email)
                     db.add(row)
                 row.content = deepcopy(library)
+                self._sync_shares(db, library)
                 db.commit()
         else:
             with _guest_lock:
                 library = normalize_library(self.storage.get('wardrobe'))
                 yield library
+                if self.storage.get('wardrobe_owner'):
+                    with SessionLocal() as db:
+                        self._sync_shares(db, library)
+                        db.commit()
                 self.storage['wardrobe'] = deepcopy(library)
 
+    def suggested_copy_name(self, kind, name):
+        return copy_name(name, self.read()['garments' if kind == 'garment' else 'outfits'])
+
     @staticmethod
-    def _append_garment(library, name, params, appearance, parent_id=None, new=False, origin=None):
+    def _target(library, kind, name, parent_id, new, expected_updated_at=None):
+        records = library['garments' if kind == 'garment' else 'outfits']
         name = (name or '').strip()
         if not name:
-            raise ValueError('Give the garment a name.')
+            raise ValueError(f'Give the {kind} a name.')
+        old = next((g for g in records if g['id'] == parent_id), None) if parent_id and not new else None
+        if parent_id and not new and old is None:
+            raise ValueError(f'This {kind} is not in your library. Save a copy instead.')
+        if old and expected_updated_at is not None and old.get('updated_at', '') != expected_updated_at:
+            raise ValueError('This item changed in another tab. Reopen it from your wardrobe or save a copy.')
+        if any(g['name'].casefold() == name.casefold() and (not old or g['id'] != old['id']) for g in records):
+            raise ValueError(f'This {kind} name is already in use. Choose another name.')
+        return records, name, old
+
+    @classmethod
+    def _save_garment(cls, library, name, params, appearance, parent_id=None, new=False, origin=None, expected_updated_at=None):
+        records, name, old = cls._target(library, 'garment', name, parent_id, new, expected_updated_at)
         if not any(v.get('v') for v in params.get('meta', {}).values()):
             raise ValueError('Choose a garment before saving.')
-        parent = next((g for g in reversed(library['garments']) if
-                       (g['id'] == parent_id if parent_id else g['name'] == name)), None) if not new else None
-        if parent_id and parent is None:
-            raise ValueError('The original garment version is not in your library.')
-        identity = uuid4().hex
-        lineage = parent['lineage_id'] if parent else identity
-        revision = 1 + max((g['version'] for g in library['garments'] if g['lineage_id'] == lineage), default=0)
-        garment = dict(id=identity, lineage_id=lineage, parent_revision_id=parent['id'] if parent else None,
-                       name=name, version=revision,
-                       params=snapshot_design_params(params), appearance=snapshot_design_params(appearance),
-                       created_at=datetime.now(timezone.utc).isoformat())
-        origin = origin or (parent or {}).get('forked_from')
-        if origin:
-            garment['forked_from'] = deepcopy(origin)
-        library['garments'].append(garment)
-        return garment
-
-    def save_garment(self, name, params, appearance, *, parent_id=None, new=False):
-        with self._edit() as library:
-            garment = self._append_garment(library, name, params, appearance, parent_id, new)
-            return deepcopy(garment)
-
-    @staticmethod
-    def _append_outfit(library, name, garment_ids, parent_id=None, new=False, origin=None):
-        name = (name or '').strip()
-        if not name:
-            raise ValueError('Give the outfit a name.')
-        if not garment_ids:
-            raise ValueError('An outfit needs at least one saved garment.')
-        versions = {g['id']: g for g in library['garments']}
-        if any(gid not in versions for gid in garment_ids):
-            raise ValueError('A garment version is no longer in this library.')
-        # Copy the full versions: later revisions cannot silently change outfits.
-        items = [deepcopy(versions[gid]) for gid in garment_ids]
-        old = next((o for o in reversed(library['outfit_revisions']) if
-                    (o['revision_id'] == parent_id if parent_id else o['name'] == name)), None) if not new else None
-        if parent_id and old is None:
-            raise ValueError('The original outfit version is not in your library.')
-        version = 1 + max((o['version'] for o in library['outfit_revisions'] if old and o['id'] == old['id']), default=0)
-        outfit = dict(id=old['id'] if old else uuid4().hex, name=name,
-                      revision_id=uuid4().hex, version=version, parent_revision_id=old['revision_id'] if old else None,
-                      garments=items, updated_at=datetime.now(timezone.utc).isoformat())
+        now = datetime.now(timezone.utc).isoformat()
+        item = dict(id=old['id'] if old else uuid4().hex, name=name,
+                    params=snapshot_design_params(params), appearance=snapshot_design_params(appearance),
+                    created_at=old.get('created_at', now) if old else now, updated_at=now)
         origin = origin or (old or {}).get('forked_from')
         if origin:
-            outfit['forked_from'] = deepcopy(origin)
-        library['outfit_revisions'].append(deepcopy(outfit))
-        library['outfits'] = [o for o in library['outfits'] if o['id'] != outfit['id']] + [outfit]
-        return outfit
-
-    def save_outfit(self, name, garment_ids, *, parent_id=None, new=False):
-        with self._edit() as library:
-            return deepcopy(self._append_outfit(library, name, garment_ids, parent_id, new))
-
-    def revision(self, kind, revision_id):
-        key, field = ('garments', 'id') if kind == 'garment' else ('outfit_revisions', 'revision_id')
-        if kind not in ('garment', 'outfit'):
-            raise ValueError('Unknown item type.')
-        item = next((g for g in self.read()[key] if g[field] == revision_id), None)
-        if not item:
-            raise ValueError('This version is not in your library.')
+            item['forked_from'] = deepcopy(origin)
+        if old:
+            records[records.index(old)] = item
+            if not same_design(old, item):
+                library.get('thumbnails', {}).pop('garment:' + item['id'], None)
+        else:
+            records.append(item)
         return item
 
-    def history(self, kind, revision_id):
-        item = self.revision(kind, revision_id)
-        key, field = ('garments', 'lineage_id') if kind == 'garment' else ('outfit_revisions', 'id')
-        return list(reversed([g for g in self.read()[key] if g[field] == item[field]]))
+    def save_garment(self, name, params, appearance, *, parent_id=None, new=False, origin=None, expected_updated_at=None):
+        with self._edit() as library:
+            return deepcopy(self._save_garment(library, name, params, appearance, parent_id, new, origin, expected_updated_at))
+
+    @classmethod
+    def _save_outfit(cls, library, name, garment_ids=None, parent_id=None, new=False, origin=None, items=None, expected_updated_at=None):
+        records, name, old = cls._target(library, 'outfit', name, parent_id, new, expected_updated_at)
+        if items is None:
+            owned = {g['id']: g for g in library['garments']}
+            if any(gid not in owned for gid in (garment_ids or [])):
+                raise ValueError('A garment is no longer in your library.')
+            items = [owned[gid] for gid in (garment_ids or [])]
+        if not items:
+            raise ValueError('An outfit needs at least one garment.')
+        if any(not any(v.get('v') for v in g.get('params', {}).get('meta', {}).values()) for g in items):
+            raise ValueError('Choose a garment before saving.')
+        # Outfit adjustments belong to the outfit, never silently update library garments.
+        from webapp.wardrobe_sharing import _snapshot
+        identity = old['id'] if old else uuid4().hex
+        item = dict(id=identity, revision_id=identity, name=name,
+                    garments=[_snapshot(g, 'garment') for g in items], updated_at=datetime.now(timezone.utc).isoformat())
+        origin = origin or (old or {}).get('forked_from')
+        if origin:
+            item['forked_from'] = deepcopy(origin)
+        if old:
+            records[records.index(old)] = item
+            if not same_items(old['garments'], item['garments']):
+                library.get('thumbnails', {}).pop('outfit:' + identity, None)
+        else:
+            records.append(item)
+        return item
+
+    def save_outfit(self, name, garment_ids=None, *, parent_id=None, new=False, origin=None, items=None, expected_updated_at=None):
+        with self._edit() as library:
+            return deepcopy(self._save_outfit(library, name, garment_ids, parent_id, new, origin, items, expected_updated_at))
+
+    def revision(self, kind, item_id):
+        if kind not in ('garment', 'outfit'):
+            raise ValueError('Unknown item type.')
+        item = next((g for g in self.read()['garments' if kind == 'garment' else 'outfits'] if g['id'] == item_id), None)
+        if not item:
+            raise ValueError('This item is not in your library.')
+        return item
 
     def import_fork(self, kind, snapshot, origin, name=None):
-        """One atomic, independently owned copy; outfit members are copied too."""
         with self._edit() as library:
+            records = library['garments' if kind == 'garment' else 'outfits']
+            name = copy_name(snapshot['name'], records) if name is None else name
             if kind == 'garment':
-                result = self._append_garment(library, name or snapshot['name'], snapshot['params'],
-                                              snapshot['appearance'], new=True, origin=origin)
+                result = self._save_garment(library, name, snapshot['params'], snapshot['appearance'], new=True, origin=origin)
             elif kind == 'outfit':
-                versions = {}
-                for g in snapshot['garments']:
-                    if g['id'] not in versions:
-                        source = dict(origin, kind='garment', name=g['name'], revision_id=g['id'], version=g['version'])
-                        versions[g['id']] = self._append_garment(library, g['name'], g['params'],
-                                                                g['appearance'], new=True, origin=source)
-                result = self._append_outfit(library, name or snapshot['name'],
-                    [versions[g['id']]['id'] for g in snapshot['garments']], new=True, origin=origin)
+                result = self._save_outfit(library, name, items=snapshot['garments'], new=True, origin=origin)
             else:
                 raise ValueError('Unknown item type.')
             return deepcopy(result)
@@ -202,17 +240,18 @@ class Wardrobe:
         with self._edit() as library:
             library['outfits'] = [o for o in library['outfits'] if o['id'] != outfit_id]
 
-    def save_thumbnail(self, kind, revision_id, image):
+    def save_thumbnail(self, kind, item_id, image, *, items=None):
         from webapp.garment_catalog import standard_garments
         from webapp.thumbnail_cache import normalize_image, thumbnail_key
-        key = thumbnail_key(kind, revision_id)
+        key = thumbnail_key(kind, item_id)
         normalized = normalize_image(image)
         with self._edit() as library:
-            records, field = ((library['garments'] + standard_garments(), 'id') if kind == 'garment'
-                              else (library['outfit_revisions'], 'revision_id'))
-            if not any(item[field] == revision_id for item in records):
-                raise ValueError('This version is not in your library.')
-            # A late render stays attached to its original revision, even when
-            # a newer version has been saved in another tab.
+            records = library['garments'] + standard_garments() if kind == 'garment' else library['outfits']
+            item = next((g for g in records if g['id'] == item_id), None)
+            if item is None:
+                raise ValueError('This item is not in your library.')
+            current = [item] if kind == 'garment' else item['garments']
+            if items is not None and not same_items(items, current):
+                raise ValueError('The design changed while its thumbnail was rendering.')
             library.setdefault('thumbnails', {})[key] = normalized
         return normalized

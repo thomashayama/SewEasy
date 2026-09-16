@@ -54,19 +54,19 @@ class SharingTest(unittest.TestCase):
             with self.assertRaises(ValueError):
                 viewer.ensure('garment', self.g['id'])
 
-    def test_link_access_is_read_only_pinned_and_revocable(self):
+    def test_link_access_tracks_saved_item_and_is_revocable(self):
         self.owner.set_link(self.token, True)
         first = self.guest.get(self.token)
         params = deepcopy(PARAMS)
         params['fabric']['kind']['v'] = 'stripe'
         second = self.alice.save_garment('Renamed', params, LOOK, parent_id=self.g['id'])
-        self.assertEqual(second['version'], 2)
-        self.assertEqual(self.guest.get(self.token)['snapshot']['params'], PARAMS)
+        self.assertEqual(second['id'], self.g['id'])
+        self.assertEqual(self.guest.get(self.token)['snapshot']['params'], params)
         first['snapshot']['params']['meta'].clear()
-        self.assertEqual(self.owner.get(self.token)['snapshot']['params'], PARAMS)
+        self.assertEqual(self.owner.get(self.token)['snapshot']['params'], params)
         new_token = self.owner.ensure('garment', second['id'])
-        with self.assertRaises(ShareUnavailable):
-            self.guest.get(new_token)
+        self.assertEqual(new_token, self.token)
+        self.guest.get(new_token)
         self.owner.set_link(self.token, False)
         with self.assertRaises(ShareUnavailable):
             self.guest.fork(self.token)
@@ -95,38 +95,38 @@ class SharingTest(unittest.TestCase):
         self.owner.invite(self.token, 'bob@example.com')
         existing = self.bob.save_garment('Oxford', PARAMS, LOOK)
         fork = self.reader.fork(self.token)
-        self.assertNotEqual(existing['lineage_id'], fork['lineage_id'])
+        self.assertNotEqual(existing['id'], fork['id'])
         self.assertNotEqual(fork['id'], self.g['id'])
-        self.assertEqual(fork['version'], 1)
+        self.assertEqual(fork['name'], 'Oxford (copy)')
+        self.assertNotIn('version', fork)
         self.assertEqual(fork['appearance'], LOOK)
         self.assertEqual(fork['forked_from']['revision_id'], self.g['id'])
         edited = self.bob.save_garment('My Oxford', PARAMS, {'fabric_color': '#ffffff'}, parent_id=fork['id'])
-        self.assertEqual(edited['lineage_id'], fork['lineage_id'])
+        self.assertEqual(edited['id'], fork['id'])
         self.assertEqual(edited['forked_from'], fork['forked_from'])
-        self.assertEqual(len(self.bob.history('garment', edited['id'])), 2)
+        self.assertEqual(len(self.bob.read()['garments']), 2)
         self.assertEqual(len(self.alice.read()['garments']), 1)
         self.owner.revoke_invitation(self.token, 'bob@example.com')
-        self.assertEqual(self.bob.revision('garment', fork['id']), fork)
+        self.assertEqual(self.bob.revision('garment', fork['id']), edited)
         with self.assertRaises(ValueError):
             self.alice.revision('garment', fork['id'])
 
-    def test_outfit_history_and_fork_pin_each_member(self):
+    def test_outfit_copy_keeps_its_own_members_and_does_not_fill_garment_library(self):
         old = self.alice.save_outfit('Workday', [self.g['id'], self.g['id']])
-        token = self.owner.ensure('outfit', old['revision_id'])
+        token = self.owner.ensure('outfit', old['id'])
         self.owner.set_link(token, True)
-        second = self.alice.save_garment('Oxford', PARAMS, {'fabric_color': '#000000'}, parent_id=self.g['id'])
-        latest = self.alice.save_outfit('New workday', [second['id']], parent_id=old['revision_id'])
-        self.assertEqual(latest['id'], old['id'])
-        self.assertEqual(latest['version'], 2)
-        self.assertEqual(self.alice.history('outfit', latest['revision_id']), [latest, old])
         fork = self.reader.fork(token)
         self.assertEqual(len(fork['garments']), 2)
         self.assertEqual(fork['garments'][0], fork['garments'][1])
-        self.assertEqual(len(self.bob.read()['garments']), 1)
+        self.assertEqual(self.bob.read()['garments'], [])
         self.assertEqual(fork['garments'][0]['appearance'], LOOK)
-        self.assertEqual(fork['forked_from']['revision_id'], old['revision_id'])
-        self.assertEqual(fork['garments'][0]['forked_from']['revision_id'], self.g['id'])
-        self.assertEqual(fork['garments'][0]['id'], self.bob.read()['garments'][0]['id'])
+        self.assertEqual(fork['forked_from']['revision_id'], old['id'])
+        second = self.alice.save_garment('Oxford', PARAMS, {'fabric_color': '#000000'}, parent_id=self.g['id'])
+        latest = self.alice.save_outfit('New workday', [second['id']], parent_id=old['id'])
+        self.assertEqual(latest['id'], old['id'])
+        self.assertEqual(len(self.alice.read()['outfits']), 1)
+        self.assertEqual(self.reader.get(token)['snapshot']['name'], 'New workday')
+        self.assertEqual(self.bob.read()['outfits'][0], fork)
 
     def test_no_private_library_or_measurements_in_share(self):
         # Older records can contain extra application metadata. Only the
@@ -187,29 +187,36 @@ class SharingTest(unittest.TestCase):
         with self.assertRaises(ShareUnavailable):
             self.guest.set_link(token, False)
 
-    def test_concurrent_saves_do_not_drop_revisions(self):
+    def test_concurrent_copies_are_independent_and_stale_saves_cannot_overwrite(self):
         def save(i):
-            return Wardrobe('alice@example.com').save_garment(f'Change {i}', PARAMS, LOOK, parent_id=self.g['id'])
+            return Wardrobe('alice@example.com').import_fork('garment', self.g, {'name': 'Oxford'})
         with ThreadPoolExecutor(max_workers=4) as pool:
             results = list(pool.map(save, range(6)))
-        self.assertEqual(sorted(g['version'] for g in results), list(range(2, 8)))
-        self.assertEqual(len(self.alice.history('garment', self.g['id'])), 7)
+        self.assertEqual(len({g['id'] for g in results}), 6)
+        self.assertEqual(len({g['name'] for g in results}), 6)
+        self.assertEqual(len(self.alice.read()['garments']), 7)
+        self.alice.save_garment('Oxford', PARAMS, LOOK, parent_id=self.g['id'], expected_updated_at=self.g['updated_at'])
+        with self.assertRaisesRegex(ValueError, 'another tab'):
+            self.alice.save_garment('Lost update', PARAMS, LOOK, parent_id=self.g['id'], expected_updated_at=self.g['updated_at'])
 
-    def test_legacy_migration_is_stable_and_preserves_snapshots(self):
+    def test_legacy_migration_is_stable_and_preserves_named_snapshots(self):
         first = dict(id='g1', name='Old shirt', version=1, params=PARAMS, appearance=LOOK)
         second = dict(first, id='g2', version=2)
         outfit = dict(id='o1', name='Old outfit', garments=[deepcopy(first)], updated_at='2026-01-01')
         storage = {'wardrobe': dict(garments=[first, second], outfits=[outfit])}
         store = Wardrobe(storage=storage)
-        self.assertEqual(store.read(), store.read())
-        self.assertEqual(len(latest_garments(store.read())), 1)
+        migrated = store.read()
+        self.assertEqual(migrated, store.read())
+        self.assertEqual(len(latest_garments(migrated)), 2)
+        self.assertEqual([g['name'] for g in migrated['garments']], ['Old shirt (copy)', 'Old shirt'])
+        self.assertTrue(all('version' not in g for g in migrated['garments']))
         third = store.save_garment('Renamed', PARAMS, LOOK, parent_id='g2')
-        self.assertEqual(third['lineage_id'], 'g1')
-        self.assertEqual(third['version'], 3)
+        self.assertEqual(third['id'], 'g2')
         updated = store.save_outfit('Updated', [third['id']], parent_id='o1')
-        history = store.history('outfit', updated['revision_id'])
-        self.assertEqual(len(history), 2)
-        self.assertEqual(history[-1]['garments'], outfit['garments'])
+        self.assertEqual(updated['id'], 'o1')
+        self.assertEqual(len(store.read()['outfits']), 1)
+        self.assertEqual(migrated['outfits'][0]['garments'][0]['params'], PARAMS)
+        self.assertNotIn('outfit_revisions', store.read())
 
 
 if __name__ == '__main__':

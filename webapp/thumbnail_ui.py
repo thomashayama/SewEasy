@@ -13,6 +13,7 @@ from nicegui.element import Element
 
 from webapp.garment_catalog import standard_garments, thumbnail
 from webapp.thumbnail_cache import ROOT, bundled_thumbnail, prepare_thumbnail_scene, preview_key, thumbnail_key
+from webapp.wardrobe import same_items
 
 SCENES = ROOT / 'tmp_gui/thumbnail-scenes'
 SCENES.mkdir(parents=True, exist_ok=True)
@@ -28,7 +29,7 @@ class ThumbnailQueue(Element, component='thumbnail_renderer.js'):
         super().__init__()
         self.store = store
         self.reload_library()
-        self.pending, self.seen, self.views = deque(), set(), defaultdict(list)
+        self.pending, self.seen, self.views = deque(), {}, defaultdict(list)
         self.current = None
         self.scene = None
         self.busy = False
@@ -51,7 +52,7 @@ class ThumbnailQueue(Element, component='thumbnail_renderer.js'):
         library = self.store.read()
         self.images = library.get('thumbnails', {})
         self.garments = {g['id']: g for g in library['garments'] + standard_garments()}
-        self.outfits = {o['revision_id']: o for o in library['outfit_revisions']}
+        self.outfits = {o['id']: o for o in library['outfits']}
         return library
 
     def image(self, key):
@@ -81,8 +82,8 @@ class ThumbnailQueue(Element, component='thumbnail_renderer.js'):
 
     def enqueue(self, kind, revision_id, items):
         key = thumbnail_key(kind, revision_id)
-        if key not in self.seen and not self.image(key):
-            self.seen.add(key)
+        if (key not in self.seen or not same_items(self.seen[key], items)) and not self.image(key):
+            self.seen[key] = deepcopy(items)
             self.pending.append((key, deepcopy(items)))
 
     def enqueue_library(self, standards=False):
@@ -108,7 +109,12 @@ class ThumbnailQueue(Element, component='thumbnail_renderer.js'):
                 self.current = self.pending.popleft()
                 key, items = self.current
                 # Another tab may have completed it in the meantime.
-                self.images.update(self.store.read().get('thumbnails', {}))
+                self.reload_library()
+                kind, identity = key.split(':', 1)
+                saved = (self.garments if kind == 'garment' else self.outfits).get(identity)
+                saved_items = ([saved] if kind == 'garment' else saved['garments']) if saved else []
+                if not same_items(items, saved_items):
+                    continue
                 if self.image(key):
                     self.refresh_images(key)
                     continue
@@ -136,25 +142,28 @@ class ThumbnailQueue(Element, component='thumbnail_renderer.js'):
     def refresh_images(self, key):
         self.views[key] = [(view, items) for view, items in self.views[key] if not view.is_deleted]
         for view, items in self.views[key]:
-            view.set_content(self.markup(items, key))
+            current_key = preview_key(items, self.garments, self.outfits,
+                                      key.split(':', 1)[1] if key.startswith('outfit:') else None)
+            view.set_content(self.markup(items, current_key))
 
     async def received(self, event):
-        if self.closed or not self.current or event.args.get('key') != self.current[0]:
+        if self.closed or not self.current or event.args.get('key') != self.current[0] or event.args.get('url') != (self._props.get('job') or {}).get('url'):
             return
         key = self.current[0]
         try:
             kind, revision_id = key.split(':', 1)
-            self.images[key] = self.store.save_thumbnail(kind, revision_id, event.args.get('image'))
+            self.images[key] = self.store.save_thumbnail(kind, revision_id, event.args.get('image'), items=self.current[1])
             self.refresh_images(key)
         except ValueError as error:
             print(f'Thumbnail was not saved: {error}')
         finally:
             self.remove_scene()
             self.current = None
+        self.enqueue_library()
         await self.next()
 
     async def failed(self, event):
-        if self.current and event.args.get('key') == self.current[0]:
+        if self.current and event.args.get('key') == self.current[0] and event.args.get('url') == (self._props.get('job') or {}).get('url'):
             print(f'Browser thumbnail failed: {event.args.get("message", "Unknown error")}')
             self.remove_scene()
             self.current = None

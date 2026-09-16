@@ -3,7 +3,7 @@
 Home and the studio's garment list display cached renders on the default
 `mean_all.yaml` mannequin. User measurements, camera position, simulation motion,
 and current selection never enter a thumbnail. Outfits render all their saved
-garment versions together, including per-panel colors, prints and stiffness.
+garments together, including per-panel colors, prints and stiffness.
 
 Missing thumbnails are backfilled from Home. Saving a garment or outfit also
 queues a thumbnail in the studio without holding up the save. A page has one
@@ -15,18 +15,19 @@ Modal call is involved. Hidden tabs pause the browser work; navigation cancels
 unfinished work and the next Home visit resumes missing thumbnails.
 
 The renderer copies the GPU framebuffer before presentation to avoid blank
-canvas captures. Output is a 384 × 448 WebP, validated and re-encoded by the
+canvas captures. Output is a 384 Ã— 448 WebP, validated and re-encoded by the
 server. Private images live in the owner's existing wardrobe storage: SQL for
 accounts and persistent NiceGUI storage for guests. They are separate from
-garment snapshots, so an image cannot create a new garment version or change a
-saved outfit. Results must reference an owned garment revision, outfit revision,
+garment snapshots, so an image cannot create a new garment or change a
+saved outfit. Results must reference an owned garment, outfit,
 or standard preset before they can be saved.
 
 Images are attached directly to IDs in the library's `thumbnails` map:
-`garment:<id>` or `outfit:<revision_id>`. A garment's `id` already identifies
-an immutable version; an outfit's `revision_id` does the same. Saving a new
-version gives it a separate image, and a late render for an older version cannot
-replace the new version's thumbnail. Forks copy the shared image to their new ID.
+`garment:<id>` or `outfit:<id>`. Outfit `revision_id` remains an alias for that
+stable ID. Renaming keeps the image; changing design or appearance invalidates
+it and queues a replacement. Render completions include their unique scene URL
+and original settings, so stale jobs cannot overwrite the current image.
+Copies can carry an existing thumbnail to their new ID.
 Legacy content-keyed images migrate once to these attachments on library read,
 without rendering again. No body files or designs are hashed for new thumbnails.
 

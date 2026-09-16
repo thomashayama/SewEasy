@@ -15,8 +15,9 @@ class WardrobeTest(unittest.TestCase):
         storage={};w=Wardrobe(storage=storage);params=deepcopy(PARAMS);look=deepcopy(LOOK)
         one=w.save_garment('Oxford',params,look);outfit=w.save_outfit('Workday',[one['id'],one['id']])
         params['fabric']['kind']['v']='stripe';look['fabric_color']='#aa0000'
-        two=w.save_garment('Oxford',params,look)
-        self.assertEqual(two['version'],2);self.assertEqual(outfit['garments'][0]['params'],PARAMS)
+        two=w.save_garment('Oxford',params,look,parent_id=one['id'])
+        self.assertEqual(two['id'],one['id']);self.assertNotIn('version',two)
+        self.assertEqual(len(w.read()['garments']),1);self.assertEqual(outfit['garments'][0]['params'],PARAMS)
         self.assertEqual(Wardrobe(storage=storage).read()['outfits'][0]['garments'][1]['appearance'],LOOK)
         outfit['garments'][0]['appearance']['fabric_color']='#000000'
         self.assertEqual(w.read()['outfits'][0]['garments'][0]['appearance'],LOOK)

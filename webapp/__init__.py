@@ -16,4 +16,4 @@ def setup(app):
     auth.register(app)
     from webapp import account_page  # noqa: F401  -- registers @ui.page('/account')
     from webapp import home_page  # noqa: F401 -- lightweight wardrobe at /
-    from webapp import shared_page  # noqa: F401 -- version-pinned sharing
+    from webapp import shared_page  # noqa: F401 -- owned item sharing

@@ -169,6 +169,9 @@ class GUIState:
                 'outfit': snapshot_design_params(self.pattern_state.outfit_items),
                 'outfit_name': getattr(self, '_outfit_name', 'Untitled outfit'),
                 'outfit_revision_id': getattr(self, '_outfit_revision_id', None),
+                'outfit_updated_at': getattr(self, '_outfit_updated_at', None),
+                'editor_mode': getattr(self, '_editor_mode', 'garment'),
+                'source_share': getattr(self, '_source_share', None),
                 'active_garment': self.pattern_state.active_garment,
                 'appearance': self.pattern_state.garment_appearance(),
                 'skin': self.body_color
@@ -190,6 +193,9 @@ class GUIState:
         try:
             self._outfit_name = snapshot.get('outfit_name', 'Untitled outfit')
             self._outfit_revision_id = snapshot.get('outfit_revision_id')
+            self._outfit_updated_at = snapshot.get('outfit_updated_at')
+            self._editor_mode = snapshot.get('editor_mode') or ('outfit' if self._outfit_revision_id or len(snapshot.get('outfit', [])) > 1 else 'garment')
+            self._source_share = snapshot.get('source_share')
             if snapshot.get('outfit'):
                 self.pattern_state.load_outfit(snapshot['outfit'], snapshot.get('active_garment', 0))
             if snapshot.get('design'):
@@ -256,19 +262,22 @@ class GUIState:
                         'flat round dense aria-label="Toggle outfit list"').classes('se-mobile-menu')
                     ui.button('SewEasy', on_click=self.go_home).props(
                         'flat no-caps aria-label="SewEasy home"').classes('se-wordmark se-home-link').tooltip('Home')
-                    self.ui_outfit_title = ui.button('Untitled outfit', on_click=lambda: self.show_outfits()) \
-                        .props('flat icon-right=expand_more').classes('se-outfit-title')
+                    self.ui_editor_kind = ui.label('Garment').classes('se-editor-kind')
+                    self.ui_outfit_title = ui.button('Untitled garment', on_click=lambda: self.rename_current()) \
+                        .props('flat').classes('se-outfit-title').tooltip('Rename')
                 with ui.row(wrap=False).classes('se-header-actions items-center gap-2'):
                     self.ui_draft_status = ui.label('Drafting…').classes('se-draft-status')
                     ui.button('Measurements', icon='straighten', on_click=self.ui_measurements_dialog.open) \
                         .props('flat').classes('se-measurements-button')
-                    ui.button('Save outfit', on_click=lambda: self.show_save_outfit()) \
-                        .props('unelevated').classes('se-save-outfit')
+                    with ui.button_group().props('unelevated').classes('se-save-group'):
+                        self.ui_save_button = ui.button('Save', on_click=lambda: self.save_current()).props('unelevated').classes('se-save-outfit')
+                        with ui.button(icon='expand_more').props('unelevated aria-label="Save options"').classes('se-save-options') as self.ui_save_options:
+                            self.ui_save_menu = ui.menu()
                     ui.button('Export', icon='file_download', on_click=self.state_download).props('outline')
                     with ui.element('div').classes('se-studio-account'):
                         account_widgets.auth_header_ui(self, compact=True)
             with ui.element('div').classes('se-studio-body') as self.ui_studio_body:
-                with ui.element('aside').classes('se-wardrobe').props('aria-label="This outfit"'):
+                with ui.element('aside').classes('se-wardrobe').props('aria-label="This garment"') as self.ui_wardrobe_panel:
                     self.def_side_panel()
                 self.view_stage()
 
@@ -322,16 +331,16 @@ class GUIState:
 
     def def_side_panel(self):
         with ui.row(wrap=False).classes('se-wardrobe-heading'):
-            ui.label('This outfit').classes('font-semibold text-base')
+            self.ui_wardrobe_heading = ui.label('This garment').classes('font-semibold text-base')
             ui.space()
             ui.button(icon='close', on_click=self.toggle_wardrobe).props(
                 'flat round dense aria-label="Close outfit list"').classes('se-mobile-menu')
         self.ui_outfit_list = ui.column().classes('se-outfit-list')
-        ui.button('Add garment', icon='add', on_click=lambda: self.show_add_garment()) \
+        self.ui_add_garment = ui.button('Add garment', icon='add', on_click=lambda: self.show_add_garment()) \
             .props('flat').classes('se-add-garment')
         ui.space()
         with ui.column().classes('se-wardrobe-footer'):
-            ui.button('Saved outfits', icon='folder_open', on_click=lambda: self.show_outfits()).props('flat')
+            ui.button('Your wardrobe', icon='folder_open', on_click=self.go_home).props('flat')
             ui.link('Built on GarmentCode', 'https://github.com/maria-korosteleva/GarmentCode', new_tab=True) \
                 .classes('se-attribution')
 
@@ -468,7 +477,7 @@ class GUIState:
                     )
                 self.ui_design_sections[section] = expansion
         with ui.row().classes('se-design-actions'):
-            ui.button('Save garment', on_click=lambda: self.show_save_garment()).props('unelevated')
+            self.ui_detail_save = ui.button('Save', on_click=lambda: self.show_save_garment()).props('unelevated')
             ui.button('Reset details', on_click=self.default).props('flat')
             with ui.button(icon='more_horiz').props('flat round aria-label="More garment actions"'):
                 with ui.menu():

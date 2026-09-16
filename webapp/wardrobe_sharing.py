@@ -1,4 +1,4 @@
-"""Owner-only sharing controls; recipients can read and fork pinned revisions."""
+"""Owner-only sharing controls; recipients can view and save independent copies."""
 from copy import deepcopy
 import re
 import secrets
@@ -12,14 +12,14 @@ from webapp.thumbnail_cache import thumbnail_key, normalize_image
 
 class ShareUnavailable(ValueError):
     def __init__(self):
-        super().__init__('This shared version is private or no longer available.')
+        super().__init__('This shared item is private or no longer available.')
 
 
 def _snapshot(item, kind):
     # Explicit boundary: never copy body profiles, private library metadata,
-    # recipients, owner emails or other browser storage into a shared version.
-    fields = ('id', 'name', 'version', 'created_at', 'params', 'appearance', 'forked_from') if kind == 'garment' else (
-        'id', 'name', 'version', 'revision_id', 'updated_at', 'forked_from')
+    # recipients, owner emails or other browser storage into a shared item.
+    fields = ('id', 'name', 'created_at', 'updated_at', 'params', 'appearance', 'forked_from') if kind == 'garment' else (
+        'id', 'name', 'revision_id', 'updated_at', 'forked_from')
     result = {key: deepcopy(item[key]) for key in fields if key in item}
     if kind == 'outfit':
         result['garments'] = [_snapshot(g, 'garment') for g in item['garments']]
@@ -95,7 +95,7 @@ class WardrobeSharing:
         if len(email) > 254 or not re.fullmatch(r'[^\s@]+@[^\s@]+\.[^\s@]+', email):
             raise ValueError('Enter a valid email address.')
         if email == self.store.email:
-            raise ValueError('You already own this version.')
+            raise ValueError('You already own this item.')
         with SessionLocal() as db:
             self._owned(db, share_id)
             if not db.query(WardrobeInvitation).filter_by(share_id=share_id, recipient_email=email).first():
@@ -128,7 +128,7 @@ class WardrobeSharing:
         source = self.get(share_id)
         item = source['snapshot']
         origin = dict(share_id=share_id, kind=source['kind'], revision_id=source['revision_id'],
-                      name=item['name'], version=item['version'], owner_name=source['owner_name'])
+                      name=item['name'], owner_name=source['owner_name'])
         result = self.store.import_fork(source['kind'], item, origin, name=name)
         if source.get('thumbnail'):
             revision_id = result['revision_id'] if source['kind'] == 'outfit' else result['id']

@@ -8,7 +8,7 @@ from gui import theme
 from webapp import auth, config
 from webapp.wardrobe import Wardrobe, latest_garments
 from webapp.wardrobe_sharing import WardrobeSharing
-from webapp.wardrobe_actions import share_dialog, history_dialog, source_label
+from webapp.wardrobe_actions import share_dialog, source_label
 from webapp.garment_catalog import draft_items, library_matches, standard_garments, starter_item, studio_snapshot
 from webapp.thumbnail_ui import ThumbnailQueue
 
@@ -26,11 +26,12 @@ def home_page(request: Request):
     current = storage.get('pending_design') or {}
     current_items = draft_items(current)
     standards = standard_garments()
-    state = {'tab': 'garments', 'query': ''}
+    state = {'tab': 'garments', 'query': '', 'create': 'garment'}
 
-    def open_items(items, name='Untitled outfit', outfit_revision_id=None):
+    def open_items(items, name='Untitled outfit', outfit_revision_id=None, editor_mode='garment', outfit_updated_at=None):
         storage['pending_design'] = studio_snapshot(items, name, storage.get('pending_design'),
-                                                   outfit_revision_id=outfit_revision_id)
+            outfit_revision_id=outfit_revision_id, editor_mode=editor_mode, outfit_updated_at=outfit_updated_at)
+        storage.pop('outfit_edit_return', None)
         ui.navigate.to('/studio')
 
     def open_saved(kind, item_id):
@@ -39,62 +40,98 @@ def home_page(request: Request):
             ui.notify('This saved item is no longer available.', type='warning')
             library.refresh()
             return
-        open_items(item['garments'] if kind == 'outfits' else [item], item['name'], item.get('revision_id'))
+        open_items(item['garments'] if kind == 'outfits' else [item], item['name'], item.get('revision_id'),
+                   'outfit' if kind == 'outfits' else 'garment', item.get('updated_at'))
 
     def item_actions(kind, item):
-        def open_version(version):
-            open_items(version['garments'] if kind == 'outfit' else [version], version['name'], version.get('revision_id'))
         with ui.button(icon='more_horiz').props('flat round dense').classes('se-library-actions') as more:
             more._props['aria-label'] = f'{item["name"]} actions'
             with ui.menu():
                 ui.menu_item('Share', lambda: share_dialog(store, kind, item))
-                ui.menu_item('Version history', lambda: history_dialog(store, kind, item, open_version))
+                ui.menu_item('Save a copy', lambda: show_copy(kind, item))
 
     def caption(item, detail):
         with ui.column().classes('se-library-caption'):
-            ui.label(item['name']).classes('se-library-name')
+            title = ui.label(item['name']).classes('se-library-name')
             ui.label(detail).classes('se-home-muted')
             if source_label(item):
-                ui.label('Forked').classes('se-home-muted').tooltip(source_label(item))
+                title.tooltip(source_label(item))
 
     def illustrations(items, classes='', **options):
         with ui.element('div').classes('se-home-flats ' + classes):
             previews.visual(items, **options)
 
-    def standard_cards():
+    def standard_cards(create=False):
         with ui.element('div').classes('se-library-grid'):
             for item in standards:
-                garment_card(item)
+                garment_card(item, create=create)
 
-    def garment_card(item):
+    def garment_card(item, create=False):
         standard = item.get('standard')
         with ui.element('div').classes('se-library-entry' + ('' if standard else ' is-owned')):
-            with ui.button(on_click=lambda: open_items([starter_item(standard)]) if standard
+            with ui.button(on_click=lambda: open_items([item], editor_mode=state['create'] if create else 'garment') if standard
                            else open_saved('garments', item['id'])) \
                     .props('flat no-caps').classes('se-library-card') as card:
                 card._props['aria-label'] = f'{"Customize" if standard else "Open garment"} {item["name"]}'
                 illustrations([item], 'se-library-art')
-                caption(item, 'Standard garment' if standard else f'You · v{item["version"]}')
+                caption(item, 'Standard garment' if standard else 'Your garment')
             if not standard:
                 item_actions('garment', item)
 
     with ui.dialog() as new_dialog, ui.card().classes('se-new-outfit-dialog'):
         with ui.row().classes('w-full items-center justify-between'):
-            ui.label('Choose the first garment').classes('se-home-dialog-title')
+            new_title = ui.label('Choose a garment').classes('se-home-dialog-title')
             ui.button(icon='close', on_click=new_dialog.close).props('flat round dense aria-label="Close new outfit"')
-        ui.label('Add more pieces from the outfit sidebar in the studio.').classes('se-home-muted')
-        standard_cards()
+        new_hint = ui.label('Start with a standard garment, then make it your own.').classes('se-home-muted')
+        standard_cards(create=True)
         saved = latest_garments(store.read())
         if saved:
             ui.separator()
-            chosen = ui.select({g['id']: f'{g["name"]} (v{g["version"]})' for g in reversed(saved)},
-                               label='Or use a saved garment', with_input=True).props('outlined dense').classes('w-full')
+            chosen = ui.select({g['id']: g['name'] for g in reversed(saved)},
+                               label='Or start from a saved garment', with_input=True).props('outlined dense').classes('w-full')
             def use_saved():
                 item = next((g for g in store.read()['garments'] if g['id'] == chosen.value), None)
                 if item:
-                    open_items([item])
+                    if state['create'] == 'garment':
+                        new_dialog.close()
+                        show_copy('garment', item)
+                    else:
+                        open_items([item], editor_mode='outfit')
             ui.button('Use garment', on_click=use_saved).props('unelevated') \
                 .bind_enabled_from(chosen, 'value', backward=bool).classes('self-end')
+
+    def show_new(mode):
+        state['create'] = mode
+        new_title.set_text('Choose the first garment' if mode == 'outfit' else 'Choose a garment')
+        new_hint.set_text('Add more pieces in the outfit editor.' if mode == 'outfit' else
+                          'Start with a standard garment, then make it your own.')
+        new_dialog.open()
+
+    copy_source = {}
+    with ui.dialog() as copy_dialog, ui.card().classes('w-96 max-w-full gap-3'):
+        ui.label('Save a copy').classes('text-lg font-semibold')
+        copy_input = ui.input('Name').props('outlined dense autofocus').classes('w-full')
+        def save_copy():
+            kind, item = copy_source['kind'], copy_source['item']
+            try:
+                original = store.revision(kind, item['id'])
+                result = store.import_fork(kind, original, dict(kind=kind, name=original['name'], revision_id=original['id']), copy_input.value)
+                image = store.read().get('thumbnails', {}).get(f'{kind}:{item["id"]}')
+                if image:
+                    store.save_thumbnail(kind, result['id'], image)
+            except ValueError as error:
+                ui.notify(str(error), type='warning')
+                return
+            open_items(result['garments'] if kind == 'outfit' else [result], result['name'],
+                       result.get('revision_id'), kind, result.get('updated_at'))
+        with ui.row().classes('w-full justify-end'):
+            ui.button('Cancel', on_click=copy_dialog.close).props('flat')
+            ui.button('Save a copy', on_click=save_copy).props('unelevated')
+
+    def show_copy(kind, item):
+        copy_source.update(kind=kind, item=item)
+        copy_input.set_value(store.suggested_copy_name(kind, item['name']))
+        copy_dialog.open()
 
     @ui.refreshable
     def library():
@@ -139,7 +176,7 @@ def home_page(request: Request):
                                     card._props['aria-label'] = f'View shared {snapshot["name"]}'
                                     illustrations(snapshot['garments'] if item['kind'] == 'outfit' else [snapshot],
                                                   'se-library-art', image=item.get('thumbnail'))
-                                    caption(snapshot, f'{item["owner_name"]} · v{snapshot["version"]}')
+                                    caption(snapshot, item['owner_name'])
                                 continue
                             if kind == 'garments':
                                 garment_card(item)
@@ -150,7 +187,7 @@ def home_page(request: Request):
                                     card._props['aria-label'] = f'Open outfit {item["name"]}'
                                     illustrations(item['garments'], 'se-library-art', outfit_id=item['revision_id'])
                                     count = len(item['garments'])
-                                    caption(item, f'You · v{item["version"]} · {count} garment' + ('s' if count != 1 else ''))
+                                    caption(item, f'{count} garment' + ('s' if count != 1 else ''))
                                 item_actions('outfit', item)
                 elif state['query']:
                     with ui.column().classes('se-library-empty'):
@@ -194,14 +231,17 @@ def home_page(request: Request):
                 with ui.column().classes('gap-1'):
                     ui.label('Your wardrobe').classes('se-home-title').props('role=heading aria-level=1')
                     ui.label('Customize a garment or combine pieces into an outfit.').classes('se-home-subtitle')
-                ui.button('New outfit', icon='add', on_click=new_dialog.open).props('unelevated').classes('se-home-create')
+                with ui.row().classes('se-home-create-actions gap-2'):
+                    ui.button('New garment', icon='add', on_click=lambda: show_new('garment')).props('unelevated').classes('se-home-create')
+                    ui.button('New outfit', icon='add', on_click=lambda: show_new('outfit')).props('outline').classes('se-home-create')
 
             if current_items:
                 with ui.element('section').classes('se-home-resume').props('aria-label="Current draft"'):
                     illustrations(current_items, 'se-resume-art', outfit_id=current.get('outfit_revision_id'))
                     with ui.column().classes('se-resume-copy'):
-                        ui.label('Current draft').classes('se-home-muted')
-                        ui.label(current.get('outfit_name') or 'Untitled outfit').classes('se-resume-title')
+                        ui.label('Outfit draft' if current.get('editor_mode') == 'outfit' else 'Garment draft').classes('se-home-muted')
+                        ui.label((current.get('outfit_name') or 'Untitled outfit') if current.get('editor_mode') == 'outfit'
+                                 else current_items[0]['name']).classes('se-resume-title')
                     ui.button('Continue editing', icon='edit', on_click=lambda: ui.navigate.to('/studio')).props('outline')
 
             library()

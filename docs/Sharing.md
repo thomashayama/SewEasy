@@ -1,63 +1,56 @@
-# Garment and outfit ownership
+# Named garments and outfits
 
-Saved items are private by default. The library card menu provides **Share**
-and **Version history**; these controls are also available in the studio's
-saved garment and outfit menus. The library shows the latest version of each
-garment. Older versions remain accessible in its history.
+Each garment or outfit is an independently owned, named item with a stable ID.
+**Save** updates that item; **Save a copy** creates a new ID and asks for a name,
+defaulting to `Dress shirt (copy)`, then `Dress shirt (copy 2)` if needed. Names
+are unique per item type in an owner's library. Renaming retains the ID.
 
-## Sharing
+The garment editor opens one piece, with design and fabric controls. It has no
+Add garment action. **Create outfit with this** starts a separate outfit draft.
+The outfit editor uses the same pattern/3D layout with a garment list and
+**Add garment**. Adjustments are embedded in the outfit: saving never silently
+changes or adds standalone library garments. Its piece menu offers **Edit
+garment separately** and **Save garment as copy**. A return action carries the
+edited piece back to the outfit draft.
 
-Sharing always refers to one saved version, including its fabric, colors and
-panel settings. An outfit includes the exact garment versions saved in it.
-New saves do not update an existing share or inherit its access settings.
+## Sharing and copies
 
-- **Anyone with the link** permits anyone holding that link to view and fork
-  the version. The owner can turn it off.
-- **Invite people** grants the same view/fork access to a verified email address.
-  Invitations appear under **Shared with me** after Google sign-in. Addresses
-  can be invited before registration. This implementation does not send email.
-- Link access and invitations are independent. To revoke all access, turn off
-  the link and remove the invitations. Access is checked again when forking,
-  including from a page opened before revocation.
+Items remain private until their owner enables link sharing or adds invitations.
+An existing share follows the owner's saved changes. Saving a copy never inherits
+access settings. The Save arrow offers Save a copy, Rename and Share for owned
+items; standards and other people's items use Save a copy as their main action.
 
-The share page is read-only. **Fork to my library** creates an independently
-owned version 1 and opens it in the studio. For an outfit, its component garment
-versions are copied into the recipient's library as well. Forks record the source
-version, creator display name and share identifier. Further edits retain this
-attribution. Revocation does not remove copies already forked.
+- Anyone with the link can view and copy the item while link sharing is enabled.
+- Invitations grant access to verified email addresses and appear in Shared with
+  me after sign-in. No invitation email is sent.
+- Link and invitation access are independent and can be revoked individually.
+- Access is checked again when copying. Copies already saved remain independent.
+- Copying an outfit preserves its embedded garments without filling the user's
+  standalone garment library. Any piece can be saved separately later.
 
-Body measurements and body-profile assets are excluded. Previews use cached
-renders on the default mannequin, with a flat illustration fallback.
+Copies retain source attribution. Measurements, private library metadata and
+body-profile assets do not cross the sharing boundary. Preview images use the
+default mannequin.
 
-## Version history
+## Storage and migration
 
-Garments have stable `lineage_id` values and immutable revision `id` values.
-Outfits retain a stable `id` and get a new `revision_id` on every save. Both
-record `parent_revision_id` and a version number. Renaming an opened item keeps
-its history; starting a new garment or outfit creates a distinct identity even
-if the name matches. Opening an older version creates a draft; saving it appends
-a revision based on that version, without overwriting previous history.
+Account libraries live in `wardrobe_libraries.content`; guest libraries live in
+NiceGUI server-side user storage. JSON format 2 contains `garments`, `outfits`
+and optional `thumbnails`. Save replaces one record under a transaction; it does
+not append revisions. `updated_at` protects against overwriting changes from
+another open editor. ID and name are distinct: ownership always comes from the
+verified account or server-side guest identity, never from the display name.
 
-Legacy garment versions are grouped using their former name-based identity.
-Existing outfits become version 1; their previously overwritten states cannot
-be recovered. This migration is deterministic and preserves design snapshots.
-It is persisted on the next library write.
+Old garment and outfit revisions are preserved as independent named items.
+The newest keeps its name; collisions receive copy suffixes. Original revision
+IDs remain attached to thumbnails and share links. Outfit `revision_id` remains
+an alias for its stable ID for compatibility; it no longer changes on save.
+There are no new version numbers, parent revision chains or history lists.
+The migration is idempotent and persisted on the first read/write.
 
-## Persistence and authentication
+The `wardrobe_shares.revision_id` SQL column also retains its legacy name but
+identifies a stable item. Share snapshots and thumbnails update with the item,
+under the same account transaction. SQLite uses BEGIN IMMEDIATE; Postgres locks
+the owner's row. Guest writes are serialized within the app process.
 
-Account ownership comes from the verified session email. Guest ownership comes
-from a random identifier in NiceGUI's server-side user storage; guest libraries
-and account libraries remain separate. Clearing the guest session loses access
-to its ownership controls. Display names never confer editing permission.
-
-`wardrobe_shares` stores immutable snapshots and link settings;
-`wardrobe_invitations` stores per-version email grants. These are new additive
-SQL tables, separate from the older design/body-profile sharing system.
-Library writes allocate versions inside a transaction (SQLite `BEGIN IMMEDIATE`,
-Postgres parent-row lock). Guest writes are serialized within the app process.
-
-Private invitation access requires configured Google OAuth. Share URLs point
-to the installation where they are created; a local development server needs
-to be hosted at a reachable address before people on other devices can use it.
-
-Validation: `python -m unittest test_wardrobe_sharing test_wardrobe test_home_page test_thumbnails`.
+Validation: `python -m unittest test_named_items test_wardrobe_sharing test_wardrobe test_home_page test_thumbnails`.

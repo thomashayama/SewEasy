@@ -35,7 +35,8 @@ def migrate_thumbnails(library):
     from webapp.garment_catalog import standard_garments
     attached = {key: image for key, image in images.items() if key not in legacy}
     targets = [(thumbnail_key('garment', g['id']), [g]) for g in library['garments'] + standard_garments()]
-    targets += [(thumbnail_key('outfit', o['revision_id']), o['garments']) for o in library['outfit_revisions']]
+    targets += [(thumbnail_key('outfit', o.get('revision_id', o['id'])), o['garments'])
+                for o in library.get('outfit_revisions', []) + library['outfits']]
     for key, items in targets:
         if key in attached:
             continue

@@ -62,7 +62,7 @@ class ThumbnailTest(unittest.TestCase):
         store = Wardrobe(storage={})
         source = starter_item('Pants')
         one = store.save_garment('Trousers', source['params'], source['appearance'])
-        two = store.save_garment('Trousers', source['params'], source['appearance'])
+        two = store.save_garment('Trousers (copy)', source['params'], source['appearance'])
         outfit = store.save_outfit('Work', [one['id']])
         first = store.save_thumbnail('garment', one['id'], raster())
         second = store.save_thumbnail('garment', two['id'], raster(color='#ff0000'))
@@ -121,9 +121,11 @@ class ThumbnailTest(unittest.TestCase):
             self.assertNotIn('thumbnails', Wardrobe('b@example.com').read())
             with self.assertRaises(ValueError):
                 Wardrobe('b@example.com').save_thumbnail('outfit', outfit['revision_id'], raster())
-            current = store.save_outfit('Work', [garments[0]['id']])
+            current = store.save_outfit('Work', [garments[0]['id']], parent_id=outfit['id'])
+            self.assertNotIn(key, store.read()['thumbnails'])
             current_image = store.save_thumbnail('outfit', current['revision_id'], raster(color='#ff0000'))
-            store.save_thumbnail('outfit', outfit['revision_id'], raster())
+            with self.assertRaisesRegex(ValueError, 'changed'):
+                store.save_thumbnail('outfit', outfit['revision_id'], raster(), items=outfit['garments'])
             self.assertEqual(store.read()['thumbnails'][thumbnail_key('outfit', current['revision_id'])], current_image)
             self.assertIn(key, store.read()['thumbnails'])
         engine.dispose()

@@ -10,16 +10,17 @@ Home provides:
 - Garments and Outfits tabs, with library counts and name search. Outfit
   search also matches the names of its included garments.
 - Editable copies of saved outfits and garments, preserving all per-panel fabric
-  settings, colors, version metadata, and the currently selected measurements.
+  settings, colors, item identities, and the currently selected measurements.
 - A Continue editing area for the working draft. Successful studio updates retain
   that draft in browser-specific storage, so normal navigation and reloads can
-  resume it without creating new saved garment versions.
-- Six standard garments in the library alongside personal saved versions:
+  resume it without creating new library items.
+- Six standard garments in the library alongside personal garments:
   dress shirt, T-shirt, tube top, trousers, circle skirt, and pencil skirt.
   These presets are always available without adding rows to a user's saved
-  library. Opening one starts an independent copy; saving creates a personal version.
-- A single New outfit action and a compact current-draft row. The first-garment
-  chooser uses the same standards; add more pieces from the studio's outfit sidebar.
+  library. Opening one starts an independent copy; saving creates a named personal copy.
+- New garment and New outfit actions open distinct editor flows with the same
+  canvas and fabric tools. Only outfit editing offers Add garment. A compact
+  current-draft row resumes the correct editor mode.
 - Measurements and account/sign-in access.
 
 Signed-in libraries continue to use `WardrobeLibrary`; guests use NiceGUI's
@@ -36,8 +37,8 @@ Reset details uses that garment's standard defaults. Reset and Randomize preserv
 composition and fabric, and imports must match the active garment type. The
 underlying unrestricted sampler remains available outside the studio.
 
-The earlier SQL Design library is still available in the account area and under
-Earlier saved designs in the studio's outfit dialog.
+The earlier SQL Design library remains available in the account area.
+See `Sharing.md` for named saves, copies, ownership and the legacy migration.
 
 Validation: `python -m unittest test_home_page test_wardrobe test_browser_preview test_fabric_selection -q`.
 Browser checks cover starter-to-studio navigation,
