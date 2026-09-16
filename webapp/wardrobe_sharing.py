@@ -7,7 +7,7 @@ from sqlalchemy.exc import IntegrityError
 
 from webapp.db import SessionLocal
 from webapp.models import User, WardrobeShare, WardrobeInvitation
-from webapp.thumbnail_cache import cached_thumbnail, thumbnail_key, normalize_image
+from webapp.thumbnail_cache import thumbnail_key, normalize_image
 
 
 class ShareUnavailable(ValueError):
@@ -57,8 +57,7 @@ class WardrobeSharing:
     def ensure(self, kind, revision_id):
         """Prepare owner controls; access remains private until explicitly granted."""
         snapshot = _snapshot(self.store.revision(kind, revision_id), kind)
-        items = snapshot['garments'] if kind == 'outfit' else [snapshot]
-        image = cached_thumbnail(self.store.read().get('thumbnails', {}), items)
+        image = self.store.read().get('thumbnails', {}).get(thumbnail_key(kind, revision_id))
         with SessionLocal() as db:
             row = db.query(WardrobeShare).filter_by(owner_key=self.store.owner_key, kind=kind, revision_id=revision_id).first()
             if row:
@@ -118,7 +117,7 @@ class WardrobeSharing:
         with SessionLocal() as db:
             rows = db.query(WardrobeShare).join(WardrobeInvitation).filter(
                 WardrobeInvitation.recipient_email == self.store.email).order_by(WardrobeShare.created_at.desc()).all()
-            return [self._view(row) for row in rows]
+            return [self._view(row, thumbnail=True) for row in rows]
 
     def get(self, share_id):
         with SessionLocal() as db:
@@ -132,6 +131,6 @@ class WardrobeSharing:
                       name=item['name'], version=item['version'], owner_name=source['owner_name'])
         result = self.store.import_fork(source['kind'], item, origin, name=name)
         if source.get('thumbnail'):
-            items = result['garments'] if source['kind'] == 'outfit' else [result]
-            self.store.save_thumbnail(thumbnail_key(items), source['thumbnail'])
+            revision_id = result['revision_id'] if source['kind'] == 'outfit' else result['id']
+            self.store.save_thumbnail(source['kind'], revision_id, source['thumbnail'])
         return result

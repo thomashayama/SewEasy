@@ -7,7 +7,6 @@ from nicegui import app, ui
 from gui import theme
 from webapp import auth, config
 from webapp.garment_catalog import thumbnail, studio_snapshot
-from webapp.thumbnail_cache import bundled_thumbnail, thumbnail_key
 from webapp.wardrobe import Wardrobe
 from webapp.wardrobe_sharing import WardrobeSharing, ShareUnavailable
 from webapp.wardrobe_actions import share_dialog, source_label
@@ -45,7 +44,7 @@ def shared_page(request: Request, share_id: str):
         item, kind = source['snapshot'], source['kind']
         items = item['garments'] if kind == 'outfit' else [item]
         with ui.element('section').classes('se-home-content se-shared-design'):
-            image = source.get('thumbnail') or bundled_thumbnail(thumbnail_key(items))
+            image = source.get('thumbnail')
             with ui.element('div').classes('se-shared-preview'):
                 if image:
                     ui.image(image).props('fit=contain alt="3D render on the default mannequin"').classes('w-full h-full')

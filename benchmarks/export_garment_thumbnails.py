@@ -13,12 +13,14 @@ import sys
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 from webapp.garment_catalog import standard_garments
-from webapp.thumbnail_cache import cached_thumbnail, normalize_image, thumbnail_key
+from webapp.thumbnail_cache import normalize_image, thumbnail_key
+from webapp.wardrobe import normalize_library
 
 
 def export(path):
-    cache = json.loads(path.read_text(encoding='utf-8'))['wardrobe'].get('thumbnails', {})
-    standards = [(g['name'], thumbnail_key([g]), cached_thumbnail(cache, [g])) for g in standard_garments()]
+    library = normalize_library(json.loads(path.read_text(encoding='utf-8'))['wardrobe'])
+    cache = library.get('thumbnails', {})
+    standards = [(g['name'], g['standard'], cache.get(thumbnail_key('garment', g['id']))) for g in standard_garments()]
     missing = [name for name, key, image in standards if not image]
     if missing:
         raise ValueError('Wait for these renders to finish in Home: ' + ', '.join(missing))

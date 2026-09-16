@@ -1,44 +1,31 @@
-"""Content-addressed previews: designs and appearance, never a user's body profile."""
+"""Thumbnails attached to garment/outfit revision IDs, on the default mannequin."""
 import base64
-from hashlib import sha256
-from functools import lru_cache
 from io import BytesIO
-import json
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-THUMBNAIL_VERSION = 'default-mannequin-webgpu-v2'
 SIZE = (384, 448)
 
 
-@lru_cache(maxsize=2)
-def _default_body_key(legacy_windows=False):
-    # Git checks this YAML out as CRLF on Windows and LF in production.
-    # Line endings do not change the body and must not invalidate its renders.
-    body = (ROOT / 'assets/bodies/mean_all.yaml').read_bytes().replace(b'\r\n', b'\n')
-    if legacy_windows:
-        body = body.replace(b'\n', b'\r\n')
-    return sha256(body).hexdigest()
+def thumbnail_key(kind, revision_id):
+    """The immutable saved version owns its image; no design/file hashing."""
+    if kind not in ('garment', 'outfit') or not revision_id or revision_id == 'draft':
+        raise ValueError('A thumbnail needs a saved garment or outfit ID.')
+    return f'{kind}:{revision_id}'
 
 
-def thumbnail_key(items, *, legacy_windows=False):
-    if not items:
-        raise ValueError('A thumbnail needs at least one garment.')
-    def look(item):
-        appearance = item.get('appearance', {})
-        return dict(fabric_color=appearance.get('fabric_color') or '#b7cde5',
-                    **{field: appearance.get(field, {}) for field in
-                       ('panel_colors', 'panel_fabrics', 'panel_stiffness', 'panel_materials')})
-    recipe = dict(version=THUMBNAIL_VERSION, body=_default_body_key(legacy_windows),
-                  garments=[dict(params=g['params'], appearance=look(g)) for g in items])
-    return sha256(json.dumps(recipe, sort_keys=True, separators=(',', ':'), default=float).encode()).hexdigest()
-
-
-def cached_thumbnail(images, items):
-    """Read old Windows caches without making the browser simulate them again."""
-    if not images:
-        return None
-    return images.get(thumbnail_key(items)) or images.get(thumbnail_key(items, legacy_windows=True))
+def preview_key(items, garments, outfits, outfit_id=None):
+    """Resolve a saved image, but don't show it as an unsaved edit's preview."""
+    def unchanged(current, saved):
+        return saved is not None and all(current.get(k) == saved.get(k) for k in ('id', 'params', 'appearance'))
+    if outfit_id:
+        saved = outfits.get(outfit_id)
+        if saved and len(items) == len(saved['garments']) and all(
+                unchanged(a, b) for a, b in zip(items, saved['garments'])):
+            return thumbnail_key('outfit', outfit_id)
+    elif len(items) == 1 and unchanged(items[0], garments.get(items[0].get('id'))):
+        return thumbnail_key('garment', items[0]['id'])
+    return None
 
 
 def normalize_image(data_url):
@@ -59,8 +46,12 @@ def normalize_image(data_url):
 
 
 def bundled_thumbnail(key):
-    path = ROOT / 'assets/garment_thumbnails' / f'{key}.webp'
-    return f'/garment-thumbnails/{key}.webp' if path.is_file() else None
+    from webapp.garment_catalog import STARTERS
+    standards = {thumbnail_key('garment', f'standard:{kind}'): kind for kind, *_ in STARTERS}
+    kind = standards.get(key)
+    if kind and (ROOT / 'assets/garment_thumbnails' / f'{kind}.webp').is_file():
+        return f'/garment-thumbnails/{kind}.webp'
+    return None
 
 
 def prepare_thumbnail_scene(items, target):

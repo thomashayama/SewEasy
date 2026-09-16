@@ -39,6 +39,7 @@ def wardrobe_ui(state):
             await apply(items, min(pattern.active_garment, len(items) - 1))
 
     def refresh_studio():
+        previews.reload_library()
         if state.ui_outfit_list.client.id not in state.ui_outfit_list.client.instances:
             return
         if not state._draft_pending and not state._draft_failed and not state._released:

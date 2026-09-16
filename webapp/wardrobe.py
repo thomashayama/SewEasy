@@ -35,6 +35,8 @@ def normalize_library(content):
         outfit.setdefault('parent_revision_id', None)
         if not any(o['revision_id'] == outfit['revision_id'] for o in history):
             history.append(deepcopy(outfit))
+    from webapp.thumbnail_migration import migrate_thumbnails
+    migrate_thumbnails(library)
     return library
 
 
@@ -68,8 +70,15 @@ class Wardrobe:
         if self.email:
             with SessionLocal() as db:
                 row = db.get(WardrobeLibrary, self.email)
-                return normalize_library(row.content if row else None)
-        return normalize_library(self.storage.get('wardrobe'))
+                content = row.content if row else None
+        else:
+            content = self.storage.get('wardrobe')
+        library = normalize_library(content)
+        if library.get('thumbnails') != (content or {}).get('thumbnails'):
+            # Persist the one-time image migration under the normal write lock.
+            with self._edit() as migrated:
+                return deepcopy(migrated)
+        return library
 
     @contextmanager
     def _edit(self):
@@ -92,7 +101,7 @@ class Wardrobe:
                 db.commit()
         else:
             with _guest_lock:
-                library = self.read()
+                library = normalize_library(self.storage.get('wardrobe'))
                 yield library
                 self.storage['wardrobe'] = deepcopy(library)
 
@@ -193,24 +202,17 @@ class Wardrobe:
         with self._edit() as library:
             library['outfits'] = [o for o in library['outfits'] if o['id'] != outfit_id]
 
-    def save_thumbnail(self, key, image):
+    def save_thumbnail(self, kind, revision_id, image):
         from webapp.garment_catalog import standard_garments
-        from webapp.thumbnail_cache import cached_thumbnail, normalize_image, thumbnail_key
+        from webapp.thumbnail_cache import normalize_image, thumbnail_key
+        key = thumbnail_key(kind, revision_id)
         normalized = normalize_image(image)
         with self._edit() as library:
-            targets = [[g] for g in library['garments'] + standard_garments()]
-            targets.extend(o['garments'] for o in library['outfits'])
-            owned_keys = {thumbnail_key(items) for items in targets}
-            if key not in owned_keys:
-                raise ValueError('This thumbnail no longer matches an item in your library.')
-            # Retain/migrate pre-fix Windows cache entries while pruning stale
-            # outfits. Existing saved renders should not need another simulation.
-            images = library.get('thumbnails', {})
-            retained = {}
-            for items in targets:
-                cached = cached_thumbnail(images, items)
-                if cached:
-                    retained[thumbnail_key(items)] = cached
-            library['thumbnails'] = retained
-            library['thumbnails'][key] = normalized
+            records, field = ((library['garments'] + standard_garments(), 'id') if kind == 'garment'
+                              else (library['outfit_revisions'], 'revision_id'))
+            if not any(item[field] == revision_id for item in records):
+                raise ValueError('This version is not in your library.')
+            # A late render stays attached to its original revision, even when
+            # a newer version has been saved in another tab.
+            library.setdefault('thumbnails', {})[key] = normalized
         return normalized

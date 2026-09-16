@@ -155,12 +155,25 @@ class SharingTest(unittest.TestCase):
                     panel_stiffness={'front': .8}, panel_materials={'back': 'linen'})
         garment = self.alice.save_garment('Linen', PARAMS, look, new=True)
         token = self.owner.ensure('garment', garment['id'])
-        self.alice.save_thumbnail(thumbnail_key([garment]), raster())
+        self.alice.save_thumbnail('garment', garment['id'], raster())
         self.assertEqual(self.owner.ensure('garment', garment['id']), token)
         self.owner.set_link(token, True)
         fork = self.reader.fork(token)
         self.assertEqual(fork['appearance'], look)
-        self.assertIn(thumbnail_key([fork]), self.bob.read()['thumbnails'])
+        self.assertIn(thumbnail_key('garment', fork['id']), self.bob.read()['thumbnails'])
+        self.assertNotIn(thumbnail_key('garment', garment['id']), self.bob.read()['thumbnails'])
+
+    def test_outfit_image_is_copied_to_the_fork_id_and_visible_to_invitees(self):
+        from test_thumbnails import raster
+        from webapp.thumbnail_cache import thumbnail_key
+        outfit = self.alice.save_outfit('Work', [self.g['id']])
+        image = self.alice.save_thumbnail('outfit', outfit['revision_id'], raster())
+        token = self.owner.ensure('outfit', outfit['revision_id'])
+        self.owner.invite(token, 'bob@example.com')
+        self.assertEqual(self.reader.shared_with_me()[0]['thumbnail'], image)
+        fork = self.reader.fork(token)
+        self.assertEqual(self.bob.read()['thumbnails'][thumbnail_key('outfit', fork['revision_id'])], image)
+        self.assertNotEqual(fork['revision_id'], outfit['revision_id'])
 
     def test_guest_ownership_survives_service_reload_and_does_not_cross_sessions(self):
         storage = {}

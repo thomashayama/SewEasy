@@ -57,9 +57,9 @@ def home_page(request: Request):
             if source_label(item):
                 ui.label('Forked').classes('se-home-muted').tooltip(source_label(item))
 
-    def illustrations(items, classes=''):
+    def illustrations(items, classes='', **options):
         with ui.element('div').classes('se-home-flats ' + classes):
-            previews.visual(items)
+            previews.visual(items, **options)
 
     def standard_cards():
         with ui.element('div').classes('se-library-grid'):
@@ -137,7 +137,8 @@ def home_page(request: Request):
                                 with ui.button(on_click=lambda _, token=item['id']: ui.navigate.to(f'/shared/{token}')) \
                                         .props('flat no-caps').classes('se-library-card') as card:
                                     card._props['aria-label'] = f'View shared {snapshot["name"]}'
-                                    illustrations(snapshot['garments'] if item['kind'] == 'outfit' else [snapshot], 'se-library-art')
+                                    illustrations(snapshot['garments'] if item['kind'] == 'outfit' else [snapshot],
+                                                  'se-library-art', image=item.get('thumbnail'))
                                     caption(snapshot, f'{item["owner_name"]} · v{snapshot["version"]}')
                                 continue
                             if kind == 'garments':
@@ -147,7 +148,7 @@ def home_page(request: Request):
                                 with ui.button(on_click=lambda _, k=kind, item_id=item['id']: open_saved(k, item_id)) \
                                         .props('flat no-caps').classes('se-library-card') as card:
                                     card._props['aria-label'] = f'Open outfit {item["name"]}'
-                                    illustrations(item['garments'], 'se-library-art')
+                                    illustrations(item['garments'], 'se-library-art', outfit_id=item['revision_id'])
                                     count = len(item['garments'])
                                     caption(item, f'You · v{item["version"]} · {count} garment' + ('s' if count != 1 else ''))
                                 item_actions('outfit', item)
@@ -197,7 +198,7 @@ def home_page(request: Request):
 
             if current_items:
                 with ui.element('section').classes('se-home-resume').props('aria-label="Current draft"'):
-                    illustrations(current_items, 'se-resume-art')
+                    illustrations(current_items, 'se-resume-art', outfit_id=current.get('outfit_revision_id'))
                     with ui.column().classes('se-resume-copy'):
                         ui.label('Current draft').classes('se-home-muted')
                         ui.label(current.get('outfit_name') or 'Untitled outfit').classes('se-resume-title')

@@ -3,6 +3,7 @@ import asyncio
 from collections import deque, defaultdict
 from concurrent.futures import ThreadPoolExecutor
 from copy import deepcopy
+import mimetypes
 from pathlib import Path
 import shutil
 from uuid import uuid4
@@ -11,12 +12,13 @@ from nicegui import app, ui
 from nicegui.element import Element
 
 from webapp.garment_catalog import standard_garments, thumbnail
-from webapp.thumbnail_cache import ROOT, bundled_thumbnail, cached_thumbnail, prepare_thumbnail_scene, thumbnail_key
+from webapp.thumbnail_cache import ROOT, bundled_thumbnail, prepare_thumbnail_scene, preview_key, thumbnail_key
 
 SCENES = ROOT / 'tmp_gui/thumbnail-scenes'
 SCENES.mkdir(parents=True, exist_ok=True)
 app.add_static_files('/thumbnail-scenes', SCENES, max_cache_age=0)
 (ROOT / 'assets/garment_thumbnails').mkdir(parents=True, exist_ok=True)
+mimetypes.add_type('image/webp', '.webp')
 app.add_static_files('/garment-thumbnails', ROOT / 'assets/garment_thumbnails')
 PREPARER = ThreadPoolExecutor(max_workers=1, thread_name_prefix='thumbnail-mesh')
 
@@ -25,9 +27,10 @@ class ThumbnailQueue(Element, component='thumbnail_renderer.js'):
     def __init__(self, store):
         super().__init__()
         self.store = store
-        self.images = store.read().get('thumbnails', {})
+        self.reload_library()
         self.pending, self.seen, self.views = deque(), set(), defaultdict(list)
         self.current = None
+        self.scene = None
         self.busy = False
         self.online = False
         self.closed = False
@@ -44,18 +47,24 @@ class ThumbnailQueue(Element, component='thumbnail_renderer.js'):
         self.on('failed', self.failed)
         self.client.on_disconnect(self.close)
 
-    def image(self, items):
-        key = thumbnail_key(items)
-        return bundled_thumbnail(key) or cached_thumbnail(self.images, items)
+    def reload_library(self):
+        library = self.store.read()
+        self.images = library.get('thumbnails', {})
+        self.garments = {g['id']: g for g in library['garments'] + standard_garments()}
+        self.outfits = {o['revision_id']: o for o in library['outfit_revisions']}
+        return library
 
-    def markup(self, items):
-        image = self.image(items)
+    def image(self, key):
+        return bundled_thumbnail(key) or self.images.get(key)
+
+    def markup(self, items, key=None, image=None):
+        image = image or self.image(key)
         if image:
             return f'<img src="{image}" alt="3D render on the default mannequin" class="se-render-thumbnail" draggable="false">'
         # The lightweight flat remains usable while its real render is queued.
         return '<div class="se-thumbnail-fallback">' + ''.join(thumbnail(g) for g in items[:3]) + '</div>'
 
-    def visual(self, items, classes=''):
+    def visual(self, items, classes='', *, outfit_id=None, image=None):
         # Studio edits replace sidebar elements often; don't retain old design
         # snapshots just because a thumbnail view once referred to them.
         for key in list(self.views):
@@ -64,23 +73,25 @@ class ThumbnailQueue(Element, component='thumbnail_renderer.js'):
                 self.views[key] = live
             else:
                 del self.views[key]
-        element = ui.html(self.markup(items)).classes('se-thumbnail ' + classes)
-        self.views[thumbnail_key(items)].append((element, deepcopy(items)))
+        key = preview_key(items, self.garments, self.outfits, outfit_id)
+        element = ui.html(self.markup(items, key, image)).classes('se-thumbnail ' + classes)
+        if key and not image:
+            self.views[key].append((element, deepcopy(items)))
         return element
 
-    def enqueue(self, items):
-        key = thumbnail_key(items)
-        if key not in self.seen and not self.image(items):
+    def enqueue(self, kind, revision_id, items):
+        key = thumbnail_key(kind, revision_id)
+        if key not in self.seen and not self.image(key):
             self.seen.add(key)
             self.pending.append((key, deepcopy(items)))
 
     def enqueue_library(self, standards=False):
-        library = self.store.read()
+        library = self.reload_library()
         # Backfill both tabs, not only the currently visible cards.
         for garment in library['garments'] + (standard_garments() if standards else []):
-            self.enqueue([garment])
+            self.enqueue('garment', garment['id'], [garment])
         for outfit in library['outfits']:
-            self.enqueue(outfit['garments'])
+            self.enqueue('outfit', outfit['revision_id'], outfit['garments'])
         if self.online and not self.closed:
             ui.timer(.1, self.next, once=True)
 
@@ -98,19 +109,22 @@ class ThumbnailQueue(Element, component='thumbnail_renderer.js'):
                 key, items = self.current
                 # Another tab may have completed it in the meantime.
                 self.images.update(self.store.read().get('thumbnails', {}))
-                if self.image(items):
+                if self.image(key):
                     self.refresh_images(key)
                     continue
-                target = self.folder / f'{key}.json'
+                # Revision attachment IDs are data, never filesystem paths.
+                target = self.folder / f'{uuid4().hex}.json'
+                self.scene = target
                 try:
                     await asyncio.get_running_loop().run_in_executor(PREPARER, prepare_thumbnail_scene, items, target)
                 except Exception as error:
                     print(f'Thumbnail preparation failed: {error}')
+                    self.remove_scene()
                     continue
                 if self.closed:
                     shutil.rmtree(self.folder, ignore_errors=True)
                     return
-                self._props['job'] = dict(key=key, url=f'/thumbnail-scenes/{self.folder.name}/{key}.json')
+                self._props['job'] = dict(key=key, url=f'/thumbnail-scenes/{self.folder.name}/{target.name}')
                 self.update()
                 return  # Browser completion advances the queue.
             self.current = None
@@ -122,38 +136,42 @@ class ThumbnailQueue(Element, component='thumbnail_renderer.js'):
     def refresh_images(self, key):
         self.views[key] = [(view, items) for view, items in self.views[key] if not view.is_deleted]
         for view, items in self.views[key]:
-            view.set_content(self.markup(items))
+            view.set_content(self.markup(items, key))
 
     async def received(self, event):
         if self.closed or not self.current or event.args.get('key') != self.current[0]:
             return
         key = self.current[0]
         try:
-            self.images[key] = self.store.save_thumbnail(key, event.args.get('image'))
+            kind, revision_id = key.split(':', 1)
+            self.images[key] = self.store.save_thumbnail(kind, revision_id, event.args.get('image'))
             self.refresh_images(key)
         except ValueError as error:
             print(f'Thumbnail was not saved: {error}')
         finally:
-            self.remove_scene(key)
+            self.remove_scene()
             self.current = None
         await self.next()
 
     async def failed(self, event):
         if self.current and event.args.get('key') == self.current[0]:
             print(f'Browser thumbnail failed: {event.args.get("message", "Unknown error")}')
-            self.remove_scene(self.current[0])
+            self.remove_scene()
             self.current = None
             if event.args.get('fatal'):
                 self.online = False
             await self.next()
 
-    def remove_scene(self, key):
+    def remove_scene(self):
+        if self.scene is None:
+            return
         try:
-            (self.folder / f'{key}.json').unlink(missing_ok=True)
+            self.scene.unlink(missing_ok=True)
         except PermissionError:
             # Windows can still have an HTTP response holding the file open
             # when the browser reports a fetch failure. Page cleanup retries.
             pass
+        self.scene = None
 
     def close(self):
         self.closed = True

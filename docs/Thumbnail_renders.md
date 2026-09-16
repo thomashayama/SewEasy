@@ -19,35 +19,40 @@ canvas captures. Output is a 384 × 448 WebP, validated and re-encoded by the
 server. Private images live in the owner's existing wardrobe storage: SQL for
 accounts and persistent NiceGUI storage for guests. They are separate from
 garment snapshots, so an image cannot create a new garment version or change a
-saved outfit. Results must still match an owned garment, outfit, or standard
-preset before they can be saved; stale outfit results are rejected.
+saved outfit. Results must reference an owned garment revision, outfit revision,
+or standard preset before they can be saved.
 
-Cache keys include the ordered garment designs and appearance, default body,
-and thumbnail renderer version. Body YAML line endings are normalized to LF
-so Windows and Linux use the same keys.
-Legacy Windows cache entries are still readable and migrate on the next image
-save. The browser loads the simulation modules only for missing thumbnails;
+Images are attached directly to IDs in the library's `thumbnails` map:
+`garment:<id>` or `outfit:<revision_id>`. A garment's `id` already identifies
+an immutable version; an outfit's `revision_id` does the same. Saving a new
+version gives it a separate image, and a late render for an older version cannot
+replace the new version's thumbnail. Forks copy the shared image to their new ID.
+Legacy content-keyed images migrate once to these attachments on library read,
+without rendering again. No body files or designs are hashed for new thumbnails.
+
+The browser loads the simulation modules only for missing thumbnails;
 cached library cards do not download the cloth solver or initialize WebGPU.
-Names, version numbers and custom measurements
-do not affect the key. Identical single-garment outfits reuse their garment's
-image. The illustrative flat remains available while an image is pending or
+Unsaved edits use the illustrative flat instead of an outdated saved image.
+The flat also remains available while an image is pending or
 when the browser cannot use WebGPU. Already cached or bundled images work
 without WebGPU and do not start a graphics device.
 
 ## Standard images
 
-The six standard garment renders live in `assets/garment_thumbnails/`. They
-contain only built-in presets, never personal designs or measurements. To refresh
-them after a design change, open Home and let the browser finish its missing
-renders, then export that local browser cache:
+The six standard garment renders live in `assets/garment_thumbnails/`, using
+fixed preset names such as `DressShirt.webp` and `Pants.webp`. They contain only
+built-in presets, never personal designs or measurements. To refresh a preset
+after a design change, temporarily move its bundled image aside in a local
+checkout, remove its `garment:standard:<kind>` attachment from a dedicated test
+guest library if present, then open Home and let the missing render finish.
+Export that test browser's cache (all six renders must be present):
 
 ```powershell
 python benchmarks/export_garment_thumbnails.py .nicegui/storage-user-<id>.json
 ```
 
-Bump `THUMBNAIL_VERSION` in `webapp/thumbnail_cache.py` when changing renderer
-framing, the body mesh or simulation behavior. This invalidates earlier renders;
-regenerate the six bundled files with the new keys.
+Commit the replacement images under the same filenames. Changes to the renderer
+or mannequin do not invalidate users' saved images.
 
 Validation: `python -m unittest test_thumbnails test_home_page test_wardrobe test_browser_preview test_fabric_selection -q`.
 Browser checks cover real captures, existing outfit backfill, save-triggered

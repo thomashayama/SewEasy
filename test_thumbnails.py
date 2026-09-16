@@ -15,67 +15,79 @@ from webapp.db import Base
 from webapp.models import User
 from webapp.wardrobe import Wardrobe
 from webapp.garment_catalog import standard_garments, starter_item
-from webapp.thumbnail_cache import ROOT, _default_body_key, bundled_thumbnail, cached_thumbnail, normalize_image, prepare_thumbnail_scene, thumbnail_key, SIZE
+from webapp.thumbnail_cache import ROOT, bundled_thumbnail, normalize_image, prepare_thumbnail_scene, preview_key, thumbnail_key, SIZE
+from webapp.thumbnail_migration import LEGACY_BODIES, legacy_key
 
 
-def raster(size=SIZE):
+def raster(size=SIZE, color='#a6bfd7'):
     out = BytesIO()
-    Image.new('RGB', size, '#a6bfd7').save(out, format='WEBP')
+    Image.new('RGB', size, color).save(out, format='WEBP')
     return 'data:image/webp;base64,' + base64.b64encode(out.getvalue()).decode()
 
 
 class ThumbnailTest(unittest.TestCase):
-    def test_windows_and_linux_checkouts_use_the_same_six_bundled_images(self):
-        body = (ROOT / 'assets/bodies/mean_all.yaml').read_bytes().replace(b'\r\n', b'\n')
-        keys = []
-        try:
-            for contents in (body, body.replace(b'\n', b'\r\n')):
-                _default_body_key.cache_clear()
-                with patch('webapp.thumbnail_cache.Path.read_bytes', return_value=contents):
-                    current = [thumbnail_key([g]) for g in standard_garments()]
-                    self.assertTrue(all(bundled_thumbnail(key) for key in current))
-                    keys.append(current)
-            self.assertEqual(keys[0], keys[1])
-        finally:
-            _default_body_key.cache_clear()
-
-    def test_existing_windows_images_are_reused_and_retained_on_the_next_save(self):
-        store = Wardrobe(storage={})
-        source = starter_item('Pants')
-        one = store.save_garment('Navy trousers', source['params'], source['appearance'])
-        source['appearance']['fabric_color'] = '#123456'
-        two = store.save_garment('Other trousers', source['params'], source['appearance'])
-        image = raster()
-        old_key = thumbnail_key([one], legacy_windows=True)
-        with store._edit() as library:
-            library['thumbnails'] = {old_key: image}
-        self.assertEqual(cached_thumbnail(store.read()['thumbnails'], [one]), image)
-        store.save_thumbnail(thumbnail_key([two]), image)
-        images = store.read()['thumbnails']
-        self.assertIn(thumbnail_key([one]), images)
-        self.assertNotIn(old_key, images)
-        self.assertIn(thumbnail_key([two]), images)
+    def test_legacy_images_attach_to_all_matching_revisions_once(self):
+        for body in LEGACY_BODIES:
+            with self.subTest(body=body):
+                storage = {}
+                store = Wardrobe(storage=storage)
+                source = starter_item('Pants')
+                one = store.save_garment('Navy trousers', source['params'], source['appearance'])
+                two = store.save_garment('Other trousers', source['params'], source['appearance'])
+                outfit = store.save_outfit('Work', [one['id']])
+                image = raster()
+                old_key = legacy_key([one], body)
+                storage['wardrobe']['thumbnails'] = {old_key: image}
+                images = store.read()['thumbnails']
+                self.assertEqual(images[thumbnail_key('garment', one['id'])], image)
+                self.assertEqual(images[thumbnail_key('garment', two['id'])], image)
+                self.assertEqual(images[thumbnail_key('outfit', outfit['revision_id'])], image)
+                self.assertNotIn(old_key, images)
+                self.assertEqual(storage['wardrobe']['thumbnails'], images)
+                with patch('webapp.thumbnail_migration.legacy_key', side_effect=AssertionError('Rehashed after migration')):
+                    self.assertEqual(store.read()['thumbnails'], images)
 
     def test_every_standard_has_a_current_nonblank_bundled_render(self):
         from PIL import ImageStat
         for item in standard_garments():
             with self.subTest(garment=item['name']):
-                key = thumbnail_key([item])
-                self.assertIsNotNone(bundled_thumbnail(key))
-                with Image.open(ROOT / 'assets/garment_thumbnails' / f'{key}.webp') as image:
+                key = thumbnail_key('garment', item['id'])
+                with patch('webapp.thumbnail_cache.Path.read_bytes', side_effect=AssertionError('Read body file')):
+                    self.assertEqual(bundled_thumbnail(key), f'/garment-thumbnails/{item["standard"]}.webp')
+                with Image.open(ROOT / 'assets/garment_thumbnails' / f'{item["standard"]}.webp') as image:
                     self.assertEqual(image.size, SIZE)
                     self.assertGreater(min(ImageStat.Stat(image.convert('RGB')).stddev), 5)
 
-    def test_identity_ignores_names_versions_and_body_but_tracks_colors_and_outfit_order(self):
-        shirt, pants = starter_item('DressShirt'), starter_item('Pants')
-        key = thumbnail_key([shirt])
-        shirt.update(name='Renamed', version=5, id='saved', body={'height': 200})
-        shirt['appearance']['panel_colors'] = {}
-        self.assertEqual(thumbnail_key([shirt]), key)
-        shirt['appearance']['panel_colors']['left_collar'] = '#ff0000'
-        self.assertNotEqual(thumbnail_key([shirt]), key)
-        self.assertNotEqual(thumbnail_key([shirt, pants]), thumbnail_key([pants, shirt]))
-        self.assertNotEqual(thumbnail_key([shirt, pants]), thumbnail_key([shirt]))
+    def test_saved_ids_keep_images_separate_even_when_designs_are_identical(self):
+        store = Wardrobe(storage={})
+        source = starter_item('Pants')
+        one = store.save_garment('Trousers', source['params'], source['appearance'])
+        two = store.save_garment('Trousers', source['params'], source['appearance'])
+        outfit = store.save_outfit('Work', [one['id']])
+        first = store.save_thumbnail('garment', one['id'], raster())
+        second = store.save_thumbnail('garment', two['id'], raster(color='#ff0000'))
+        images = store.read()['thumbnails']
+        self.assertEqual(images[thumbnail_key('garment', one['id'])], first)
+        self.assertEqual(images[thumbnail_key('garment', two['id'])], second)
+        self.assertNotEqual(first, second)
+        self.assertNotIn(thumbnail_key('outfit', outfit['revision_id']), images)
+
+    def test_unsaved_edits_and_reordered_outfits_do_not_show_an_old_revision_image(self):
+        store = Wardrobe(storage={})
+        records = [store.save_garment(g['name'], g['params'], g['appearance']) for g in
+                   (starter_item('DressShirt'), starter_item('Pants'))]
+        outfit = store.save_outfit('Work', [g['id'] for g in records])
+        garments = {g['id']: g for g in records}
+        outfits = {outfit['revision_id']: outfit}
+        self.assertEqual(preview_key([records[0]], garments, outfits), thumbnail_key('garment', records[0]['id']))
+        self.assertEqual(preview_key(records, garments, outfits, outfit['revision_id']),
+                         thumbnail_key('outfit', outfit['revision_id']))
+        edited = deepcopy(records[0])
+        edited['appearance']['fabric_color'] = '#ff0000'
+        self.assertIsNone(preview_key([edited], garments, outfits))
+        self.assertIsNone(preview_key([edited, records[1]], garments, outfits, outfit['revision_id']))
+        self.assertIsNone(preview_key(list(reversed(records)), garments, outfits, outfit['revision_id']))
+        self.assertIsNone(preview_key([starter_item('Shirt')], garments, outfits))
 
     def test_cache_survives_reload_without_changing_versions_or_outfits(self):
         storage = {}
@@ -83,15 +95,15 @@ class ThumbnailTest(unittest.TestCase):
         source = starter_item('Pants')
         garment = store.save_garment('Navy trousers', source['params'], source['appearance'])
         outfit = store.save_outfit('Work', [garment['id']])
-        key = thumbnail_key([garment])
-        store.save_thumbnail(key, raster())
+        key = thumbnail_key('garment', garment['id'])
+        store.save_thumbnail('garment', garment['id'], raster())
         loaded = Wardrobe(storage=storage).read()
         self.assertTrue(loaded['thumbnails'][key].startswith('data:image/webp;base64,'))
         self.assertEqual(loaded['garments'], [garment])
         self.assertEqual(loaded['outfits'], [outfit])
-        self.assertEqual(thumbnail_key(outfit['garments']), key)
+        self.assertNotEqual(thumbnail_key('outfit', outfit['revision_id']), key)
 
-    def test_outdated_outfit_result_is_rejected_and_account_images_are_private(self):
+    def test_late_render_attaches_to_its_revision_and_account_images_are_private(self):
         engine = create_engine('sqlite://')
         Base.metadata.create_all(engine)
         sessions = sessionmaker(bind=engine)
@@ -103,15 +115,17 @@ class ThumbnailTest(unittest.TestCase):
             first['appearance']['fabric_color'] = '#102030'
             garments = [store.save_garment(g['name'], g['params'], g['appearance']) for g in (first, second)]
             outfit = store.save_outfit('Work', [g['id'] for g in garments])
-            key = thumbnail_key(outfit['garments'])
-            store.save_thumbnail(key, raster())
+            key = thumbnail_key('outfit', outfit['revision_id'])
+            store.save_thumbnail('outfit', outfit['revision_id'], raster())
             self.assertIn(key, Wardrobe('a@example.com').read()['thumbnails'])
             self.assertNotIn('thumbnails', Wardrobe('b@example.com').read())
             with self.assertRaises(ValueError):
-                Wardrobe('b@example.com').save_thumbnail(key, raster())
-            store.save_outfit('Work', [garments[0]['id']])
-            with self.assertRaises(ValueError):
-                store.save_thumbnail(key, raster())
+                Wardrobe('b@example.com').save_thumbnail('outfit', outfit['revision_id'], raster())
+            current = store.save_outfit('Work', [garments[0]['id']])
+            current_image = store.save_thumbnail('outfit', current['revision_id'], raster(color='#ff0000'))
+            store.save_thumbnail('outfit', outfit['revision_id'], raster())
+            self.assertEqual(store.read()['thumbnails'][thumbnail_key('outfit', current['revision_id'])], current_image)
+            self.assertIn(key, store.read()['thumbnails'])
         engine.dispose()
 
     def test_invalid_or_oversize_uploads_are_rejected(self):
