@@ -11,12 +11,17 @@ THUMBNAIL_VERSION = 'default-mannequin-webgpu-v2'
 SIZE = (384, 448)
 
 
-@lru_cache(maxsize=1)
-def _default_body_key():
-    return sha256((ROOT / 'assets/bodies/mean_all.yaml').read_bytes()).hexdigest()
+@lru_cache(maxsize=2)
+def _default_body_key(legacy_windows=False):
+    # Git checks this YAML out as CRLF on Windows and LF in production.
+    # Line endings do not change the body and must not invalidate its renders.
+    body = (ROOT / 'assets/bodies/mean_all.yaml').read_bytes().replace(b'\r\n', b'\n')
+    if legacy_windows:
+        body = body.replace(b'\n', b'\r\n')
+    return sha256(body).hexdigest()
 
 
-def thumbnail_key(items):
+def thumbnail_key(items, *, legacy_windows=False):
     if not items:
         raise ValueError('A thumbnail needs at least one garment.')
     def look(item):
@@ -24,9 +29,16 @@ def thumbnail_key(items):
         return dict(fabric_color=appearance.get('fabric_color') or '#b7cde5',
                     **{field: appearance.get(field, {}) for field in
                        ('panel_colors', 'panel_fabrics', 'panel_stiffness', 'panel_materials')})
-    recipe = dict(version=THUMBNAIL_VERSION, body=_default_body_key(),
+    recipe = dict(version=THUMBNAIL_VERSION, body=_default_body_key(legacy_windows),
                   garments=[dict(params=g['params'], appearance=look(g)) for g in items])
     return sha256(json.dumps(recipe, sort_keys=True, separators=(',', ':'), default=float).encode()).hexdigest()
+
+
+def cached_thumbnail(images, items):
+    """Read old Windows caches without making the browser simulate them again."""
+    if not images:
+        return None
+    return images.get(thumbnail_key(items)) or images.get(thumbnail_key(items, legacy_windows=True))
 
 
 def normalize_image(data_url):

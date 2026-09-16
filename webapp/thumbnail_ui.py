@@ -11,7 +11,7 @@ from nicegui import app, ui
 from nicegui.element import Element
 
 from webapp.garment_catalog import standard_garments, thumbnail
-from webapp.thumbnail_cache import ROOT, bundled_thumbnail, prepare_thumbnail_scene, thumbnail_key
+from webapp.thumbnail_cache import ROOT, bundled_thumbnail, cached_thumbnail, prepare_thumbnail_scene, thumbnail_key
 
 SCENES = ROOT / 'tmp_gui/thumbnail-scenes'
 SCENES.mkdir(parents=True, exist_ok=True)
@@ -46,7 +46,7 @@ class ThumbnailQueue(Element, component='thumbnail_renderer.js'):
 
     def image(self, items):
         key = thumbnail_key(items)
-        return bundled_thumbnail(key) or self.images.get(key)
+        return bundled_thumbnail(key) or cached_thumbnail(self.images, items)
 
     def markup(self, items):
         image = self.image(items)

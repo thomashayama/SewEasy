@@ -195,7 +195,7 @@ class Wardrobe:
 
     def save_thumbnail(self, key, image):
         from webapp.garment_catalog import standard_garments
-        from webapp.thumbnail_cache import normalize_image, thumbnail_key
+        from webapp.thumbnail_cache import cached_thumbnail, normalize_image, thumbnail_key
         normalized = normalize_image(image)
         with self._edit() as library:
             targets = [[g] for g in library['garments'] + standard_garments()]
@@ -203,6 +203,14 @@ class Wardrobe:
             owned_keys = {thumbnail_key(items) for items in targets}
             if key not in owned_keys:
                 raise ValueError('This thumbnail no longer matches an item in your library.')
-            library['thumbnails'] = {k: v for k, v in library.get('thumbnails', {}).items() if k in owned_keys}
+            # Retain/migrate pre-fix Windows cache entries while pruning stale
+            # outfits. Existing saved renders should not need another simulation.
+            images = library.get('thumbnails', {})
+            retained = {}
+            for items in targets:
+                cached = cached_thumbnail(images, items)
+                if cached:
+                    retained[thumbnail_key(items)] = cached
+            library['thumbnails'] = retained
             library['thumbnails'][key] = normalized
         return normalized

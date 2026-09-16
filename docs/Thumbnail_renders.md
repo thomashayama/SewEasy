@@ -23,7 +23,12 @@ saved outfit. Results must still match an owned garment, outfit, or standard
 preset before they can be saved; stale outfit results are rejected.
 
 Cache keys include the ordered garment designs and appearance, default body,
-and thumbnail renderer version. Names, version numbers and custom measurements
+and thumbnail renderer version. Body YAML line endings are normalized to LF
+so Windows and Linux use the same keys.
+Legacy Windows cache entries are still readable and migrate on the next image
+save. The browser loads the simulation modules only for missing thumbnails;
+cached library cards do not download the cloth solver or initialize WebGPU.
+Names, version numbers and custom measurements
 do not affect the key. Identical single-garment outfits reuse their garment's
 image. The illustrative flat remains available while an image is pending or
 when the browser cannot use WebGPU. Already cached or bundled images work

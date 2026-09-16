@@ -7,7 +7,7 @@ from sqlalchemy.exc import IntegrityError
 
 from webapp.db import SessionLocal
 from webapp.models import User, WardrobeShare, WardrobeInvitation
-from webapp.thumbnail_cache import thumbnail_key, normalize_image
+from webapp.thumbnail_cache import cached_thumbnail, thumbnail_key, normalize_image
 
 
 class ShareUnavailable(ValueError):
@@ -58,7 +58,7 @@ class WardrobeSharing:
         """Prepare owner controls; access remains private until explicitly granted."""
         snapshot = _snapshot(self.store.revision(kind, revision_id), kind)
         items = snapshot['garments'] if kind == 'outfit' else [snapshot]
-        image = self.store.read().get('thumbnails', {}).get(thumbnail_key(items))
+        image = cached_thumbnail(self.store.read().get('thumbnails', {}), items)
         with SessionLocal() as db:
             row = db.query(WardrobeShare).filter_by(owner_key=self.store.owner_key, kind=kind, revision_id=revision_id).first()
             if row:

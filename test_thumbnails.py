@@ -15,7 +15,7 @@ from webapp.db import Base
 from webapp.models import User
 from webapp.wardrobe import Wardrobe
 from webapp.garment_catalog import standard_garments, starter_item
-from webapp.thumbnail_cache import ROOT, bundled_thumbnail, normalize_image, prepare_thumbnail_scene, thumbnail_key, SIZE
+from webapp.thumbnail_cache import ROOT, _default_body_key, bundled_thumbnail, cached_thumbnail, normalize_image, prepare_thumbnail_scene, thumbnail_key, SIZE
 
 
 def raster(size=SIZE):
@@ -25,6 +25,37 @@ def raster(size=SIZE):
 
 
 class ThumbnailTest(unittest.TestCase):
+    def test_windows_and_linux_checkouts_use_the_same_six_bundled_images(self):
+        body = (ROOT / 'assets/bodies/mean_all.yaml').read_bytes().replace(b'\r\n', b'\n')
+        keys = []
+        try:
+            for contents in (body, body.replace(b'\n', b'\r\n')):
+                _default_body_key.cache_clear()
+                with patch('webapp.thumbnail_cache.Path.read_bytes', return_value=contents):
+                    current = [thumbnail_key([g]) for g in standard_garments()]
+                    self.assertTrue(all(bundled_thumbnail(key) for key in current))
+                    keys.append(current)
+            self.assertEqual(keys[0], keys[1])
+        finally:
+            _default_body_key.cache_clear()
+
+    def test_existing_windows_images_are_reused_and_retained_on_the_next_save(self):
+        store = Wardrobe(storage={})
+        source = starter_item('Pants')
+        one = store.save_garment('Navy trousers', source['params'], source['appearance'])
+        source['appearance']['fabric_color'] = '#123456'
+        two = store.save_garment('Other trousers', source['params'], source['appearance'])
+        image = raster()
+        old_key = thumbnail_key([one], legacy_windows=True)
+        with store._edit() as library:
+            library['thumbnails'] = {old_key: image}
+        self.assertEqual(cached_thumbnail(store.read()['thumbnails'], [one]), image)
+        store.save_thumbnail(thumbnail_key([two]), image)
+        images = store.read()['thumbnails']
+        self.assertIn(thumbnail_key([one]), images)
+        self.assertNotIn(old_key, images)
+        self.assertIn(thumbnail_key([two]), images)
+
     def test_every_standard_has_a_current_nonblank_bundled_render(self):
         from PIL import ImageStat
         for item in standard_garments():

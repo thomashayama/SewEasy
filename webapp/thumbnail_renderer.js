@@ -1,6 +1,3 @@
-import {Cloth} from '/webgpu/physics.js?v=18';
-import {Renderer} from '/webgpu/render.js?v=21';
-
 const engines=new WeakMap();
 const nextFrame=()=>new Promise(resolve=>requestAnimationFrame(resolve));
 
@@ -25,6 +22,12 @@ export default {
       e.loading=true;this.state='rendering';let cloth,renderer;
       try{
         if(e.lost)throw Error('Browser graphics unavailable');
+        // Cached library cards only need images. Do not download or parse the
+        // cloth solver, shaders and renderer unless a missing image needs work.
+        const [{Cloth},{Renderer}]=await Promise.all([
+          import('/webgpu/physics.js?v=18'),import('/webgpu/render.js?v=22'),
+        ]);
+        if(e.disposed)return;
         if(!e.device){
           const adapter=await navigator.gpu.requestAdapter({powerPreference:'low-power'});
           if(!adapter)throw Error('Browser graphics unavailable');
