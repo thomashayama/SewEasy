@@ -24,6 +24,7 @@ from .gui_pattern import GUIPattern
 from . import theme
 from .browser_drape import BrowserDrape, prepare_scene, snapshot_scene
 from .pattern_canvas import PatternCanvas, FabricPanel
+from .design_number import DesignNumberInput
 from webapp import gui_widgets as account_widgets
 
 # Optional AI photo-to-design service (see chatgarment_modal.py); the GUI
@@ -364,9 +365,6 @@ class GUIState:
                 # Leaf value
                 p_type = design_params[param]['type']
                 val = design_params[param]['v']
-                # range is optional (e.g. 'color' params have none); only
-                # select/float/int use it, and those always provide it
-                p_range = design_params[param].get('range')
                 if 'select' in p_type:
                     values = design_params[param]['range']
                     if 'null' in p_type and None not in values: 
@@ -382,19 +380,9 @@ class GUIState:
                         on_change=lambda e, dic=design_params, param=param: self.design_param_change(dic, param, e.value)
                     ).classes('text-stone-500')
                 elif p_type == 'float' or p_type == 'int':
-                    ui.label(param_name).classes('p-0 m-0 mt-2 se-param-label')
-                    ui_elems[param] = ui.slider(
-                        value=val, 
-                        min=p_range[0], 
-                        max=p_range[1], 
-                        step=0.025 if p_type == 'float' else 1,
-                    ).props('snap label').classes('w-full')  \
-                        .on('change',
-                            lambda e, dic=design_params, param=param: self.design_param_change(dic, param, e.args))
-
-                    # NOTE 'change' fires when the user releases the slider:
-                    # one draft per adjustment instead of one per drag tick
-                    # (the 'label' prop still shows the live value while dragging)
+                    ui_elems[param] = DesignNumberInput(
+                        param_name, design_params[param],
+                        lambda value, dic=design_params, param=param: self.design_param_change(dic, param, value))
                 elif p_type == 'color':
                     ui.label(param_name).classes('p-0 m-0 mt-2 se-param-label')
                     ui_elems[param] = ui.color_input(
@@ -446,7 +434,7 @@ class GUIState:
         from webapp.garment_catalog import garment_title
         with ui.column().classes('se-design-context'):
             self.ui_design_garment_name = ui.label(garment_title(design_params)).classes('se-design-garment-name')
-            ui.label('Fit and construction for this garment.').classes('se-param-label')
+            ui.label('Enter values, then press Enter or leave the field to apply.').classes('se-param-label')
 
         # A waistband belongs to a garment. Top/bottom composition belongs to
         # the outfit, so those legacy selectors are intentionally not exposed.
@@ -797,6 +785,7 @@ class GUIState:
         except Exception as e:
             traceback.print_exc()
             print(e)
+            self.ui_draft_status.set_text('Cannot draft')
             ui.notify(
                 'This parameter combination could not be drafted — '
                 'try different values',
@@ -907,8 +896,22 @@ class GUIState:
                 continue
             if 'v' not in design_params[param]:
                 self.update_design_params_ui_state(ui_elems[param], design_params[param])
+            elif isinstance(ui_elems[param], DesignNumberInput):
+                ui_elems[param].set_number(design_params[param]['v'])
             else:
                 ui_elems[param].value = design_params[param]['v']
+
+    async def commit_design_inputs(self):
+        """Saving must include the focused text field and reject malformed input."""
+        async def commit(controls):
+            for control in controls.values():
+                if isinstance(control, dict):
+                    if not await commit(control):
+                        return False
+                elif isinstance(control, DesignNumberInput) and not await control.commit():
+                    return False
+            return True
+        return await commit(self.ui_design_refs)
 
     def toggle_param_update_events(self, ui_elems):
         """Enable/disable event handling on the ui elements related to SewEasy parameters"""

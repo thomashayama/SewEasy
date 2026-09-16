@@ -157,6 +157,8 @@ def wardrobe_ui(state):
             return False
         saving = True
         try:
+            if not await state.commit_design_inputs():
+                raise ValueError('Check the highlighted number in garment settings before saving.')
             # Fabric edits run in the drafting executor. Wait for them before
             # snapshotting so a quick Save includes the user's last change.
             async with state._fabric_edit_lock:
