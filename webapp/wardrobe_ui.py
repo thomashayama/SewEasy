@@ -187,7 +187,10 @@ def wardrobe_ui(state):
                 if pattern.outfit_items:
                     pattern.outfit_items[pattern.active_garment] = deepcopy(result)
                 else:
-                    pattern.load_outfit([result])
+                    # Legacy/direct studio drafts use unprefixed panel names.
+                    # Rebuild once when they become a saved garment, so fabric
+                    # selection and the scene use the same garment namespace.
+                    await apply([result])
             else:
                 result = store.save_outfit(name, items=current_items(), parent_id=parent, new=copy, origin=origin,
                                            expected_updated_at=state._outfit_updated_at if parent else None)
