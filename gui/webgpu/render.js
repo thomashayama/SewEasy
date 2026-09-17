@@ -96,7 +96,7 @@ export class Renderer {
  }
  render(encoder,querySet=null){
   this.dirty=false;
-  const c=this.canvas,pixel=this.pixelRatio ?? Math.min(devicePixelRatio,2),w=Math.max(1,Math.round(c.clientWidth*pixel)),h=Math.max(1,Math.round(c.clientHeight*pixel));
+  const c=this.canvas,pixel=this.pixelRatio ?? Math.min(devicePixelRatio,2),w=this.outputSize?.[0] ?? Math.max(1,Math.round(c.clientWidth*pixel)),h=this.outputSize?.[1] ?? Math.max(1,Math.round(c.clientHeight*pixel));
   if(c.width!==w||c.height!==h||!this.depth){c.width=w;c.height=h;this.depth?.destroy();this.depth=this.device.createTexture({size:[w,h],format:'depth24plus',usage:GPUTextureUsage.RENDER_ATTACHMENT});}
   // Preserve the whole mannequin in the narrow inspector dock; expanding the
   // same canvas keeps the user's camera distance and pan unchanged.

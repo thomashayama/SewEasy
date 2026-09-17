@@ -9,7 +9,7 @@ export async function captureThumbnail(scene,canvas,onProgress=()=>{}){
   try{
     cloth=await Cloth.create(device,scene);
     renderer=new Renderer(device,canvas,cloth,navigator.gpu.getPreferredCanvasFormat());
-    renderer.pixelRatio=1;renderer.controls.destroy();renderer.bodyView.color=[.72,.64,.57,0];
+    renderer.pixelRatio=1;renderer.outputSize=[384,448];renderer.controls.destroy();renderer.bodyView.color=[.72,.64,.57,0];
     for(let frame=0;frame<180;frame++){
       await new Promise(resolve=>requestAnimationFrame(resolve));
       if(lost)throw Error('Graphics connection lost. Retry when the browser is ready.');
@@ -25,14 +25,6 @@ export async function captureThumbnail(scene,canvas,onProgress=()=>{}){
     const low=Math.max(-.05,minY-.08),high=upper?height+.06:maxY+.12;
     const distance=Math.max((high-low)/2,(maxX-minX)/2/(384/448))/Math.tan(35*Math.PI/360)*1.12;
     Object.assign(renderer.camera,{yaw:.2,pitch:.02,distance:Math.max(1,distance),target:[(minX+maxX)/2,(low+high)/2,0],pan:[0,0]});
-    const captured=await renderer.capture();
-    // Mobile layouts may display a narrower canvas; attachments have one size.
-    const bytes=Uint8Array.from(atob(captured.split(',')[1]),c=>c.charCodeAt(0));
-    const bitmap=await createImageBitmap(new Blob([bytes],{type:'image/webp'}));
-    try{
-      const output=document.createElement('canvas');output.width=384;output.height=448;
-      output.getContext('2d').drawImage(bitmap,0,0,384,448);
-      return output.toDataURL('image/webp',.86);
-    }finally{bitmap.close();}
+    return await renderer.capture();
   }finally{renderer?.destroy();cloth?.destroy();device.destroy();}
 }
