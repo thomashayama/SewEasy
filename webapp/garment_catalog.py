@@ -22,6 +22,8 @@ STARTERS = (
 
 
 def garment_title(params):
+    if params.get('_base_name'):
+        return params['_base_name']
     names = {'DressShirt': 'Dress shirt', 'FittedShirt': 'Fitted shirt', 'Shirt': 'Shirt',
              'ElementTubeTop': 'Tube top', 'Pants': 'Trousers', 'SkirtCircle': 'Circle skirt',
              'PencilSkirt': 'Pencil skirt'}

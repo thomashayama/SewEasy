@@ -166,6 +166,8 @@ class GUIPattern:
             des = yaml.safe_load(f)['design']
 
         self.design_params.update(des)
+        from webapp.base_garments import FIT_DEFAULTS
+        self.design_params.setdefault('pattern_fit', deepcopy(FIT_DEFAULTS))
         if 'left' in self.design_params and not self.design_params['left']['enable_asym']['v']:
             self.sync_left()
 
@@ -176,7 +178,14 @@ class GUIPattern:
         return self.tmp_path / self.svg_filename
 
     def set_new_design(self, design):
+        from webapp.base_garments import FIT_DEFAULTS
+        self.design_params.setdefault('pattern_fit', deepcopy(FIT_DEFAULTS))
+        # These are data snapshots, not the self-describing parameter tree.
+        for key in ('_custom_pattern', '_base_id', '_base_name'):
+            self.design_params.pop(key, None)
+        metadata = {k: deepcopy(v) for k, v in design.items() if k.startswith('_')}
         self._nested_sync(design, self.design_params)
+        self.design_params.update(metadata)
 
     def set_garment_design(self, design):
         """Import details without replacing the active garment's composition."""
@@ -255,6 +264,8 @@ class GUIPattern:
             from copy import deepcopy
             item = self.outfit_items[self.active_garment]
             item['params'] = deepcopy(self.design_params)
+            if not item['params'].get('_custom_pattern'):
+                item['params'].pop('pattern_fit', None)
             item['appearance'] = self.garment_appearance()
 
     def load_outfit(self, items, active=0):
@@ -391,7 +402,7 @@ class GUIPattern:
             s_to['v'] = s_from['v']
         else:
             for key in s_to:
-                if key in s_from:
+                if key in s_from and not key.startswith('_'):
                     GUIPattern._nested_sync(s_from[key], s_to[key])
 
     def set_fabric_color(self, color):
@@ -735,6 +746,8 @@ class GUIPattern:
             the top level of design dictionary does not contain actual parameters    
         """
         for param in self.design_params:
+            if param.startswith('_'):
+                continue
             if 'v' in self.design_params[param]:
                 return False
         return True

@@ -56,6 +56,8 @@ SECTIONS = {
     'garments': ('checkroom', 'Garments'),
     'shared': ('folder_shared', 'Shared with me'),
     'settings': ('settings', 'Settings'),
+    'agents': ('terminal', 'Agent connections'),
+    'bases': ('architecture', 'Base garments'),
 }
 
 
@@ -785,12 +787,22 @@ async def account_page(request: Request):
                      'values are always stored in centimeters.') \
                 .classes('text-sm text-stone-600')
 
+    async def build_agents():
+        from webapp.agent_connections_ui import connections
+        connections(email)
+
+    async def build_bases():
+        from webapp.base_garments_ui import base_library
+        base_library(email)
+
     builders = {
         'account': build_account,
         'measurements': build_measurements,
         'garments': build_garments,
         'shared': build_shared,
         'settings': build_settings,
+        'agents': build_agents,
+        'bases': build_bases,
     }
     section = request.query_params.get('section', 'account')
     await show(section if section in builders else 'account')

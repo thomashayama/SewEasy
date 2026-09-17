@@ -42,7 +42,7 @@ If required, you could install the library and dependecies manually
 
 These dependencies are installed through [setup.cfg](https://github.com/thomashayama/SewEasy/blob/main/setup.cfg#L23).
 
-* Python 3.9
+* Python 3.10+ (3.11 in the production container)
 * numpy<2
 * scipy
 * pyyaml >= 6.0

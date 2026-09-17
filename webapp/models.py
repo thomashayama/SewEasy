@@ -123,6 +123,49 @@ class WardrobeLibrary(Base):
     owner = relationship('User', back_populates='wardrobe')
 
 
+class AgentToken(Base):
+    """Revocable personal access: only a SHA-256 digest is retained."""
+    __tablename__ = 'agent_tokens'
+    id = Column(String, primary_key=True)
+    owner_email = Column(String, ForeignKey('users.email', ondelete='CASCADE'), nullable=False, index=True)
+    name = Column(String, nullable=False)
+    digest = Column(String, nullable=False, unique=True)
+    prefix = Column(String, nullable=False)
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    expires_at = Column(DateTime, nullable=False)
+    revoked = Column(Boolean, nullable=False, default=False)
+
+
+class BaseGarment(TimestampMixin, Base):
+    """Reusable private construction template; saved garments embed its data."""
+    __tablename__ = 'base_garments'
+    __table_args__ = (UniqueConstraint('owner_email', 'name', name='uq_base_garment_name'),)
+    id = Column(String, primary_key=True)
+    owner_email = Column(String, ForeignKey('users.email', ondelete='CASCADE'), nullable=False, index=True)
+    name = Column(String, nullable=False)
+    description = Column(Text, nullable=False, default='')
+    params = Column(JSON, nullable=False)
+    appearance = Column(JSON, nullable=False)
+    files = deferred(Column(JSON, nullable=False))
+
+
+class AgentRender(Base):
+    """Expiring draft artifacts; browser output attaches to the original item."""
+    __tablename__ = 'agent_renders'
+    id = Column(String, primary_key=True)
+    owner_email = Column(String, ForeignKey('users.email', ondelete='CASCADE'), nullable=False, index=True)
+    kind = Column(String, nullable=False)
+    item_id = Column(String, nullable=False)
+    items = deferred(Column(JSON, nullable=False))
+    state = Column(String, nullable=False)
+    error = Column(Text)
+    expires_at = Column(DateTime, nullable=False, index=True)
+    scene = deferred(Column(LargeBinary))
+    svg = deferred(Column(Text))
+    png = deferred(Column(LargeBinary))
+    thumbnail = deferred(Column(Text))
+
+
 class WardrobeShare(TimestampMixin, Base):
     """Access to a named item. revision_id is its stable ID (legacy column name)."""
     __tablename__ = 'wardrobe_shares'

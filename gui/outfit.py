@@ -10,7 +10,9 @@ class OutfitProgram:
 
     def __init__(self, body, items):
         self.items = items
-        self.garments = [MetaGarment(f'garment_{i}', body, item['params'])
+        from gui.uploaded_garment import UploadedGarment
+        self.garments = [UploadedGarment(item['params']) if item['params'].get('_custom_pattern')
+                         else MetaGarment(f'garment_{i}', body, item['params'])
                          for i, item in enumerate(items)]
 
     def is_self_intersecting(self):

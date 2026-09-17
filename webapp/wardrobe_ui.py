@@ -271,7 +271,9 @@ def wardrobe_ui(state):
             return
         add_box.clear()
         with add_box:
-            for heading, records in (('Your garments', store.read()['garments']), ('Standard garments', standard_garments())):
+            from webapp.base_garments import list_bases
+            bases = list_bases(store.email) if store.email else standard_garments()
+            for heading, records in (('Your garments', store.read()['garments']), ('Base garments', bases)):
                 if records:
                     ui.label(heading).classes('se-param-label')
                     for item in records:

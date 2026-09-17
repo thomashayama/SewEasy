@@ -9,6 +9,7 @@
 Logs/
 output/
 tmp_gui/
+tmp*
 system.json
 .env
 data/

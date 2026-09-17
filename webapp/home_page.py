@@ -26,6 +26,9 @@ def home_page(request: Request):
     current = storage.get('pending_design') or {}
     current_items = draft_items(current)
     standards = standard_garments()
+    if store.email:
+        from webapp.base_garments import list_bases
+        standards = [dict(b, standard=b.get('standard') or 'custom-base') for b in list_bases(store.email)]
     state = {'tab': 'garments', 'query': '', 'create': 'garment'}
 
     def open_items(items, name='Untitled outfit', outfit_revision_id=None, editor_mode='garment', outfit_updated_at=None):
@@ -74,7 +77,7 @@ def home_page(request: Request):
                     .props('flat no-caps').classes('se-library-card') as card:
                 card._props['aria-label'] = f'{"Customize" if standard else "Open garment"} {item["name"]}'
                 illustrations([item], 'se-library-art')
-                caption(item, 'Standard garment' if standard else 'Your garment')
+                caption(item, 'Your base garment' if standard == 'custom-base' else 'Standard garment' if standard else 'Your garment')
             if not standard:
                 item_actions('garment', item)
 

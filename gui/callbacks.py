@@ -418,6 +418,7 @@ class GUIState:
         'levels-skirt': 'Levels skirt', 'pants': 'Trousers',
         'dress_shirt': 'Dress shirt', 'buttons': 'Buttons',
         'element_top': 'Tube top', 'fabric': 'Fabric',
+        'pattern_fit': 'Pattern scale',
     }
     def def_design_block(self):
         """Edit the active garment's details; the outfit sidebar owns composition."""
@@ -445,7 +446,7 @@ class GUIState:
         # are visible (see _refresh_section_relevance)
         with ui.column().classes('w-full gap-2'):
             for section in design_params:
-                if section in ('meta', 'fabric'):
+                if section in ('meta', 'fabric') or section.startswith('_'):
                     continue
                 expansion = ui.expansion(
                     self.SECTION_LABELS.get(section, section)
@@ -481,6 +482,8 @@ class GUIState:
     def _relevant_sections(self):
         """Design sections that the currently chosen garments actually use"""
         design = self.pattern_state.design_params
+        if design.get('_custom_pattern'):
+            return {'pattern_fit'}
         upper = design['meta']['upper']['v']
         wb = design['meta']['wb']['v']
         bottom = design['meta']['bottom']['v']

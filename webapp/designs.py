@@ -37,7 +37,10 @@ def snapshot_design_params(design_params: dict) -> dict:
     trip also coerces stray non-JSON scalars (e.g. numpy floats from
     sampling) to plain numbers.
     """
-    return json.loads(json.dumps(design_params, default=float))
+    result = json.loads(json.dumps(design_params, default=float))
+    if 'meta' in result and not result.get('_custom_pattern'):
+        result.pop('pattern_fit', None)
+    return result
 
 
 def snapshot_garment(design_params: dict, kind: str) -> dict:

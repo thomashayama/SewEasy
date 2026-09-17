@@ -5,7 +5,7 @@
 # no prebuilt wheels. CUDA_PATH is left unset so the build is CPU-only —
 # suitable for cloud hosts (Railway etc.) that have no GPU. Simulation on CPU
 # works but is slow; for GPU simulation run outside this image.
-FROM python:3.9-slim-bookworm AS warp-builder
+FROM python:3.11-slim-bookworm AS warp-builder
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
         build-essential git git-lfs ca-certificates curl \
@@ -21,7 +21,7 @@ RUN chmod +x tools/packman/packman \
     && pip wheel --no-deps --wheel-dir /wheels .
 
 # ---------- Stage 2: runtime ----------
-FROM python:3.9-slim-bookworm
+FROM python:3.11-slim-bookworm
 
 # libcairo2 -> CairoSVG; libegl1/libgl1/mesa -> headless pyrender via EGL
 # (seweasy/meshgen/render/pythonrender.py sets PYOPENGL_PLATFORM=egl on Linux);
