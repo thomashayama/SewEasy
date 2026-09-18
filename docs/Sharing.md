@@ -13,26 +13,63 @@ changes or adds standalone library garments. Its piece menu offers **Edit
 garment separately** and **Save garment as copy**. A return action carries the
 edited piece back to the outfit draft.
 
-## Sharing and copies
+## Sharing your wardrobe
 
-Items remain private until their owner enables link sharing or adds invitations.
-An existing share follows the owner's saved changes. Saving a copy never inherits
-access settings. The Save arrow offers Save a copy, Rename and Share for owned
-items; standards and other people's items use Save a copy as their main action.
+Saved garments and outfits start private. Open **Privacy & sharing** from a
+library card's menu or the editor's share button to choose who can open one:
 
-- Anyone with the link can view and copy the item while link sharing is enabled.
-- Invitations grant access to verified email addresses and appear in Shared with
-  me after sign-in. No invitation email is sent.
-- Link and invitation access are independent and can be revoked individually.
-- Access is checked again when copying. Copies already saved remain independent.
-- Copying an outfit preserves its embedded garments without filling the user's
-  standalone garment library. Any piece can be saved separately later.
+| Access | Who can view and save a copy | Listed in Explore |
+| --- | --- | --- |
+| Private | You and individually invited people | No |
+| Friends | Your accepted friends and individually invited people | No |
+| Anyone with the link | Anyone holding the link | No |
+| Public | Everyone | Yes |
 
-Copies retain source attribution. Measurements, private library metadata and
-body-profile assets do not cross the sharing boundary. Preview images use the
-default mannequin.
+Existing shared links remain unlisted. Public discovery and friends sharing
+require a signed-in account. **Stop sharing** returns an item to private and
+removes all invitations. Individual invitations otherwise remain in effect
+when changing visibility. Saving changes updates the shared design; saving a
+copy creates a separately owned, private item. Copies people already saved
+remain theirs after access to the original ends.
 
-## Storage and migration
+## Friends
+
+Use **Friends** in the wardrobe header (or Account → Friends). Send a request
+using the person's sign-in email. They must accept before Friends-only designs
+become accessible. Requests and invitations appear inside SewEasy; no email is
+sent. Requests can be cancelled or declined, and either person can remove a
+friend. Removing a friend ends Friends-only access in both directions, while
+explicit invitations remain in effect. There is no public email directory.
+
+## Favorites
+
+Tap the heart on a saved or shared garment/outfit to bookmark it in
+**Favorites**. Favorites belong to your account and work across devices. They
+refer to the current design, rather than creating copies. If access is revoked,
+the design disappears from Favorites until access is granted again. Favoriting
+your own public design is the same bookmark as favoriting it in your library.
+
+## Photos after sewing
+
+Choose **Made it — add photos** from a saved garment or outfit's menu after
+physically making it. Add up to eight JPEG, PNG or WebP photos, each at most
+8 MB and 24 megapixels, with optional captions. Photos are attached to the
+stable garment/outfit ID, separate from the simulated mannequin thumbnail.
+They survive edits and renames. Saving a copy does not copy the original's
+finished-piece photos.
+
+Only the owner can upload or remove photos. Anyone who can open the design
+can see its finished photos on the shared page. Every image request rechecks
+the current access rules. Images are resized to at most 1600 × 1600, converted
+to WebP, and stripped of embedded metadata (including GPS location).
+
+Photo pixels and metadata are stored in the database's `finished_photos` table.
+Favorites and friendships use `wardrobe_favorites` and `friendships`; sharing
+continues to use `wardrobe_shares` and `wardrobe_invitations`. Startup adds the
+new tables and nullable visibility column without changing existing access.
+
+## Library storage and migration
+
 
 Account libraries live in `wardrobe_libraries.content`; guest libraries live in
 NiceGUI server-side user storage. JSON format 2 contains `garments`, `outfits`
@@ -53,4 +90,5 @@ identifies a stable item. Share snapshots and thumbnails update with the item,
 under the same account transaction. SQLite uses BEGIN IMMEDIATE; Postgres locks
 the owner's row. Guest writes are serialized within the app process.
 
-Validation: `python -m unittest test_named_items test_wardrobe_sharing test_wardrobe test_home_page test_thumbnails`.
+
+Validation: `python -m unittest test_social_wardrobe test_named_items test_wardrobe_sharing test_wardrobe test_home_page test_thumbnails test_mcp_server`.

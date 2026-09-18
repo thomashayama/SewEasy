@@ -5,6 +5,7 @@ from nicegui import app, ui
 
 from webapp.wardrobe import Wardrobe, same_design, same_items
 from webapp.wardrobe_actions import share_dialog
+from webapp.finished_photos_ui import photos_dialog
 from webapp.wardrobe_sharing import WardrobeSharing
 from webapp.garment_catalog import garment_title, standard_garments, studio_snapshot
 from webapp.thumbnail_ui import ThumbnailQueue
@@ -109,6 +110,7 @@ def wardrobe_ui(state):
         state.ui_draft_status.set_text('Saved' if unchanged else 'Unsaved changes' if owned else 'Working copy')
         state.ui_save_button.set_text('Save' if owned or (mode == 'outfit' and not state._source_share) else 'Save a copy')
         state.ui_save_options.set_visibility(bool(owned))
+        state.ui_share_button.set_visibility(bool(owned))
         state.ui_add_garment.set_visibility(mode == 'outfit')
         state.ui_detail_save.set_text('Save' if mode == 'garment' and owned else 'Save garment as copy')
         state.ui_save_menu.clear()
@@ -116,7 +118,8 @@ def wardrobe_ui(state):
             ui.menu_item('Save a copy', lambda: show_save(copy=True))
             if owned:
                 ui.menu_item('Rename', lambda: show_save(rename=True))
-                ui.menu_item('Share', lambda: share_dialog(store, mode, owned_item()))
+                ui.menu_item('Privacy & sharing', lambda: share_dialog(store, mode, owned_item()))
+                ui.menu_item('Made it — add photos', lambda: photos_dialog(store, mode, owned_item()))
         state.ui_outfit_list.clear()
         with state.ui_outfit_list:
             for index, item in enumerate(items):
@@ -285,5 +288,6 @@ def wardrobe_ui(state):
     state.show_add_garment = show_add
     state.save_current = save
     state.rename_current = lambda: show_save(rename=True)
+    state.share_current = lambda: share_dialog(store, state._editor_mode, owned_item()) if owned_item() else None
     state.refresh_wardrobe = refresh_studio
     refresh_studio()

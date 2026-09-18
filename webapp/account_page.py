@@ -55,6 +55,7 @@ SECTIONS = {
     'measurements': ('straighten', 'Measurements'),
     'garments': ('checkroom', 'Garments'),
     'shared': ('folder_shared', 'Shared with me'),
+    'friends': ('people_outline', 'Friends'),
     'settings': ('settings', 'Settings'),
     'agents': ('terminal', 'Agent connections'),
     'bases': ('architecture', 'Base garments'),
@@ -650,6 +651,7 @@ async def account_page(request: Request):
     async def build_shared():
         prof_rows = await run.io_bound(sharing.shared_profiles_with_me, email)
         design_rows = await run.io_bound(sharing.shared_designs_with_me, email)
+        ui.link('Garments and outfits shared with you', '/?tab=shared').classes('text-sm')
 
         with ui.card().classes('se-stitch-card w-full'):
             ui.label('Shared with me').classes('se-section-label text-lg')
@@ -795,6 +797,10 @@ async def account_page(request: Request):
         from webapp.base_garments_ui import base_library
         base_library(email)
 
+    async def build_friends():
+        from webapp.friends_ui import friends_panel
+        friends_panel(email)
+
     builders = {
         'account': build_account,
         'measurements': build_measurements,
@@ -803,6 +809,7 @@ async def account_page(request: Request):
         'settings': build_settings,
         'agents': build_agents,
         'bases': build_bases,
+        'friends': build_friends,
     }
     section = request.query_params.get('section', 'account')
     await show(section if section in builders else 'account')

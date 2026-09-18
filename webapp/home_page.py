@@ -7,8 +7,11 @@ from nicegui import app, ui
 from gui import theme
 from webapp import auth, config
 from webapp.wardrobe import Wardrobe, latest_garments
-from webapp.wardrobe_sharing import WardrobeSharing
+from webapp.wardrobe_sharing import WardrobeSharing, access_label
 from webapp.wardrobe_actions import share_dialog, source_label
+from webapp.favorites import Favorites
+from webapp.friends import Friends
+from webapp.finished_photos_ui import photos_dialog
 from webapp.garment_catalog import draft_items, library_matches, standard_garments, starter_item, studio_snapshot
 from webapp.thumbnail_ui import ThumbnailQueue
 
@@ -19,6 +22,7 @@ def home_page(request: Request):
     storage = app.storage.user
     store = Wardrobe(user['email'] if user else None, storage)
     sharing = WardrobeSharing(store)
+    favorites = Favorites(store)
     previews = ThumbnailQueue(store)
     ui.add_head_html(theme.HEAD_HTML)
     ui.add_css(Path(__file__).with_name('home.css').read_text(encoding='utf-8'))
@@ -29,7 +33,9 @@ def home_page(request: Request):
     if store.email:
         from webapp.base_garments import list_bases
         standards = [dict(b, standard=b.get('standard') or 'custom-base') for b in list_bases(store.email)]
-    state = {'tab': 'garments', 'query': '', 'create': 'garment'}
+    initial_tab = request.query_params.get('tab', 'garments')
+    state = {'tab': initial_tab if initial_tab in ('garments', 'outfits', 'shared', 'favorites', 'explore') else 'garments',
+             'query': '', 'create': 'garment', 'access': {}, 'favorite_keys': set(), 'explore_page': 0}
 
     def open_items(items, name='Untitled outfit', outfit_revision_id=None, editor_mode='garment', outfit_updated_at=None):
         storage['pending_design'] = studio_snapshot(items, name, storage.get('pending_design'),
@@ -50,8 +56,26 @@ def home_page(request: Request):
         with ui.button(icon='more_horiz').props('flat round dense').classes('se-library-actions') as more:
             more._props['aria-label'] = f'{item["name"]} actions'
             with ui.menu():
-                ui.menu_item('Share', lambda: share_dialog(store, kind, item))
+                ui.menu_item('Privacy & sharing', lambda: share_dialog(store, kind, item, library.refresh))
+                ui.menu_item('Made it — add photos', lambda: photos_dialog(store, kind, item))
                 ui.menu_item('Save a copy', lambda: show_copy(kind, item))
+
+    def favorite_button(kind, item_id, name):
+        selected = f'{kind}:{item_id}' in state['favorite_keys']
+        def toggle():
+            try:
+                favorites.set(kind, item_id, not selected)
+                library.refresh()
+            except ValueError as error:
+                ui.notify(str(error), type='info')
+        ui.button(icon='favorite' if selected else 'favorite_border', on_click=toggle).props('flat round dense') \
+            .classes('se-favorite' + (' is-favorite' if selected else ''))._props.update({
+                'aria-label': f'{"Remove" if selected else "Add"} {name} {"from" if selected else "to"} favorites',
+                'aria-pressed': str(selected).lower()})
+
+    def access_text(kind, item):
+        access = state['access'].get(f'{kind}:{item["id"]}', {})
+        return access_label(access.get('visibility', 'private'), access.get('invited', False))
 
     def caption(item, detail):
         with ui.column().classes('se-library-caption'):
@@ -77,9 +101,31 @@ def home_page(request: Request):
                     .props('flat no-caps').classes('se-library-card') as card:
                 card._props['aria-label'] = f'{"Customize" if standard else "Open garment"} {item["name"]}'
                 illustrations([item], 'se-library-art')
-                caption(item, 'Your base garment' if standard == 'custom-base' else 'Standard garment' if standard else 'Your garment')
+                caption(item, 'Your base garment' if standard == 'custom-base' else 'Standard garment' if standard else access_text('garment', item))
             if not standard:
                 item_actions('garment', item)
+                favorite_button('garment', item['id'], item['name'])
+
+    def outfit_card(item):
+        with ui.element('div').classes('se-library-entry is-owned'):
+            with ui.button(on_click=lambda: open_saved('outfits', item['id'])).props('flat no-caps').classes('se-library-card') as card:
+                card._props['aria-label'] = f'Open outfit {item["name"]}'
+                illustrations(item['garments'], 'se-library-art', outfit_id=item['revision_id'])
+                count = len(item['garments'])
+                caption(item, f'{count} garment' + ('s' if count != 1 else '') + ' · ' + access_text('outfit', item))
+            item_actions('outfit', item)
+            favorite_button('outfit', item['id'], item['name'])
+
+    def shared_card(item):
+        snapshot = item['snapshot']
+        with ui.element('div').classes('se-library-entry'):
+            with ui.button(on_click=lambda: ui.navigate.to(f'/shared/{item["id"]}')).props('flat no-caps').classes('se-library-card') as card:
+                card._props['aria-label'] = f'View shared {snapshot["name"]}'
+                illustrations(snapshot['garments'] if item['kind'] == 'outfit' else [snapshot],
+                              'se-library-art', image=item.get('thumbnail'))
+                caption(snapshot, item['owner_name'])
+            favorite_button(item['kind'] if item['is_owner'] else 'share',
+                            item['revision_id'] if item['is_owner'] else item['id'], snapshot['name'])
 
     with ui.dialog() as new_dialog, ui.card().classes('se-new-outfit-dialog'):
         with ui.row().classes('w-full items-center justify-between'):
@@ -141,57 +187,60 @@ def home_page(request: Request):
         data = store.read()
         data['garments'] = latest_garments(data)
         data['shared'] = sharing.shared_with_me()
+        data['favorites'] = favorites.list()
+        state['access'] = sharing.owner_access()
+        state['favorite_keys'] = favorites.keys()
         with ui.element('div').classes('se-library-toolbar'):
             def switch(event):
                 if event.value != state['tab']:
                     state['tab'] = event.value
+                    state['explore_page'] = 0
                     results.refresh()
             with ui.tabs(value=state['tab'], on_change=switch).props(
                     'no-caps dense align=left aria-label="Your library"').classes('se-library-tabs'):
-                for key, title in (('garments', 'Garments'), ('outfits', 'Outfits'), ('shared', 'Shared with me')):
+                for key, title in (('garments', 'Garments'), ('outfits', 'Outfits'), ('favorites', 'Favorites'),
+                                   ('shared', 'Shared with me'), ('explore', 'Explore')):
                     with ui.tab(key, label='').classes('se-library-tab'):
                         with ui.row(wrap=False).classes('items-center gap-0'):
                             ui.label(title)
-                            ui.label(str(len(data[key]) + (len(standards) if key == 'garments' else 0))).classes('se-library-count')
+                            if key in data:
+                                ui.label(str(len(data[key]) + (len(standards) if key == 'garments' else 0))).classes('se-library-count')
             def search(event):
                 state['query'] = event.value
+                state['explore_page'] = 0
                 results.refresh()
-            ui.input(placeholder='Search your wardrobe', value=state['query'], on_change=search).props(
-                'outlined dense clearable debounce=150 aria-label="Search your wardrobe"').classes('se-library-search') \
+            ui.input(placeholder='Search designs', value=state['query'], on_change=search).props(
+                'outlined dense clearable debounce=250 aria-label="Search designs"').classes('se-library-search') \
                 .add_slot('prepend', '<q-icon name="search"/>')
 
         @ui.refreshable
         def results():
             kind = state['tab']
-            entries = ([s for s in data['shared'] if not state['query'] or
-                        state['query'].casefold() in (s['snapshot']['name'] + ' ' + s['owner_name']).casefold()]
-                       if kind == 'shared' else library_matches(data[kind], state['query']))
+            more = False
+            if kind == 'explore':
+                entries = sharing.discover(state['query'], offset=state['explore_page'] * 24, limit=25)
+                more, entries = len(entries) > 24, entries[:24]
+            elif kind in ('shared', 'favorites'):
+                entries = [s for s in data[kind] if not state['query'] or
+                           state['query'].casefold() in (s['snapshot']['name'] + ' ' + s.get('owner_name', '')).casefold()]
+            else:
+                entries = library_matches(data[kind], state['query'])
             if kind == 'garments':
                 entries += list(reversed(library_matches(standards, state['query'])))
             with ui.element('section').classes('se-library-results').props('aria-label="Library items" aria-live=polite'):
                 if entries:
                     with ui.element('div').classes('se-library-grid'):
                         for item in entries:
-                            if kind == 'shared':
-                                snapshot = item['snapshot']
-                                with ui.button(on_click=lambda _, token=item['id']: ui.navigate.to(f'/shared/{token}')) \
-                                        .props('flat no-caps').classes('se-library-card') as card:
-                                    card._props['aria-label'] = f'View shared {snapshot["name"]}'
-                                    illustrations(snapshot['garments'] if item['kind'] == 'outfit' else [snapshot],
-                                                  'se-library-art', image=item.get('thumbnail'))
-                                    caption(snapshot, item['owner_name'])
+                            if kind in ('shared', 'explore') or (kind == 'favorites' and item['favorite_kind'] == 'share'):
+                                shared_card(item)
+                                continue
+                            if kind == 'favorites':
+                                (garment_card if item['kind'] == 'garment' else outfit_card)(item['snapshot'])
                                 continue
                             if kind == 'garments':
                                 garment_card(item)
                                 continue
-                            with ui.element('div').classes('se-library-entry is-owned'):
-                                with ui.button(on_click=lambda _, k=kind, item_id=item['id']: open_saved(k, item_id)) \
-                                        .props('flat no-caps').classes('se-library-card') as card:
-                                    card._props['aria-label'] = f'Open outfit {item["name"]}'
-                                    illustrations(item['garments'], 'se-library-art', outfit_id=item['revision_id'])
-                                    count = len(item['garments'])
-                                    caption(item, f'{count} garment' + ('s' if count != 1 else ''))
-                                item_actions('outfit', item)
+                            outfit_card(item)
                 elif state['query']:
                     with ui.column().classes('se-library-empty'):
                         ui.icon('search').classes('se-empty-icon')
@@ -200,9 +249,17 @@ def home_page(request: Request):
                 elif kind == 'shared':
                     with ui.column().classes('se-library-empty'):
                         ui.icon('people_outline').classes('se-empty-icon')
-                        ui.label('No invitations yet' if user else 'Invitations live here').classes('se-empty-title')
-                        ui.label('Garments and outfits shared with your email will appear here.' if user else
+                        ui.label('No shared designs yet' if user else 'Shared designs live here').classes('se-empty-title')
+                        ui.label('Designs shared by friends or by invitation will appear here.' if user else
                                  'Sign in with your invited email to see private shares.').classes('se-home-muted')
+                        if user:
+                            ui.link('Find friends', '/account?section=friends')
+                elif kind in ('favorites', 'explore'):
+                    with ui.column().classes('se-library-empty'):
+                        ui.icon('favorite_border' if kind == 'favorites' else 'public').classes('se-empty-icon')
+                        ui.label('Keep your favorites here' if kind == 'favorites' else 'Discover what others are making').classes('se-empty-title')
+                        ui.label(('Tap the heart on a garment or outfit to find it here.' if user else 'Sign in to save favorites across devices.')
+                                 if kind == 'favorites' else 'Public garments and outfits appear here. Publish one from Privacy & sharing.').classes('se-home-muted')
                 else:
                     with ui.element('div').classes('se-library-empty se-library-first'):
                         ui.icon('checkroom').classes('se-empty-icon')
@@ -210,6 +267,14 @@ def home_page(request: Request):
                             ui.label('No saved outfits yet').classes('se-empty-title')
                             ui.label('Start with New outfit above, then save your combination in the studio.') \
                                 .classes('se-home-muted')
+                if kind == 'explore' and (state['explore_page'] or more):
+                    def page(delta):
+                        state['explore_page'] += delta
+                        results.refresh()
+                    with ui.row().classes('w-full justify-center items-center gap-3 mt-5'):
+                        ui.button('Previous', on_click=lambda: page(-1)).props('flat no-caps').set_enabled(state['explore_page'] > 0)
+                        ui.label(f'Page {state["explore_page"] + 1}').classes('se-home-muted')
+                        ui.button('Next', on_click=lambda: page(1)).props('flat no-caps').set_enabled(more)
         results()
 
     with ui.element('main').classes('se-home'):
@@ -220,6 +285,10 @@ def home_page(request: Request):
             ui.button('Measurements', icon='straighten', on_click=lambda: ui.navigate.to(
                 '/account?section=measurements' if user else '/studio?measurements=1')).props('flat').classes('se-home-measurements')
             if user:
+                incoming = len(Friends(store.email).list()['incoming'])
+                with ui.button('Friends', icon='people_outline', on_click=lambda: ui.navigate.to('/account?section=friends')).props('flat'):
+                    if incoming:
+                        ui.badge(str(incoming), color='primary').props('floating')
                 ui.button(user.get('name') or 'Account', icon='account_circle', on_click=lambda: ui.navigate.to('/account')).props('flat')
             else:
                 def sign_in():

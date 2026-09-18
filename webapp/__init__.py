@@ -14,6 +14,8 @@ def setup(app):
     from webapp import connection
     connection.setup(app)
     auth.register(app)
+    from webapp import finished_photos
+    finished_photos.register(app)
     from webapp import mcp_server
     mcp_server.register(app)
     from webapp import account_page  # noqa: F401  -- registers @ui.page('/account')

@@ -268,6 +268,8 @@ class GUIState:
                         .props('flat').classes('se-outfit-title').tooltip('Rename')
                 with ui.row(wrap=False).classes('se-header-actions items-center gap-2'):
                     self.ui_draft_status = ui.label('Drafting…').classes('se-draft-status')
+                    self.ui_share_button = ui.button(icon='share', on_click=lambda: self.share_current()) \
+                        .props('flat round dense aria-label="Privacy and sharing"').tooltip('Privacy & sharing')
                     ui.button('Measurements', icon='straighten', on_click=self.ui_measurements_dialog.open) \
                         .props('flat').classes('se-measurements-button')
                     with ui.button_group().props('unelevated').classes('se-save-group'):

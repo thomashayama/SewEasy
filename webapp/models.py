@@ -178,6 +178,9 @@ class WardrobeShare(TimestampMixin, Base):
     snapshot = Column(JSON, nullable=False)
     thumbnail = deferred(Column(Text))
     public_link = Column(Boolean, nullable=False, default=False)
+    # NULL preserves legacy private/unlisted links; existing links are never
+    # promoted into public discovery by a migration.
+    visibility = Column(String)
     invitations = relationship('WardrobeInvitation', cascade='all, delete-orphan', back_populates='share')
 
 
@@ -190,6 +193,39 @@ class WardrobeInvitation(Base):
     recipient_email = Column(String, nullable=False, index=True)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     share = relationship('WardrobeShare', back_populates='invitations')
+
+
+class Friendship(TimestampMixin, Base):
+    """One relationship per unordered email pair; acceptance is bilateral."""
+    __tablename__ = 'friendships'
+    __table_args__ = (UniqueConstraint('email_a', 'email_b', name='uq_friendship_pair'),)
+    id = Column(String, primary_key=True)
+    email_a = Column(String, nullable=False, index=True)
+    email_b = Column(String, nullable=False, index=True)
+    requester_email = Column(String, nullable=False)
+    status = Column(String, nullable=False, default='pending')
+
+
+class WardrobeFavorite(TimestampMixin, Base):
+    __tablename__ = 'wardrobe_favorites'
+    __table_args__ = (UniqueConstraint('owner_email', 'kind', 'item_id', name='uq_wardrobe_favorite'),)
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    owner_email = Column(String, ForeignKey('users.email', ondelete='CASCADE'), nullable=False, index=True)
+    kind = Column(String, nullable=False)  # garment, outfit, or permission-checked share
+    item_id = Column(String, nullable=False)
+
+
+class FinishedPhoto(TimestampMixin, Base):
+    """Real finished-piece photos belong to one stable garment/outfit ID."""
+    __tablename__ = 'finished_photos'
+    id = Column(String, primary_key=True)
+    owner_email = Column(String, ForeignKey('users.email', ondelete='CASCADE'), nullable=False, index=True)
+    kind = Column(String, nullable=False)
+    item_id = Column(String, nullable=False, index=True)
+    caption = Column(String, nullable=False, default='')
+    width = Column(Integer, nullable=False)
+    height = Column(Integer, nullable=False)
+    image = deferred(Column(LargeBinary, nullable=False))
 
 
 class BodyProfileShare(Base):

@@ -42,7 +42,7 @@ class SharingTest(unittest.TestCase):
         self.tmp.cleanup()
 
     def test_private_default_and_owner_only_controls(self):
-        self.assertEqual(self.owner.settings(self.token), dict(public_link=False, recipients=[]))
+        self.assertEqual(self.owner.settings(self.token), dict(public_link=False, visibility='private', recipients=[]))
         self.assertEqual(self.owner.ensure('garment', self.g['id']), self.token)
         for viewer in (self.reader, self.guest, WardrobeSharing(self.mallory)):
             for action in (lambda: viewer.get(self.token), lambda: viewer.fork(self.token),

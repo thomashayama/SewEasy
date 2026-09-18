@@ -3,11 +3,28 @@ from copy import deepcopy
 import re
 import secrets
 
+from sqlalchemy import or_, and_
 from sqlalchemy.exc import IntegrityError
 
 from webapp.db import SessionLocal
 from webapp.models import User, WardrobeShare, WardrobeInvitation
 from webapp.thumbnail_cache import thumbnail_key, normalize_image
+from webapp.friends import are_friends, friend_emails
+
+VISIBILITY = {
+    'private': ('Private', 'Only you and people you invite can open this design.'),
+    'friends': ('Friends', 'Your accepted friends and invited people can view and save a copy.'),
+    'link': ('Anyone with the link', 'Anyone with this link can view and save a copy. It stays out of Explore.'),
+    'public': ('Public', 'Anyone can discover this design in Explore, view it and save a copy.'),
+}
+
+
+def visibility(row):
+    return row.visibility or ('link' if row.public_link else 'private')
+
+
+def access_label(mode='private', invited=False):
+    return 'Shared privately' if mode == 'private' and invited else VISIBILITY[mode][0]
 
 
 class ShareUnavailable(ValueError):
@@ -21,6 +38,9 @@ def _snapshot(item, kind):
     fields = ('id', 'name', 'created_at', 'updated_at', 'params', 'appearance', 'forked_from') if kind == 'garment' else (
         'id', 'name', 'revision_id', 'updated_at', 'forked_from')
     result = {key: deepcopy(item[key]) for key in fields if key in item}
+    if result.get('forked_from'):
+        # Attribution may cross the boundary; the original's private link may not.
+        result['forked_from'] = {k: v for k, v in result['forked_from'].items() if k in ('name', 'owner_name', 'kind')}
     if kind == 'outfit':
         result['garments'] = [_snapshot(g, 'garment') for g in item['garments']]
     return result
@@ -42,13 +62,16 @@ class WardrobeSharing:
             raise ShareUnavailable()
         invited = self.store.email and db.query(WardrobeInvitation.id).filter_by(
             share_id=share_id, recipient_email=self.store.email).first()
-        if row.owner_key != self.store.owner_key and not row.public_link and not invited:
+        mode = visibility(row)
+        friend = mode == 'friends' and row.owner_key.startswith('account:') and are_friends(
+            db, row.owner_key[len('account:'):], self.store.email)
+        if row.owner_key != self.store.owner_key and mode not in ('link', 'public') and not invited and not friend:
             raise ShareUnavailable()
         return row
 
     def _view(self, row, thumbnail=False):
         result = dict(id=row.id, kind=row.kind, revision_id=row.revision_id,
-                      owner_name=row.owner_name, snapshot=deepcopy(row.snapshot),
+                      owner_name=row.owner_name, snapshot=_snapshot(row.snapshot, row.kind), visibility=visibility(row),
                       is_owner=row.owner_key == self.store.owner_key)
         if thumbnail:
             result['thumbnail'] = row.thumbnail
@@ -82,13 +105,38 @@ class WardrobeSharing:
     def settings(self, share_id):
         with SessionLocal() as db:
             row = self._owned(db, share_id)
-            return dict(public_link=row.public_link, recipients=sorted(i.recipient_email for i in row.invitations))
+            return dict(public_link=row.public_link, visibility=visibility(row),
+                        recipients=sorted(i.recipient_email for i in row.invitations))
 
     def set_link(self, share_id, enabled):
+        self.set_visibility(share_id, 'link' if enabled else 'private')
+
+    def set_visibility(self, share_id, mode):
+        if mode not in VISIBILITY:
+            raise ValueError('Choose Private, Friends, Anyone with the link or Public.')
         with SessionLocal() as db:
             row = self._owned(db, share_id)
-            row.public_link = bool(enabled)
+            if mode in ('friends', 'public') and (not self.store.email or not db.get(User, self.store.email)):
+                raise ValueError('Sign in to share with friends or publish a design.')
+            row.visibility = mode
+            row.public_link = mode in ('link', 'public')
             db.commit()
+
+    def stop_sharing(self, share_id):
+        with SessionLocal() as db:
+            row = self._owned(db, share_id)
+            row.visibility, row.public_link = 'private', False
+            db.query(WardrobeInvitation).filter_by(share_id=share_id).delete()
+            db.commit()
+
+    def owner_access(self):
+        """Small library badges; no draft geometry or images are loaded."""
+        with SessionLocal() as db:
+            rows = db.query(WardrobeShare.id, WardrobeShare.kind, WardrobeShare.revision_id,
+                            WardrobeShare.visibility, WardrobeShare.public_link).filter_by(owner_key=self.store.owner_key).all()
+            invited = {r[0] for r in db.query(WardrobeInvitation.share_id).filter(
+                WardrobeInvitation.share_id.in_([r.id for r in rows])).distinct()} if rows else set()
+            return {f'{r.kind}:{r.revision_id}': dict(visibility=visibility(r), invited=r.id in invited) for r in rows}
 
     def invite(self, share_id, email):
         email = (email or '').strip().lower()
@@ -115,8 +163,23 @@ class WardrobeSharing:
         if not self.store.email:
             return []
         with SessionLocal() as db:
-            rows = db.query(WardrobeShare).join(WardrobeInvitation).filter(
-                WardrobeInvitation.recipient_email == self.store.email).order_by(WardrobeShare.created_at.desc()).all()
+            friends = ['account:' + email for email in friend_emails(db, self.store.email)]
+            invitation = db.query(WardrobeInvitation.id).filter(
+                WardrobeInvitation.share_id == WardrobeShare.id,
+                WardrobeInvitation.recipient_email == self.store.email).exists()
+            rows = db.query(WardrobeShare).filter(or_(invitation, and_(
+                WardrobeShare.visibility == 'friends', WardrobeShare.owner_key.in_(friends)))).order_by(WardrobeShare.updated_at.desc()).all()
+            return [self._view(row, thumbnail=True) for row in rows]
+
+    def discover(self, query='', offset=0, limit=24):
+        """Only explicitly public items. Unlisted legacy links never appear."""
+        with SessionLocal() as db:
+            rows = db.query(WardrobeShare).filter_by(visibility='public')
+            if query:
+                term = '%' + query.strip()[:200].replace('\\', '\\\\').replace('%', '\\%').replace('_', '\\_') + '%'
+                rows = rows.filter(or_(WardrobeShare.snapshot['name'].as_string().ilike(term, escape='\\'),
+                                       WardrobeShare.owner_name.ilike(term, escape='\\')))
+            rows = rows.order_by(WardrobeShare.updated_at.desc(), WardrobeShare.id).offset(max(0, offset)).limit(min(100, max(1, limit)))
             return [self._view(row, thumbnail=True) for row in rows]
 
     def get(self, share_id):

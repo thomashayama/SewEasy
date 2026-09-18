@@ -10,6 +10,9 @@ from webapp.garment_catalog import thumbnail, studio_snapshot
 from webapp.wardrobe import Wardrobe
 from webapp.wardrobe_sharing import WardrobeSharing, ShareUnavailable
 from webapp.wardrobe_actions import share_dialog, source_label
+from webapp.favorites import Favorites
+from webapp import finished_photos
+from webapp.finished_photos_ui import photo_gallery, photos_dialog
 
 
 @ui.page('/shared/{share_id}', title='SewEasy — Shared design')
@@ -30,7 +33,7 @@ def shared_page(request: Request, share_id: str):
             with ui.column().classes('se-home-content gap-4'):
                 ui.icon('lock_outline').classes('text-3xl')
                 ui.label('This item isn’t available').classes('se-home-title')
-                ui.label('The link may have been turned off, or access is limited to invited people.').classes('text-sm')
+                ui.label('The owner may have made it private, or access is limited to friends or invited people.').classes('text-sm')
                 if not user:
                     def sign_in():
                         if config.google_configured():
@@ -54,6 +57,21 @@ def shared_page(request: Request, share_id: str):
                 ui.label(f'Shared {kind}').classes('se-home-muted')
                 ui.label(item['name']).classes('se-home-title break-words')
                 ui.label(f'Owned by {source["owner_name"]}').classes('text-sm')
+                favorites = Favorites(store)
+                favorite_kind = kind if source['is_owner'] else 'share'
+                favorite_id = source['revision_id'] if source['is_owner'] else share_id
+                @ui.refreshable
+                def favorite_control():
+                    selected = f'{favorite_kind}:{favorite_id}' in favorites.keys()
+                    def toggle():
+                        try:
+                            favorites.set(favorite_kind, favorite_id, not selected)
+                            favorite_control.refresh()
+                        except ValueError as error:
+                            ui.notify(str(error), type='info')
+                    ui.button('Favorited' if selected else 'Add to favorites',
+                              icon='favorite' if selected else 'favorite_border', on_click=toggle).props('flat no-caps')
+                favorite_control()
                 if source_label(item):
                     ui.label(source_label(item)).classes('se-home-muted')
                 if kind == 'outfit':
@@ -97,3 +115,14 @@ def shared_page(request: Request, share_id: str):
                 ui.button('Edit ' + kind, icon='edit', on_click=open_editor).props('outline')
                 if source['is_owner']:
                     ui.button('Manage access', icon='share', on_click=lambda: share_dialog(store, kind, item)).props('flat')
+                    ui.button('Made it — add photos', icon='add_a_photo',
+                              on_click=lambda: photos_dialog(store, kind, item, made_it.refresh)).props('flat')
+                @ui.refreshable
+                def made_it():
+                    photos = finished_photos.list_photos(store, share_id=share_id)
+                    if photos:
+                        ui.separator()
+                        ui.label('Made it').classes('se-home-dialog-title')
+                        ui.label('Photos of the finished piece, added by its owner.').classes('se-home-muted')
+                        photo_gallery(photos)
+                made_it()

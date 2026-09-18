@@ -24,7 +24,11 @@
 .se-home-resume .q-btn {flex-shrink:0; background:#ffffffa6; padding:6px 12px;}
 .se-library-toolbar {display:flex; align-items:center; justify-content:space-between; gap:18px; border-bottom:1px solid var(--home-line); padding-bottom:10px;}
 .se-library-tabs {align-self:stretch; margin-bottom:-11px;}
-.se-library-tabs .q-tabs__content {gap:22px;}
+.se-library-tabs .q-tabs__content {gap:16px;}
+.se-library-tabs {min-width:0; flex:1;}
+.se-library-search {flex-shrink:0;}
+.se-favorite.q-btn {position:absolute; top:8px; right:8px; width:32px; height:32px; min-height:32px; background:var(--se-paper,#fff); color:var(--se-muted,#61768b); box-shadow:0 1px 4px #0001;}
+.se-favorite.q-btn.is-favorite {color:#bb5267;}
 .se-home .se-library-tab {border-radius:0; padding:8px 2px 16px; color:#61768b; font-size:15px; min-height:0;}
 .se-home .se-library-tab.q-tab--active {color:#183452; font-weight:600;}
 .se-library-count {margin-left:8px; color:#7a8c9e; font-size:12px; font-weight:400;}

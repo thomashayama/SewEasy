@@ -48,6 +48,7 @@ def _migrate():
                     'drape_glb': blob_type,
                     'fabric_color': 'VARCHAR'},
         'users': {'units': "VARCHAR DEFAULT 'in' NOT NULL"},
+        'wardrobe_shares': {'visibility': 'VARCHAR'},
     }
     inspector = inspect(engine)
     for table, columns in added.items():
