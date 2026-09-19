@@ -3,7 +3,9 @@
 .se-account-nav {background:#fcfcfa;}
 .se-account-nav-active {background:#e5ebf4; color:#35558a;}
 /* Transparent garment renders share one backdrop, including contain letterboxing. */
-body :is(.se-thumbnail,.se-shared-preview) {background:#e8f0f5;}
+body :is(.se-thumbnail,.se-library-art,.se-shared-preview) {background:#e8f0f5;}
+/* Paint the rounded frame once; an inset thumbnail background leaves corner seams. */
+body .se-library-art>.se-thumbnail {background:transparent;}
 @media (prefers-color-scheme:dark) {
  :root {
   color-scheme:dark;
@@ -39,7 +41,7 @@ body :is(.se-thumbnail,.se-shared-preview) {background:#e8f0f5;}
  body .se-home-resume .q-btn {background:var(--se-raised);}
  body :is(.se-library-art,.se-home-footer,.se-library-search .q-field__control:before) {border-color:var(--se-chalkline);}
  body .se-library-tab .q-tab__indicator {background:var(--se-indigo);}
- body :is(.se-thumbnail,.se-shared-preview) {background:radial-gradient(ellipse at 50% 38%,#52606b 0%,#303d48 40%,#202c37 80%);}
+ body :is(.se-thumbnail,.se-library-art,.se-shared-preview) {background:radial-gradient(ellipse at 50% 38%,#52606b 0%,#303d48 40%,#202c37 80%);}
 
  /* Studio tools and garment inspector. */
  body .se-studio {--studio-line:var(--se-chalkline); --studio-muted:var(--se-muted); color:var(--se-graphite); background:var(--se-paper);}
