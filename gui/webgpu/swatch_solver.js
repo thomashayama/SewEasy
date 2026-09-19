@@ -1,7 +1,8 @@
 // The diagnostic mesh fits in one GPU workgroup. Keep intermediate positions
 // in workgroup memory instead of issuing thousands of tiny compute dispatches.
 // Same colored distance/dihedral XPBD equations as Cloth's reference path.
-export const swatchShader=`
+import {membraneTypes,membraneSolve} from './membrane.js?v=1';
+export const swatchShader=membraneTypes+`
 struct Params { motion:vec4<f32>, material:vec4<f32>, counts:vec4<u32>, contact:vec4<f32>, limits:vec4<f32> }
 struct Edge { ids:vec4<u32>, rest:vec4<f32> }
 struct Hinge { ids:vec4<u32>, rest:vec4<f32> }
@@ -12,10 +13,14 @@ struct Hinge { ids:vec4<u32>, rest:vec4<f32> }
 @group(0) @binding(4) var<storage,read> edges:array<Edge>;
 @group(0) @binding(5) var<storage,read> batches:array<vec4<u32>>;
 @group(0) @binding(6) var<storage,read> hinges:array<Hinge>;
+@group(0) @binding(7) var<storage,read> membranes:array<Membrane>;
+@group(0) @binding(8) var<storage,read> appliedForces:array<vec4<f32>>;
 var<workgroup> p:array<vec4<f32>,128>;
 var<workgroup> old:array<vec3<f32>,128>;
 var<workgroup> v:array<vec3<f32>,128>;
 var<workgroup> multipliers:array<f32,256>;
+var<workgroup> membraneMultipliers:array<vec4<f32>,256>;
+`+membraneSolve+`
 fn edge_solve(index:u32){
  let e=edges[index];let a=p[e.ids.x];let b=p[e.ids.y];let delta=a.xyz-b.xyz;
  let len=length(delta);if(len<1e-9||a.w+b.w==0.0){return;}
@@ -24,7 +29,7 @@ fn edge_solve(index:u32){
  p[e.ids.y]=vec4<f32>(b.xyz-b.w*correction,b.w);
 }
 fn bend_solve(index:u32,iteration:u32){
- let h=hinges[index];let a=p[h.ids.x];let b=p[h.ids.y];let c=p[h.ids.z];let d=p[h.ids.w];
+ let h=hinges[index];if(h.rest.y<0.0){return;}let a=p[h.ids.x];let b=p[h.ids.y];let c=p[h.ids.z];let d=p[h.ids.w];
  let edge=b.xyz-a.xyz;let length2=dot(edge,edge);if(length2<1e-12){return;}
  let len=sqrt(length2);let n0=cross(edge,c.xyz-a.xyz);let n1=cross(d.xyz-a.xyz,edge);
  let area0=dot(n0,n0);let area1=dot(n1,n1);if(min(area0,area1)<1e-18){return;}
@@ -52,7 +57,7 @@ fn bend_solve(index:u32,iteration:u32){
   if(i<params.counts.x){
    old[i]=p[i].xyz;
    if(p[i].w==0.0){v[i]=vec3<f32>(0);}else{
-    v[i]+=vec3<f32>(0,-params.contact.x*ramp,0)*dt;
+    v[i]+=(vec3<f32>(0,-params.contact.x,0)+appliedForces[i].xyz*p[i].w)*ramp*dt;
     p[i]=vec4<f32>(p[i].xyz+v[i]*dt,p[i].w);
    }
   }
@@ -60,7 +65,7 @@ fn bend_solve(index:u32,iteration:u32){
   for(var iteration=0u;iteration<u32(params.limits.y);iteration++){
    for(var b=0u;b<arrayLength(&batches);b++){
     let batch=batches[b];
-    if(i<batch.y){if(batch.z==0u){edge_solve(batch.x+i);}else{bend_solve(batch.x+i,iteration);}}
+    if(i<batch.y){if(batch.z==0u){edge_solve(batch.x+i);}else if(batch.z==2u){membrane_solve(batch.x+i,iteration);}else{bend_solve(batch.x+i,iteration);}}
     workgroupBarrier();
    }
   }

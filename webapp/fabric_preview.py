@@ -1,4 +1,4 @@
-"""Private, weight-only swatch experiment using the browser cloth solver."""
+"""Private material swatch experiments using only the browser cloth solver."""
 from copy import deepcopy
 import math
 
@@ -7,9 +7,6 @@ from fastapi.responses import JSONResponse
 
 from webapp import auth, fabrics
 from webapp.fabric_formats import number
-
-REFERENCE_GSM = 300.0
-
 
 def default_scene():
     from webapp.fabric_swatch import swatch_scene
@@ -35,26 +32,28 @@ def with_weight(scene, gsm):
     return result
 
 
-def scene_for(email, identity, reference=False):
+def scene_for(email, identity, direction='warp', mode='bend'):
     record = fabrics.get_fabric(email, identity)
     weight = record['content']['properties']['weight']['value']
     if weight is None or weight <= 0:
         raise ValueError('Supply a fabric weight to compare draping.')
-    scene = with_weight(default_scene(), REFERENCE_GSM if reference else weight)
-    scene['name'] = f'fabric-{identity}-{"reference" if reference else "measured"}'
+    from webapp.fabric_swatch import apply_material
+    scene = apply_material(default_scene(), record['content']['properties'], direction, mode)
+    scene['name'] = f'fabric-{identity}-{direction}-{mode}'
+    scene['fabric_test']['normalization'] = record['content'].get('physics_normalization', {})
     return scene
 
 
 def register(app):
     @app.get('/fabric-preview/{identity}')
-    def preview(request: Request, identity: str, reference: bool = False):
+    def preview(request: Request, identity: str, direction: str = 'warp', mode: str = 'bend'):
         user = auth.current_user(request)
         if not user:
             raise HTTPException(404, 'Fabric unavailable.')
         try:
-            scene = scene_for(user['email'], identity, reference)
-        except ValueError:
-            raise HTTPException(404, 'Fabric unavailable or missing its weight.') from None
+            scene = scene_for(user['email'], identity, direction, mode)
+        except ValueError as error:
+            raise HTTPException(404, str(error)) from None
         return JSONResponse(scene, headers={'Cache-Control': 'private, no-store',
                                            'X-Content-Type-Options': 'nosniff'})
 
@@ -73,8 +72,7 @@ async def comparison_dialog(email, identity):
                 ui.label('Fabric swatch test').classes('se-section-label text-xl')
                 ui.label(record['name']).classes('se-param-label')
             ui.button(icon='close', on_click=dialog.close).props('flat round aria-label="Close fabric comparison"')
-        ui.label('An 80 mm strip bends under its own weight. Both samples share the same assumed stiffness; '
-                 'only their weight changes.').classes('se-param-label')
+        ui.label('Compare the same fabric along its warp and weft. Test bending, stretch, and shear with identical loads.').classes('se-param-label')
         FabricSwatch(identity, record['name'], weight).classes('w-full')
     dialog.open()
     await dialog

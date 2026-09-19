@@ -1,10 +1,11 @@
 // SewEasy browser cloth experiment. Original WGSL implementation of small-step
 // XPBD distance constraints; see README.md for paper references and limits.
 import {strainShader, strainTopology, contactNeighbors, placePanels, waistbandTethers} from './strain.js?v=15';
-import {hingeShader, interiorHingeShader, collarWeldShader} from './bending.js?v=3';
+import {hingeShader, interiorHingeShader, collarWeldShader} from './bending.js?v=4';
 import {MannequinMotion,bodyMotionWGSL} from './motion.js?v=2';
 import {buttonClosureShader,closureColors,closureRest} from './closures.js?v=2';
-import {swatchShader} from './swatch_solver.js?v=1';
+import {swatchShader} from './swatch_solver.js?v=2';
+import {membraneShader} from './membrane.js?v=1';
 const common = `
 struct Params { motion: vec4<f32>, material: vec4<f32>, counts: vec4<u32>, contact: vec4<f32>, limits:vec4<f32> }
 @group(0) @binding(0) var<storage, read_write> q: array<vec4<f32>>;
@@ -332,6 +333,23 @@ export class Cloth {
     this.neighborRanges=this.make(nr);this.neighbors=this.make(na);this.incidentRanges=this.make(ir);this.incident=this.make(ia);
     const base=[[0,this.q],[1,this.params]];
     this.integrate=await this.pipeline(integrate,[...base,[2,this.previous],[3,this.velocity]],'Integrate');
+    this.membraneBatches=[];
+    if(s.membranes?.length){
+      const raw=new ArrayBuffer(s.membranes.length*64),u=new Uint32Array(raw),f=new Float32Array(raw);
+      s.membranes.forEach((m,i)=>{u.set([...m.ids,0],i*16);f.set(m.u,i*16+4);f.set(m.v,i*16+8);f.set(m.compliance,i*16+12);});
+      this.membranes=this.make(new Uint8Array(raw));
+      this.membraneMultipliers=this.make(new Float32Array(s.membranes.length*4));
+      this.membranePass=await this.pipeline(membraneShader,[...base,[2,this.membranes],[3,this.membraneMultipliers]],'Directional membrane');
+      this.membraneBatches=s.membrane_batches.map(([start,count])=>{
+        const binding=iteration=>d.createBindGroup({layout:this.membranePass.pipeline.getBindGroupLayout(1),entries:[{binding:0,resource:{buffer:this.make(new Uint32Array([start,count,iteration,0]),GPUBufferUsage.UNIFORM)}}]});
+        return {count,bind:binding(0),accumulatedBind:binding(1)};
+      });
+      this.externalForces=this.make(vec4(s.external_forces));
+      const loadedIntegrate=integrate.replace('@compute','@group(0) @binding(4) var<storage,read> appliedForces:array<vec4<f32>>;\n@compute')
+        .replace('vec3<f32>(wind, -params.contact.x * ramp, wind * 0.4) * dt',
+          '(vec3<f32>(wind, -params.contact.x * ramp, wind * 0.4) + appliedForces[i].xyz*p.w*ramp) * dt');
+      this.integrate=await this.pipeline(loadedIntegrate,[...base,[2,this.previous],[3,this.velocity],[4,this.externalForces]],'Swatch applied load');
+    }
     if(this.supportTargets.length){this.supportBuffer=this.make(new Float32Array(this.supportTargets.flat()));this.supportPass=await this.pipeline(necklineSupport,[[0,this.q],[2,this.supportBuffer],[3,this.previous]],'Optional neckline fitting support');}
     this.solve=await this.pipeline(constraints,[...base,[2,this.edges]],'Colored XPBD');
     this.buttonBatches=[];
@@ -432,10 +450,10 @@ export class Cloth {
     this.applySelf=await this.pipeline(applySelf,[...base,[2,this.scratch]],'Apply self contact');
     this.velocityPass=await this.pipeline(updateVelocity,[...base,[2,this.previous],[3,this.velocity]],'Velocity');
     this.normalPass=await this.pipeline(computeNormals,[...base,[2,this.faces],[3,this.incidentRanges],[4,this.incident],[5,this.normals],[6,this.uv]],'Normals and strain display');
-    if(s.garment==='fabric-swatch'&&this.n<=128&&s.interior_hinges.length<=256){
-      const ranges=[...s.batches.map(([start,count])=>[start,count,0,0]),...s.interior_hinge_batches.map(([start,count])=>[start,count,1,0])];
+    if(s.garment==='fabric-swatch'&&this.n<=128&&s.interior_hinges.length<=256&&s.membranes?.length<=256){
+      const ranges=[...s.membrane_batches.map(([start,count])=>[start,count,2,0]),...s.interior_hinge_batches.map(([start,count])=>[start,count,1,0])];
       if(ranges.some(r=>r[1]>128))throw Error('Swatch constraint batch exceeds workgroup capacity.');
-      this.fastSwatch=await this.pipeline(swatchShader,[...base,[2,this.previous],[3,this.velocity],[4,this.edges],[5,this.make(new Uint32Array(ranges.flat()))],[6,this.interiorHinges]],'Clamped swatch workgroup');
+      this.fastSwatch=await this.pipeline(swatchShader,[...base,[2,this.previous],[3,this.velocity],[4,this.edges],[5,this.make(new Uint32Array(ranges.flat()))],[6,this.interiorHinges],[7,this.membranes],[8,this.externalForces]],'Clamped swatch workgroup');
     }
     this.updateParams();
     const encoder=d.createCommandEncoder();this.dispatch(encoder,this.normalPass);d.queue.submit([encoder.finish()]);await d.queue.onSubmittedWorkDone();
@@ -593,6 +611,43 @@ export class Cloth {
       this.kernelChecks.integration_preserves_pins=s.inverse_mass.every((w,i)=>w!==0||s.vertices[i].every((v,a)=>Math.abs(v-integrated[i][a])<1e-7));
     }
     this.reset();await d.queue.onSubmittedWorkDone();
+    if(this.membranePass){
+      const raw=new ArrayBuffer(64),u=new Uint32Array(raw),f=new Float32Array(raw);
+      u.set([0,1,2,0]);f.set([-1,1,0,0],4);f.set([-1,0,1,0],8);f.set([.02,-1,-1,0],12);
+      const testMaterial=this.make(new Uint8Array(raw));
+      const test=await this.pipeline(membraneShader,[[0,this.q],[1,this.params],[2,testMaterial],[3,this.make(new Float32Array(4))]],'Membrane equation check');
+      const batch=d.createBindGroup({layout:test.pipeline.getBindGroupLayout(1),entries:[{binding:0,resource:{buffer:this.make(new Uint32Array([0,1,0,0]),GPUBufferUsage.UNIFORM)}}]});
+      const step=async(points,masses)=>{
+        d.queue.writeBuffer(this.q,0,vec4(points,masses));
+        d.queue.writeBuffer(this.params,0,new Float32Array([.01,1,1,0]));
+        const e=d.createCommandEncoder();this.dispatch(e,test,1,batch);d.queue.submit([e.finish()]);return this.readPositions();
+      };
+      let result=await step([[0,0,0],[1.1,0,0],[0,1,0]],[0,2,0]);
+      this.kernelChecks.membrane_stretch_matches_si_energy=Math.abs(result[1][0]-(1.1-2*.1/(2+.02/.01**2)))<1e-6;
+      this.kernelChecks.membrane_preserves_pins=Math.hypot(...result[0])<1e-7&&Math.hypot(result[2][0],result[2][1]-1,result[2][2])<1e-7;
+      f.set([-1,.04,-1,0],12);d.queue.writeBuffer(testMaterial,0,raw);
+      result=await step([[0,0,0],[1,0,0],[0,1.1,0]],[0,0,2]);
+      this.kernelChecks.membrane_weft_has_independent_compliance=Math.abs(result[2][1]-(1.1-2*.1/(2+.04/.01**2)))<1e-6;
+      f.set([-1,-1,.02,0],12);d.queue.writeBuffer(testMaterial,0,raw);
+      result=await step([[0,0,0],[1,0,0],[.2,1,0]],[0,0,2]);
+      this.kernelChecks.membrane_shear_reduces_distortion=result[2][0]<.2&&result[2][1]>1;
+      f.set([-1,-1,-1,0],12);d.queue.writeBuffer(testMaterial,0,raw);
+      result=await step([[0,0,0],[1.1,0,0],[.2,1,0]],[1,1,1]);
+      this.kernelChecks.zero_moduli_disable_material_forces=Math.abs(result[1][0]-1.1)<1e-7&&Math.abs(result[2][0]-.2)<1e-7;
+      f.set([.02,.04,.02,0],12);d.queue.writeBuffer(testMaterial,0,raw);
+      result=await step([[0,0,0],[0,1,0],[-1,0,0]],[1,1,1]);
+      this.kernelChecks.membrane_rigid_rotation_is_strain_free=Math.abs(result[1][1]-1)<1e-7&&Math.abs(result[2][0]+1)<1e-7;
+      const dampedSpeed=async(rate)=>{
+        d.queue.writeBuffer(this.q,0,vec4(Array.from({length:this.n},()=>[.01,0,0]),1));
+        d.queue.writeBuffer(this.previous,0,vec4(Array.from({length:this.n},()=>[0,0,0]),1));
+        d.queue.writeBuffer(this.params,0,new Float32Array([.01,1,1,0]));
+        d.queue.writeBuffer(this.params,48,new Float32Array([0,rate,0,0]));
+        const e=d.createCommandEncoder();this.dispatch(e,this.velocityPass);d.queue.submit([e.finish()]);await this.readPositions();return this.rmsVelocity;
+      };
+      this.kernelChecks.damping_uses_exponential_decay=Math.abs(await dampedSpeed(14)-Math.exp(-.14))<1e-6;
+      this.kernelChecks.zero_damping_preserves_speed=Math.abs(await dampedSpeed(0)-1)<1e-6;
+      this.reset();
+    }
     if(this.fastSwatch){
       const optimized=this.fastSwatch;
       const step=async()=>{this.time=1;const e=d.createCommandEncoder();this.encode(e);d.queue.submit([e.finish()]);return this.readPositions();};
@@ -646,7 +701,8 @@ export class Cloth {
     for(let step=0;step<this.frameSubsteps;step++){
       this.motionStep=step;
       this.dispatchInPass(pass,this.integrate);
-      for(const batch of this.batches)this.dispatchInPass(pass,this.solve,batch.count,batch.bind);
+      if(this.membranePass){for(const batch of this.membraneBatches)this.dispatchInPass(pass,this.membranePass,batch.count,batch.bind);}
+      else for(const batch of this.batches)this.dispatchInPass(pass,this.solve,batch.count,batch.bind);
       if(this.settings.bodyCollision&&this.settings.surfaceContact)for(const batch of this.surfaceBatches)this.dispatchInPass(pass,this.surfaceCollide,batch.count,batch.bind);
       for(let iteration=0;iteration<this.settings.strainPasses;iteration++)for(const batch of this.strainBatches)this.dispatchInPass(pass,this.strainSolve,batch.count,batch.bind);
       if(this.settings.selfCollision){
@@ -657,7 +713,8 @@ export class Cloth {
       for(const batch of this.hingeBatches)this.dispatchInPass(pass,this.hingeSolve,batch.count,batch.bind);
       for(const batch of this.interiorHingeBatches||[])this.dispatchInPass(pass,this.interiorHingeSolve,batch.count,batch.bind);
       if(this.interiorHingeBatches?.length)for(let iteration=1;iteration<(this.settings.swatchIterations||1);iteration++){
-        for(const batch of this.batches)this.dispatchInPass(pass,this.solve,batch.count,batch.bind);
+        if(this.membranePass){for(const batch of this.membraneBatches)this.dispatchInPass(pass,this.membranePass,batch.count,batch.accumulatedBind);}
+        else for(const batch of this.batches)this.dispatchInPass(pass,this.solve,batch.count,batch.bind);
         for(const batch of this.interiorHingeBatches)this.dispatchInPass(pass,this.interiorHingeSolve,batch.count,batch.accumulatedBind);
       }
       // Button seats can share a triangle corner with a permanent seam.
@@ -706,4 +763,3 @@ export class Cloth {
   }
   destroy(){for(const b of this.owned)b.destroy();}
 }
-

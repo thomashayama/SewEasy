@@ -1,40 +1,45 @@
-import {Cloth} from '/webgpu/physics.js?v=19';
+import {Cloth} from '/webgpu/physics.js?v=20';
 import {Renderer} from '/webgpu/render.js?v=24';
-import {swatchSettings,measureSwatch} from '/webgpu/swatch.js?v=1';
+import {swatchSettings,measureSwatch} from '/webgpu/swatch.js?v=2';
 
 const engines=new WeakMap();
 const colors=['#c28a44','#74b7ec'];
 export default {
   template:`<div class="se-swatch" :data-state="failure?'error':!ready?'loading':paused?'paused':settled?'settled':'running'"
       :data-time="time" :data-reference-drop-mm="samples[0]?.drop_mm" :data-fabric-drop-mm="samples[1]?.drop_mm"
-      :data-pin-error-mm="pinError" :data-control="equal" :data-strain="strain" :data-kernel-checks="checks">
+      :data-pin-error-mm="pinError" :data-control="equal" :data-strain="strain" :data-kernel-checks="checks"
+      :data-mode="mode" :data-measurements="JSON.stringify(samples)" :data-properties="JSON.stringify(material)" :data-wall-seconds="wallSeconds">
     <div class="se-swatch-toolbar">
       <span role="status">{{status}}</span>
       <div class="se-swatch-actions">
+        <label>Test <select v-model="mode" :disabled="!ready" @change="reload">
+          <option value="bend">Bend under gravity</option><option value="stretch">Stretch · 25 N/m</option><option value="shear">Shear · 5 N/m</option>
+        </select></label>
         <button :disabled="!ready || !!failure || settled" @click="paused=!paused" :aria-pressed="paused">{{paused?'Resume':'Pause'}}</button>
         <button :disabled="!ready || !!failure" @click="reset">Replay</button>
-        <label><input type="checkbox" v-model="equal" :disabled="!ready || !!failure" @change="reset"> Equal-weight control</label>
+        <label><input type="checkbox" v-model="equal" :disabled="!ready || !!failure" @change="reload"> Same-grain control</label>
       </div>
     </div>
     <p v-if="failure" role="alert">{{failure}}</p>
     <div class="se-swatch-stages">
-      <section v-for="(name,i) in ['Reference',fabric_name]" :key="i">
+      <section v-for="(name,i) in ['Warp · along the grain',equal?'Warp · control':'Weft · across the grain']" :key="i">
         <header><span :class="i?'se-swatch-blue':'se-swatch-amber'">{{name}}</span>
-          <span>{{(i&&!equal?weight_gsm:300).toLocaleString(undefined,{maximumFractionDigits:2})}} g/m²</span></header>
+          <span>{{weight_gsm.toLocaleString(undefined,{maximumFractionDigits:2})}} g/m²</span></header>
         <canvas :ref="i?'fabric':'reference'" :aria-label="name+' simulated swatch'"></canvas>
-        <div class="se-swatch-reading"><span>Tip drop</span><strong>{{samples[i]?samples[i].drop_mm.toFixed(2):'—'}} <small>mm</small></strong></div>
+        <div class="se-swatch-reading"><span>{{mode==='bend'?'Tip drop':mode==='stretch'?'Extension':'Sideways displacement'}}</span>
+          <strong>{{samples[i]?reading(samples[i]).toFixed(2):'—'}} <small>{{mode==='stretch'?'%':'mm'}}</small></strong></div>
       </section>
     </div>
     <div class="se-swatch-profile">
       <div class="se-swatch-profile-copy">
-        <h3>Compare the bend</h3>
-        <p>Both profiles share the same scale. The lines come directly from the simulated mesh.</p>
-        <p v-if="samples.length" class="se-swatch-difference">{{difference.toFixed(2)}} mm <span>difference at the tip</span></p>
-        <p v-if="equal">With the same weight, the profiles should coincide.</p>
-        <p v-else-if="Math.abs(weight_gsm-300)<.01">This fabric has the reference weight, so the profiles should coincide.</p>
-        <p v-else>{{weight_gsm<300?fabric_name:'The reference'}} is lighter. With the same stiffness, it should bend less.</p>
+        <h3>{{mode==='bend'?'A fabric has a direction':mode==='stretch'?'Pull along each grain':'Test in-plane distortion'}}</h3>
+        <p>{{mode==='bend'?'An 80 × 40 mm strip bends under its own weight. Both profiles share an equal millimetre scale.':mode==='stretch'?'A distributed 25 N/m force pulls the free edge along the strip. Gravity is off to isolate its tensile response.':'A distributed 5 N/m force pulls the free edge sideways. The result includes shear and directional stretch; gravity is off.'}}</p>
+        <p v-if="samples.length" class="se-swatch-difference">{{difference.toFixed(2)}} {{mode==='stretch'?'percentage points':'mm'}} <span>difference between directions</span></p>
+        <p v-if="equal">Both use warp properties. Their results should coincide.</p>
+        <p v-else>Weight is identical. Differences come from the fabric’s directional properties.</p>
+        <p v-if="mode==='stretch' && material?.expected_extension_percent!=null">Linear strip prediction, warp: {{material.expected_extension_percent.toFixed(2)}}% extension. The clamped mesh approximates this response.</p>
       </div>
-      <svg viewBox="-17 -12 115 105" role="img" aria-label="Swatch side profiles on an equal millimetre scale">
+      <svg v-if="mode==='bend'" viewBox="-17 -12 115 105" role="img" aria-label="Swatch side profiles on an equal millimetre scale">
         <g class="se-swatch-grid">
           <g v-for="tick in [0,20,40,60,80]" :key="tick">
             <line :x1="tick" y1="0" :x2="tick" y2="80"/><line x1="0" :y1="tick" x2="80" :y2="tick"/>
@@ -47,21 +52,29 @@ export default {
         <polyline v-for="(s,i) in samples" :key="i" :points="s.profile.map(p=>p.join(',')).join(' ')"
           fill="none" :class="i?'se-swatch-line-blue':'se-swatch-line-amber'" :stroke-dasharray="i?'2 1':null"/>
       </svg>
+      <div v-else class="se-swatch-load-note"><strong>{{mode==='stretch'?'25':'5'}} N/m</strong><p>{{mode==='stretch'?'Longitudinal':'Transverse'}} edge load · {{mode==='stretch'?'1.0':'0.2'}} N total</p><p>Material coefficients are independent of mesh area. All readings come from the simulated vertices.</p></div>
     </div>
-    <details class="se-swatch-method"><summary>What this test does—and doesn’t—show</summary>
-      <p>The imported weight changes particle mass. Geometry, gravity, stretch, damping and bending are identical.
-        The fixed clamp supports a strip 80 mm long and 40 mm wide. The plot averages its width; the two axes use equal scales.</p>
-      <p>Bending uses a shared assumed discrete-shell coefficient of 0.00025 N·m. Imported bend, stretch, shear,
-        thickness and friction are not applied here. This tests the weight response, not how the real fabric will drape.</p>
-      <p>The mesh and solver are approximate. Smaller time steps can change the measured values.</p>
+    <p class="se-swatch-assumptions" v-if="material">{{assumptionText}}</p>
+    <details class="se-swatch-method"><summary>Applied properties &amp; test limitations</summary>
+      <table v-if="material"><thead><tr><th>Property</th><th>Value</th><th>Source</th></tr></thead><tbody>
+        <tr v-for="(p,key) in material.applied" :key="key"><td>{{labels[key]}}</td><td>{{format(p.value)}} {{p.unit}}</td><td>{{p.origin}}</td></tr>
+      </tbody></table>
+      <p>Directional stretch and shear use a linear surface-energy model. Bending uses interior dihedral angles; damping attenuates velocity exponentially. Zero values disable that property; blank values use the assumptions listed above.</p>
+      <p v-if="Object.keys(activeFits).length">Bending was estimated from raw short-loop compression tests using an ideal clamped elastica, with a separate force offset per cycle. This is an uncalibrated fit, not a direct conversion of vendor bending numbers.</p>
+      <p v-for="(fit,key) in activeFits" :key="key">{{labels[key]}} fit range: {{format(fit.range[0])}}–{{format(fit.range[1])}} N·m across {{fit.cycles.length}} cycles.</p>
+      <p>Thickness and friction require contact and are not exercised by these tests. Nonlinear loading curves, hysteresis, and bend/twist coupling are preserved or left unknown, not reproduced by this approximation.</p>
+      <p>The mesh and solver are approximate. Smaller time steps can change the readings. This prototype has not been calibrated against a physical swatch.</p>
       <p>Garment simulations still use their existing material settings. All simulation runs in this browser.</p>
       <label><input type="checkbox" v-model="refined" :disabled="!ready || !!failure" @change="reset"> Refine time steps to check numerical sensitivity</label>
     </details>
   </div>`,
   props:{scene_url:String,fabric_name:String,weight_gsm:Number},
-  data:()=>({ready:false,failure:'',paused:false,equal:false,refined:false,settled:false,time:0,samples:[],checks:''}),
+  data:()=>({ready:false,failure:'',paused:false,equal:false,refined:false,settled:false,time:0,wallSeconds:0,samples:[],checks:'',mode:'bend',material:null,
+    labels:{stretch_warp:'Warp stretch',stretch_weft:'Weft stretch',shear:'Shear',bend_warp:'Warp bending',bend_weft:'Weft bending',damping:'Damping'}}),
   computed:{
-    difference(){return this.samples.length?Math.abs(this.samples[0].drop_mm-this.samples[1].drop_mm):0;},
+    activeFits(){return Object.fromEntries(Object.entries(this.material?.normalization?.bending_fits||{}).filter(([key])=>this.material.applied[key]?.origin==='estimated'));},
+    difference(){return this.samples.length?Math.abs(this.reading(this.samples[0])-this.reading(this.samples[1])):0;},
+    assumptionText(){const p=this.material.applied,assumed=Object.keys(p).filter(k=>p[k].origin==='assumed').map(k=>`${this.labels[k].toLowerCase()} ${this.format(p[k].value)} ${p[k].unit}`);return (assumed.length?'Assumed: '+assumed.join(', ')+'. ':'')+(Object.values(p).some(v=>v.origin==='estimated')?'Estimated bending is not yet physically calibrated.':'');},
     pinError(){return this.samples.length?Math.max(...this.samples.map(s=>s.pin_error_mm)):0;},
     strain(){return this.samples.length?Math.max(...this.samples.map(s=>s.max_strain)):1;},
     status(){return this.failure?'Test unavailable':!this.ready?'Preparing swatches in your browser…':
@@ -71,6 +84,9 @@ export default {
   beforeUnmount(){const e=engines.get(this);e.disposed=true;e.abort?.abort();cancelAnimationFrame(e.frame);
     for(const s of e.stages){s.renderer?.destroy();s.cloth?.destroy();}e.device?.destroy();},
   methods:{
+    reading(s){return this.mode==='bend'?s.drop_mm:this.mode==='stretch'?s.extension_percent:s.shear_mm;},
+    format(v){return Math.abs(v)>0 && Math.abs(v)<.01?v.toExponential(3):Number(v.toPrecision(5)).toString();},
+    reload(){engines.get(this).reloadPending=true;},
     async load(){
       const e=engines.get(this);
       try{
@@ -79,33 +95,41 @@ export default {
         const device=await adapter.requestDevice();if(e.disposed){device.destroy();return;}e.device=device;
         device.lost.then(()=>{if(!e.disposed)this.failure='Browser graphics stopped. Close and reopen the test to retry.';});
         device.addEventListener('uncapturederror',event=>{if(!e.disposed)this.failure=event.error.message;});
+        await this.build();if(!e.disposed)this.tick();
+      }catch(error){if(!e.disposed && error.name!=='AbortError')this.failure=error.message||String(error);}
+    },
+    async build(){
+        const e=engines.get(this),device=e.device;
+        this.ready=false;this.failure='';this.samples=[];this.time=0;this.settled=false;this.paused=false;e.stable=0;e.last=0;e.reloadPending=false;
+        for(const s of e.stages){s.renderer?.destroy();s.cloth?.destroy();}e.stages=[];
         e.abort=new AbortController();
-        const responses=await Promise.all([true,false].map(reference=>fetch(this.scene_url+'?reference='+reference,{signal:e.abort.signal})));
-        if(responses.some(r=>!r.ok))throw Error('Could not load this fabric. Close the test and try again.');
+        const responses=await Promise.all(['warp',this.equal?'warp':'weft'].map(direction=>fetch(this.scene_url+'?direction='+direction+'&mode='+this.mode,{signal:e.abort.signal})));
+        for(const r of responses)if(!r.ok){const body=await r.json().catch(()=>({}));throw Error(body.detail||'Could not load this fabric. Close the test and try again.');}
         const scenes=await Promise.all(responses.map(r=>r.json()));
         if(e.disposed)return;
         for(let i=0;i<2;i++){
-          const scene=scenes[i],cloth=await Cloth.create(device,scene,()=>{},swatchSettings);
+          const scene=scenes[i],cloth=await Cloth.create(device,scene,()=>{},{...swatchSettings,
+            substeps:Math.min(64,swatchSettings.substeps*(this.refined?2:1)),damping:scene.fabric_test.damping,gravity:scene.fabric_test.gravity});
           if(e.disposed){cloth.destroy();return;}
-          const stage={cloth,originalMass:[...scene.inverse_mass]};e.stages.push(stage);
+          const stage={cloth};e.stages.push(stage);
           stage.renderer=new Renderer(device,this.$el.querySelectorAll('canvas')[i],cloth,navigator.gpu.getPreferredCanvasFormat(),{systemTheme:true});
           const r=stage.renderer;r.setFabricColors(colors[i]);r.bodyView.color=[.16,.18,.22,0];
-          r.camera={yaw:-.25,pitch:.55,distance:.25,target:[.037,.105,0],pan:[0,0]};
+          r.camera={yaw:-.9,pitch:.45,distance:.20,target:[.03,.09,0],pan:[0,0]};
           // Keep both views on a common, fixed camera for a fair comparison.
           r.controls.destroy();
         }
         this.checks=JSON.stringify(e.stages.map(s=>s.cloth.kernelChecks));
-        this.ready=true;this.tick();
-      }catch(error){if(!e.disposed && error.name!=='AbortError')this.failure=error.message||String(error);}
+        this.material=scenes[0].fabric_test;this.ready=true;e.started=performance.now();
     },
     reset(){const e=engines.get(this);e.resetPending=true;},
     async tick(now=0){
       const e=engines.get(this);if(e.disposed)return;
       try{
+        if(e.reloadPending)await this.build();
+        if(e.disposed)return;
         if(e.resetPending){
-          e.stages[1].cloth.scene.inverse_mass=[...(this.equal?e.stages[0].originalMass:e.stages[1].originalMass)];
-          for(const s of e.stages){s.cloth.settings.substeps=swatchSettings.substeps*(this.refined?2:1);s.cloth.reset();}
-          this.time=0;this.samples=[];this.settled=false;this.paused=false;e.stable=0;e.resetPending=false;e.last=0;
+          for(const s of e.stages){s.cloth.settings.substeps=Math.min(64,swatchSettings.substeps*(this.refined?2:1));s.cloth.reset();}
+          this.time=0;this.samples=[];this.settled=false;this.paused=false;e.stable=0;e.resetPending=false;e.last=0;e.started=performance.now();
         }
         const advance=!this.failure&&!this.paused&&!this.settled&&!document.hidden&&now-(e.last||0)>=1000/60-.8;
         if(!this.failure&&(advance||e.stages.some(s=>s.renderer.dirty))){
@@ -113,16 +137,16 @@ export default {
           for(const s of e.stages){if(advance)s.cloth.encode(encoder,null,1/60);s.renderer.render(encoder);}
           e.device.queue.submit([encoder.finish()]);await e.device.queue.onSubmittedWorkDone();if(e.disposed)return;
           if(advance){
-            e.last=now;this.time=e.stages[0].cloth.time;
+            e.last=now;this.time=e.stages[0].cloth.time;this.wallSeconds=(performance.now()-e.started)/1000;
             if(e.stages[0].cloth.frame%15===0){
               const positions=await Promise.all(e.stages.map(s=>s.cloth.readPositions()));if(e.disposed)return;
               const samples=e.stages.map((s,i)=>measureSwatch(s.cloth.scene,positions[i]));
-              const stable=this.samples.length&&samples.every((s,i)=>Math.abs(s.drop_mm-this.samples[i].drop_mm)<.015)
+              const stable=this.samples.length&&samples.every((s,i)=>Math.abs(this.reading(s)-this.reading(this.samples[i]))<.015)
                 &&e.stages.every(s=>s.cloth.rmsVelocity<.0002);
               e.stable=stable?(e.stable||0)+1:0;this.samples=samples;
               if(this.time>3&&e.stable>=6)this.settled=true;
-              if(this.pinError>.01||this.strain>1.1)throw Error('The test exceeded its clamp or stretch tolerance. This weight needs different solver settings.');
-              if(this.time>=20&&!this.settled){this.paused=true;this.failure='The swatches did not settle within 20 simulated seconds. These results are not an equilibrium measurement.';}
+              if(this.pinError>.01||this.strain>4)throw Error('The test exceeded its clamp or deformation tolerance. These properties need a different load or solver configuration.');
+              if(this.time>=20&&!this.settled){this.paused=true;this.failure='Still moving after 20 simulated seconds; this is not an equilibrium reading. Low or zero damping can keep the fabric oscillating.';}
             }
           }
         }

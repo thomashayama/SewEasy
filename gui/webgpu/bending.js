@@ -47,6 +47,7 @@ struct Batch { start:u32, count:u32, accumulate:u32, pad:u32 }
  if(gid.x>=batch.count){return;}
  let h=hinges[batch.start+gid.x];
  let a=q[h.ids.x];let b=q[h.ids.y];let c=q[h.ids.z];let d=q[h.ids.w];
+ if(h.rest.y<0.0){return;}
  let edge=b.xyz-a.xyz;let length2=dot(edge,edge);if(length2<1e-12){return;}
  let len=sqrt(length2);let n0=cross(edge,c.xyz-a.xyz);let n1=cross(d.xyz-a.xyz,edge);
  let area0=dot(n0,n0);let area1=dot(n1,n1);if(min(area0,area1)<1e-18){return;}

@@ -1,8 +1,4 @@
-"""A small cantilever fixture, built on CPU and simulated only in WebGPU.
-
-This isolates density using a shared, *assumed* bending coefficient. It does
-not convert a vendor's FAB stiffness coefficient into an SI bending modulus.
-"""
+"""Small physical test fixtures; geometry on CPU, simulation only in WebGPU."""
 from functools import lru_cache
 
 import numpy as np
@@ -64,10 +60,10 @@ def swatch_scene():
         for u, v, opposite in ((a, b, c), (b, c, a), (c, a, b)):
             edges.setdefault(tuple(sorted((u, v))), []).append((u, v, opposite))
     # Discrete-shell geometry factor l/h, h = (A0+A1)/(3*l).
-    # E = kB * (l/h) * theta^2; XPBD compliance = 1/(2*kB*l/h).
-    # Shared diagnostic coefficient, NOT this fabric's measured rigidity.
+    # E = D/2 * (l/h) * theta^2; XPBD compliance = 1/(D*l/h).
+    # Base rigidity is replaced by apply_material before a preview is served.
     # Grinspun et al., Discrete Shells (2003), equation 2.
-    coefficient = .00025  # N*m, assumed for both strips
+    rigidity = .00001  # N*m, neutral fallback
     hinges = []
     for sides in edges.values():
         if len(sides) != 2:
@@ -78,10 +74,68 @@ def swatch_scene():
         area = (np.linalg.norm(np.cross(edge, points[c]-points[a]))
                 + np.linalg.norm(np.cross(points[d]-points[a], edge))) / 2
         factor = 3*float(edge @ edge)/float(area)
-        hinges.append(dict(ids=[a, b, c, d], angle=0., compliance=1/(2*coefficient*factor)))
+        direction = uv[b]-uv[a]
+        # Curvature acts perpendicular to the hinge. Approximate orthotropy;
+        # no measured bend/twist coupling or Poisson response is claimed.
+        warp_fraction = float(direction[1]**2 / (direction @ direction))
+        hinges.append(dict(ids=[a, b, c, d], angle=0., compliance=1/(rigidity*factor),
+                           geometry_factor=factor, warp_fraction=warp_fraction))
     scene['interior_hinges'], scene['interior_hinge_batches'] = colored(hinges, len(points), lambda h: h['ids'])
     scene['swatch'] = dict(pins=pins, sections=[list(range(x*rows, (x+1)*rows)) for x in range(1, columns)],
                            tip=list(range((columns-1)*rows, columns*rows)),
-                           length_m=.08, width_m=width, height_m=height,
-                           assumed_bending_coefficient_nm=coefficient)
+                           length_m=.08, width_m=width, height_m=height)
     return scene
+
+
+DEFAULTS = dict(stretch_warp=1000., stretch_weft=1000., shear=100.,
+                bend_warp=.00001, bend_weft=.00001, damping=14.)
+
+
+def apply_material(scene, properties, direction='warp', mode='bend'):
+    """Compile SI surface properties into XPBD energy compliances (1/J)."""
+    if direction not in ('warp', 'weft') or mode not in ('bend', 'stretch', 'shear'):
+        raise ValueError('Unknown swatch direction or test.')
+    from webapp.fabric_preview import with_weight
+    result = with_weight(scene, properties['weight']['value'])
+    applied = {key: dict(value=properties[key]['value'] if properties[key]['value'] is not None else default,
+                        origin=properties[key]['origin'] if properties[key]['value'] is not None else 'assumed',
+                        unit=properties[key]['unit']) for key, default in DEFAULTS.items()}
+    if any(not np.isfinite(p['value']) or p['value'] > 3.4028235e38 for p in applied.values()):
+        raise ValueError('These properties exceed the numeric range of the browser simulator.')
+    along, across = ('warp', 'weft') if direction == 'warp' else ('weft', 'warp')
+    eu, ev, shear = (applied[k]['value'] for k in ('stretch_'+along, 'stretch_'+across, 'shear'))
+    du, dv = (applied['bend_'+a]['value'] for a in (along, across))
+    def compliance(stiffness):
+        value = 1/stiffness if stiffness > 0 else -1.  # Zero disables a force; missing != zero.
+        if not np.isfinite(value) or (value > 0 and not 1.17549435e-38 <= value <= 3.4028235e38):
+            raise ValueError('These properties exceed the numeric range of the browser simulator.')
+        return value
+    for hinge in result['interior_hinges']:
+        fraction = hinge['warp_fraction']
+        rigidity = fraction*du + (1-fraction)*dv
+        hinge['compliance'] = compliance(rigidity*hinge['geometry_factor'])
+    uv = np.asarray(result['uv'])
+    membranes = []
+    for ids in result['faces']:
+        a, b, c = uv[ids]
+        matrix = np.column_stack((b-a, c-a))
+        inv = np.linalg.inv(matrix)
+        area = abs(float(np.linalg.det(matrix))) / 2
+        membranes.append(dict(ids=ids,
+            u=[-inv[0, 0]-inv[1, 0], inv[0, 0], inv[1, 0]],
+            v=[-inv[0, 1]-inv[1, 1], inv[0, 1], inv[1, 1]],
+            compliance=[compliance(area*k) for k in (eu, ev, shear)]))
+    result['membranes'], result['membrane_batches'] = colored(membranes, len(uv), lambda m: m['ids'])
+    result['external_forces'] = [[0., 0., 0.] for _ in uv]
+    traction = 25. if mode == 'stretch' else 5. if mode == 'shear' else 0.
+    # In-plane loading isolates membrane response without gravity masking it.
+    # Trapezoidal edge quadrature gives total force = traction * strip width.
+    tip = result['swatch']['tip']
+    spacing = result['swatch']['width_m']/(len(tip)-1)
+    for index, vertex in enumerate(tip):
+        result['external_forces'][vertex][0 if mode == 'stretch' else 2] = traction*spacing*(.5 if index in (0, len(tip)-1) else 1.)
+    result['fabric_test'].update(scope='orthotropic-material', direction=direction, mode=mode,
+        applied=applied, traction_n_m=traction, damping=applied['damping']['value'],
+        gravity=9.81 if mode == 'bend' else 0.,
+        expected_extension_percent=traction/eu*100 if eu and mode == 'stretch' else None)
+    return result

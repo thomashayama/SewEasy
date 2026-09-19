@@ -199,6 +199,9 @@ def import_fabric(raw, filename):
         if values[key]['value'] is None and vendor.get(vendor_key) is not None:
             values[key].update(value=number(vendor[vendor_key]), origin='reported', source=f'FAB custom.browzwear.{vendor_key}')
     extension = (document.get('custom') or {}).get('seweasy')
+    from webapp.fabric_measurements import normalize
+    normalized, curves, normalization = normalize(fab)
+    values.update(normalized)
     if isinstance(extension, dict) and extension.get('schema') == 1 and 'properties' in extension:
         # Our exports explicitly distinguish edits from original measurements.
         values = deepcopy(extension['properties'])
@@ -210,7 +213,8 @@ def import_fabric(raw, filename):
                     material_id=material['id'], has_raw_measurements=bool(raw_data),
                     vendor='Browzwear' if vendor else None),
         # Full original curves, vendor fields and textures remain in source_bytes.
-        curves=[], solver_tuning=deepcopy(extension.get('solver_tuning', {}))
+        curves=curves, physics_normalization=normalization,
+        solver_tuning=deepcopy(extension.get('solver_tuning', {}))
         if isinstance(extension, dict) and isinstance(extension.get('solver_tuning'), dict) else {},
     )
 

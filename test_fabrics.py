@@ -36,8 +36,15 @@ class FormatTest(unittest.TestCase):
         self.assertEqual(content['properties']['weight']['origin'], 'measured')
         self.assertEqual(content['properties']['friction']['value'], .2)
         # Vendor coefficients must never be relabeled as normalized SI measurements.
-        for key in ('stretch_warp', 'stretch_weft', 'bend_warp', 'bend_weft', 'shear', 'damping'):
+        for key in ('shear', 'damping'):
             self.assertIsNone(content['properties'][key]['value'])
+        self.assertAlmostEqual(content['properties']['stretch_warp']['value'], 587.5115966796875)
+        self.assertEqual(content['properties']['stretch_warp']['origin'], 'reported')
+        self.assertEqual(content['properties']['bend_warp']['origin'], 'estimated')
+        self.assertAlmostEqual(content['properties']['bend_warp']['value'], 1.0022226205644924e-5)
+        self.assertEqual(len(content['curves']), 102)
+        self.assertEqual({c['branch'] for c in content['curves']}, {'loading', 'unloading'})
+        self.assertTrue(all(c['x_unit']=='m' and c['y_unit']=='N' for c in content['curves']))
         self.assertEqual(content['solver_tuning'], {})
 
     def test_export_preserves_original_curves_unknown_vendor_fields_and_assets(self):
@@ -237,23 +244,24 @@ class FabricStorageTest(unittest.TestCase):
 
     def test_weight_preview_is_private_and_scales_mass_not_gravity(self):
         from webapp import fabric_preview as preview
-        scene = dict(inverse_mass=[10., 20., 40.], mass_density_kg_m2=.3, vertices=[[0, 0, 0]],
-                     constraints=[[0, 1, 0, 1]], name='reference')
+        scene = preview.default_scene()
         app = FastAPI()
         preview.register(app)
         with patch.object(preview, 'default_scene', return_value=scene), \
                 patch.object(preview.auth, 'current_user', return_value={'email': self.alice}) as identity, TestClient(app) as client:
             url = '/fabric-preview/' + self.record['id']
-            reference = client.get(url + '?reference=true')
+            reference = client.get(url + '?direction=weft')
             response = client.get(url)
             self.assertEqual(response.status_code, 200)
             self.assertEqual(response.headers['cache-control'], 'private, no-store')
             measured = response.json()
             ratio = self.record['content']['properties']['weight']['value'] / 300
-            self.assertAlmostEqual(measured['fabric_test']['total_mass_kg'], sum(1 / x for x in scene['inverse_mass']) * ratio)
+            self.assertAlmostEqual(measured['fabric_test']['total_mass_kg'], sum(scene['vertex_mass_kg']) * ratio)
             self.assertEqual(measured['constraints'], scene['constraints'])
             self.assertEqual(measured['vertices'], reference.json()['vertices'])
-            self.assertEqual(scene['inverse_mass'], [10., 20., 40.])
+            self.assertEqual(measured['fabric_test']['direction'], 'warp')
+            self.assertEqual(reference.json()['fabric_test']['direction'], 'weft')
+            self.assertEqual(client.get(url+'?direction=invalid').status_code, 404)
             identity.return_value = {'email': self.bob}
             self.assertEqual(client.get(url).status_code, 404)
             identity.return_value = None
@@ -262,8 +270,84 @@ class FabricStorageTest(unittest.TestCase):
             with self.subTest(value=value), self.assertRaises(ValueError):
                 preview.with_weight(scene, value)
 
+    def test_legacy_detail_derives_measurements_but_preserves_edits_and_clears(self):
+        from webapp.models import Fabric
+        with fabrics.SessionLocal() as db:
+            row = db.get(Fabric, self.record['id'])
+            content = deepcopy(row.content)
+            content.pop('physics_normalization')
+            content['properties']['bend_warp'].update(value=None, origin='unknown', source=None)
+            content['properties']['stretch_warp'].update(value=321., origin='user', source=None)
+            row.content = content
+            db.commit()
+        derived = fabrics.get_fabric(self.alice, self.record['id'])
+        self.assertIsNotNone(derived['content']['properties']['bend_warp']['value'])
+        self.assertEqual(derived['content']['properties']['stretch_warp']['value'], 321.)
+        saved = self.save(derived, values={'bend_warp': ''})
+        self.assertIsNone(fabrics.get_fabric(self.alice, saved['id'])['content']['properties']['bend_warp']['value'])
+        exported = fabrics.export_fabric(self.alice, saved['id'])
+        self.assertIsNone(fmt.import_fabric(exported, 'saved.u3ma')['properties']['bend_warp']['value'])
+
+
+class MeasurementFitTest(unittest.TestCase):
+    def test_elastica_recovers_rigidity_despite_force_tare(self):
+        import numpy as np
+        from webapp.fabric_measurements import fit_loop, loop_factor
+        rigidity, length, width, tare = 2.5e-5, .02, .05, .012
+        points = [(r*length, -(rigidity*width*loop_factor(r)/length**2 + tare))
+                  for r in np.linspace(.56, .93, 20)]
+        fit = fit_loop(points, length, width)
+        self.assertAlmostEqual(fit['value'], rigidity, places=12)
+        self.assertAlmostEqual(fit['force_offset_n'], tare, places=12)
+        self.assertLess(fit['normalized_rmse'], 1e-10)
+        self.assertIsNone(fit_loop([[.018, 0]]*10, length, width))
+        self.assertIsNone(fit_loop([[x, -y] for x,y in points], length, width))
+
+    def test_raw_force_units_and_vendor_bend_are_not_confused(self):
+        from webapp.fabric_measurements import normalize, GRAM_FORCE_N
+        fab = json.loads((fmt.SPEC/'cupro_physics.json').read_text())
+        values, curves, _ = normalize(fab)
+        pair = fab['raw_data']['L']['U1']['samplesTree'][0][:2]
+        curve = next(c for c in curves if c['source']=='FAB raw_data.L.U1.samplesTree[0]')
+        self.assertEqual(curve['points'][0], [pair[0]*.01, pair[1]*GRAM_FORCE_N])
+        fab['raw_data'] = None
+        reported, _, _ = normalize(fab)
+        self.assertNotIn('bend_warp', reported)
+        self.assertNotIn('shear', reported)
+        self.assertIn('stretch_warp', reported)
+
+    def test_zero_missing_and_bad_optional_data(self):
+        from webapp.fabric_measurements import normalize
+        values, _, _ = normalize({'custom':{'browzwear':{'stretch':{'length':0,'width':'NaN'}}}})
+        self.assertEqual(values['stretch_warp']['value'], 0)
+        self.assertNotIn('stretch_weft', values)
+        self.assertEqual(normalize({'raw_data':{'L':{'U1':{'length':2,'width':5,'samplesTree':'bad'}}}})[0], {})
+
 
 class FabricSceneTest(unittest.TestCase):
+    def test_material_axes_energy_area_load_and_missing_vs_zero(self):
+        from webapp.fabric_preview import default_scene
+        from webapp.fabric_swatch import apply_material
+        p = fmt.properties()
+        for key, value in dict(weight=100, stretch_warp=500, stretch_weft=1000,
+                               bend_warp=1e-5, bend_weft=2e-5, shear=0, damping=0).items():
+            p[key].update(value=value, origin='user')
+        warp = apply_material(default_scene(), p, 'warp', 'stretch')
+        weft = apply_material(default_scene(), p, 'weft', 'stretch')
+        for a,b in zip(warp['membranes'], weft['membranes']):
+            self.assertAlmostEqual(a['compliance'][0], b['compliance'][1])
+            self.assertEqual(a['compliance'][2], -1)
+            self.assertAlmostEqual(a['compliance'][0], 1/(.00005*500))
+        self.assertAlmostEqual(sum(f[0] for f in warp['external_forces']), 1.)
+        self.assertEqual(warp['fabric_test']['gravity'], 0)
+        self.assertEqual(warp['fabric_test']['damping'], 0)
+        self.assertAlmostEqual(warp['fabric_test']['expected_extension_percent'], 5)
+        p['damping']['value'] = None
+        self.assertEqual(apply_material(default_scene(),p)['fabric_test']['applied']['damping']['origin'], 'assumed')
+        for start,count in warp['membrane_batches']:
+            ids=[i for m in warp['membranes'][start:start+count] for i in m['ids']]
+            self.assertEqual(len(ids),len(set(ids)))
+
     def test_swatch_mass_matches_area_times_imported_gsm_including_clamp(self):
         import numpy as np
         from webapp.fabric_preview import default_scene, with_weight

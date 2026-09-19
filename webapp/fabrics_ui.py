@@ -34,7 +34,9 @@ async def fabric_library(email):
                 field('thickness', 'Thickness (mm)')
                 field('friction', 'Friction coefficient')
             with ui.expansion('Additional physical properties').classes('w-full'):
-                ui.label('Leave unknown values blank. These physical values are stored for future drape calibration.').classes('se-param-label mb-3')
+                ui.label('Weight, directional bending and stretch, shear, and damping drive the swatch tests. '
+                         'Leave unknown values blank; test assumptions are shown in the preview. '
+                         'Thickness and friction are stored for future contact tests.').classes('se-param-label mb-3')
                 with ui.grid(columns=2).classes('w-full gap-3'):
                     for key, label in (
                         ('stretch_warp', 'Warp stretch stiffness (N/m)'), ('stretch_weft', 'Weft stretch stiffness (N/m)'),

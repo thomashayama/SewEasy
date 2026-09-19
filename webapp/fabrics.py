@@ -36,6 +36,23 @@ def _owned(db, email, identity):
     return row
 
 
+def _normalized_content(row):
+    """Upgrade old imports on detail reads without rewriting the user's record.
+
+    Lists never read blobs. A subsequent save persists the normalization marker,
+    so intentionally cleared fields stay cleared. Existing values always win.
+    """
+    content = deepcopy(row.content)
+    if not content.get('physics_normalization') and row.source_name and row.source_bytes:
+        imported = formats.import_fabric(row.source_bytes, row.source_name)
+        for key, item in imported['properties'].items():
+            if content['properties'][key]['value'] is None and content['properties'][key]['origin'] == 'unknown':
+                content['properties'][key] = item
+        content['curves'] = imported['curves']
+        content['physics_normalization'] = imported['physics_normalization']
+    return content
+
+
 def _empty():
     return dict(schema=1, description='', properties=formats.properties(), appearance={},
                 source=None, curves=[], solver_tuning={})
@@ -68,7 +85,8 @@ def get_fabric(email, identity):
                 return item
         raise ValueError('Fabric unavailable.')
     with SessionLocal() as db:
-        return _record(_owned(db, email, identity))
+        row = _owned(db, email, identity)
+        return dict(_record(row), content=_normalized_content(row))
 
 
 def _create(email, name, content, source_bytes=None, source_name=None):
@@ -127,7 +145,7 @@ def update_fabric(email, identity, edit_token, *, name, description, values):
         raise ValueError('Save a copy before editing a standard fabric.')
     with SessionLocal() as db:
         row = _owned(db, email, identity)
-        content = deepcopy(row.content)
+        content = _normalized_content(row)
         if not isinstance(description, str) or len(description) > 4000:
             raise ValueError('Keep the description under 4,000 characters.')
         content['description'] = description

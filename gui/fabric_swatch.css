@@ -6,6 +6,13 @@ body.body--dark .se-swatch { --swatch-amber:#e3ab60; --swatch-blue:#8dcbfb; }
 .se-swatch-actions button { padding:6px 12px; border:1px solid #8794a344; border-radius:6px; background:transparent; cursor:pointer; }
 .se-swatch-actions button:disabled { opacity:.45; cursor:default; }
 .se-swatch-actions label { display:flex; align-items:center; gap:7px; padding:6px; cursor:pointer; }
+.se-swatch-actions select { padding:6px; color:inherit; background:transparent; border:1px solid #8794a344; border-radius:6px; }
+.se-swatch-actions option { background:var(--se-bg, #20252e); color:inherit; }
+.se-swatch-assumptions { font-size:12px; line-height:1.5; opacity:.8; margin:14px 0 4px; }
+.se-swatch-load-note { padding:24px; border-radius:8px; background:#8794a30a; }
+.se-swatch-load-note strong { font-size:28px; font-weight:500; }
+.se-swatch-method table { border-collapse:collapse; width:100%; max-width:660px; margin:8px 0; }
+.se-swatch-method td,.se-swatch-method th { text-align:left; padding:6px 12px 6px 0; border-bottom:1px solid #8794a322; font-variant-numeric:tabular-nums; }
 .se-swatch-stages { display:grid; grid-template-columns:1fr 1fr; gap:20px; }
 .se-swatch-stages section { min-width:0; }
 .se-swatch-stages header { display:flex; justify-content:space-between; align-items:baseline; gap:12px; font-size:14px; }

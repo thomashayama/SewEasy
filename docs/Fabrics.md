@@ -4,15 +4,12 @@ Open **Account → Fabrics**. Import a U3M 1.1 material, edit its properties,
 save a named copy, or export a U3MA package. The import dialog includes a
 published cupro measurement sample; its minimal material wrapper is ours.
 
-The fabric menu's **Test fabric swatch** compares two clamped strips: a
-300 g/m² reference and the saved fabric's weight. Synchronized browser WebGPU
-simulations show tip drop in millimetres and overlaid profiles. An equal-weight
-control verifies that matching inputs give matching results. The former fitted
-tee comparison was too insensitive to be a useful demonstration.
-
-Only particle mass changes between the swatches. The shared bending coefficient
-is an explicit assumption, not a converted vendor measurement. This tests the
-weight response, not whether a real cupro garment will drape accurately. See
+The fabric menu's **Test fabric swatch** compares warp and weft strips with the
+same weight. Browser WebGPU applies directional stretch and bending, shear,
+and damping. Choose gravity bending, longitudinal stretch, or transverse shear;
+a same-grain control verifies identical inputs produce identical results.
+Reported measurements, estimated bending, and missing-value assumptions are
+shown separately. These experiments are not yet physically calibrated. See
 [the swatch model and validation](FabricSwatch.md) for its assumptions and
 numerical checks. Library fabrics are not assigned to saved garment pieces yet.
 
@@ -44,25 +41,34 @@ source data; it is not independent certification of the measurement.
 
 | Property | Unit / interpretation | Prototype support |
 | --- | --- | --- |
-| Weight | g/m² | Import, edit, export, weight-only 3D experiment |
+| Weight | g/m² | Import, edit, export, area-derived swatch masses |
 | Thickness | mm | Import, edit, export; not a collision margin |
 | Friction | dimensionless coefficient | Retain reported Browzwear value; edit/export as SewEasy extension |
-| Warp/weft stretch | N/m, membrane stiffness | Explicit user values only; no vendor coefficient conversion |
-| Warp/weft bending | N·m, bending rigidity | Explicit user values only; not the artistic multiplier |
-| Shear | N/m, membrane shear stiffness | Explicit user values only |
-| Damping | 1/s, velocity decay rate | Explicit user values only |
+| Warp/weft stretch | N/m, membrane stiffness | Documented Browzwear reported values or user values; directional strain energy |
+| Warp/weft bending | N·m, bending rigidity | Estimated from raw short-loop tests or user values; directional dihedral energy |
+| Shear | N/m, small-angle shear stiffness | User values or explicitly assumed 100 N/m in swatches |
+| Damping | 1/s, velocity decay rate | User values or explicitly assumed 14/s in swatches |
 
 Warp means along the fabric's warp/grain and weft across it. Raw FAB `L`, `W`,
 and `B` are length, width, and bias specimen measurements; the original labels
 are retained without guessing a garment's grain orientation. Original FAB
 curves alternate displacement in cm and force in gram-force. They remain in
 the original companion JSON, including loading/unloading branches and specimen
-metadata. No calibrated SI curves are populated in `curves` yet.
+metadata. `curves` also preserves each branch in metres and newtons (1 gf =
+0.00980665 N); it does not silently discard negative forces or hysteresis.
+The current solver uses linear scalar stiffness, not the full nonlinear curves.
 
-The normalized bending/stretch fields deliberately remain unknown when a
-vendor supplies only solver-specific coefficients. U3M does not make those
-coefficients interchangeable with our XPBD compliance values. Calibrating
-them requires controlled swatch tests and an explicit mapping.
+Browzwear's [Physics Reference](https://help.browzwear.com/en/articles/13065506-physics-reference)
+documents directional stretch in N/m. These reported surface stiffnesses are
+converted into area-dependent XPBD compliance, not copied into solver knobs.
+Vendor bend numbers are not treated as N·m. Where sufficient raw FAB U1/D1
+measurements exist, a clamped-elastica model estimates effective rigidity;
+`physics_normalization.bending_fits` retains the method, per-cycle fit errors,
+and range. Vendor shear and linearity coefficients remain uninterpreted.
+
+Old imports are enriched from their original source when opened, copied or
+exported. Existing values win. Saving persists a normalization marker so a
+subsequent intentional clear remains unknown. Lists still avoid loading blobs.
 
 ## Interchange boundaries
 
