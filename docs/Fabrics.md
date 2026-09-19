@@ -66,9 +66,16 @@ measurements exist, a clamped-elastica model estimates effective rigidity;
 `physics_normalization.bending_fits` retains the method, per-cycle fit errors,
 and range. Vendor shear and linearity coefficients remain uninterpreted.
 
+Source quality warnings are retained in `physics_normalization.raw_warnings`.
+A `BendRigidityWarp`/`BendRigidityWeft` warning prevents automatic bending
+estimation for that axis. The editor and swatch explain the warning; preview
+fallbacks remain explicitly assumed. Raw tests and unrecognized flags survive.
+
 Old imports are enriched from their original source when opened, copied or
-exported. Existing values win. Saving persists a normalization marker so a
-subsequent intentional clear remains unknown. Lists still avoid loading blobs.
+exported. Normalization v2 retires our earlier bending estimates if the source
+flagged their measurements. User values and intentional clears win, including
+in older exports. Saving persists the normalization marker. Lists still avoid
+loading blobs. See [external fixture validation and catalog candidates](FabricSources.md).
 
 ## Interchange boundaries
 

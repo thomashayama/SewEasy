@@ -21,6 +21,7 @@ export default {
       </div>
     </div>
     <p v-if="failure" role="alert">{{failure}}</p>
+    <p class="se-swatch-assumptions" role="note" v-for="warning in material?.normalization?.warnings||[]" :key="warning.property">{{warning.message}}</p>
     <div class="se-swatch-stages">
       <section v-for="(name,i) in ['Warp · along the grain',equal?'Warp · control':'Weft · across the grain']" :key="i">
         <header><span :class="i?'se-swatch-blue':'se-swatch-amber'">{{name}}</span>

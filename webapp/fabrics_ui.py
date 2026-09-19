@@ -18,6 +18,8 @@ async def fabric_library(email):
                 ui.button(icon='close', on_click=dialog.close).props('flat round dense aria-label="Close fabric editor"')
             name = ui.input('Fabric name', value=record['name']).props('outlined dense maxlength=120').classes('w-full')
             description = ui.textarea('Notes', value=content['description']).props('outlined dense rows=2 maxlength=4000').classes('w-full')
+            for warning in content.get('physics_normalization', {}).get('warnings', []):
+                ui.label(warning['message']).classes('se-param-label text-sm').props('role=note')
 
             def field(key, label):
                 prop = content['properties'][key]

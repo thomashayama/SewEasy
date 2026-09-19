@@ -23,6 +23,13 @@ from webapp import fabrics
 from webapp import fabric_formats as fmt
 
 
+def shirley_package():
+    doc = fmt.empty_document('QA Test Fabric shirley')
+    doc['material']['physics']['devices']['fab'] = 'physics.json'
+    return fmt.pack({'material.u3m': json.dumps(doc).encode(),
+                     'physics.json': (fmt.SPEC/'shirley_physics.json').read_bytes()})
+
+
 class FormatTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -63,6 +70,37 @@ class FormatTest(unittest.TestCase):
         self.assertEqual(saved_doc['custom']['vendor-extension'], doc['custom']['vendor-extension'])
         self.assertEqual(saved_doc['material']['id'], record['id'])
         self.assertEqual(fmt.import_fabric(result, 'saved.u3ma')['properties'], content['properties'])
+
+    def test_published_cotton_quality_flags_prevent_bending_estimates(self):
+        raw = shirley_package()
+        content = fmt.import_fabric(raw, 'shirley.u3ma')
+        props = content['properties']
+        self.assertEqual(props['weight']['value'], 300)
+        self.assertEqual(props['weight']['origin'], 'measured')
+        self.assertAlmostEqual(props['thickness']['value'], .20203900337219238)
+        self.assertAlmostEqual(props['stretch_warp']['value'], 72.36051177978516)
+        self.assertAlmostEqual(props['stretch_weft']['value'], 51.73408508300781)
+        self.assertEqual(len(content['curves']), 102)
+        self.assertEqual(content['physics_normalization']['bending_fits'], {})
+        for axis in ('warp', 'weft'):
+            self.assertIsNone(props['bend_'+axis]['value'])
+            self.assertIn('low-force', props['bend_'+axis]['source'])
+        exported = fmt.export_fabric(dict(id=str(uuid4()), name='Cotton copy', content=content), raw, 'shirley.u3ma')
+        self.assertEqual(fmt.read_package(exported, 'copy.u3ma')[0]['physics.json'],
+                         (fmt.SPEC/'shirley_physics.json').read_bytes())
+        self.assertEqual(fmt.import_fabric(exported, 'copy.u3ma')['properties'], props)
+
+    def test_old_export_retires_flagged_estimates_but_preserves_user_values(self):
+        files, manifest, doc, _ = fmt.read_package(shirley_package(), 'shirley.u3ma')
+        values = fmt.import_fabric(shirley_package(), 'shirley.u3ma')['properties']
+        values['bend_warp'].update(value=1.72e-5, origin='estimated',
+            source='FAB raw_data.L U1/D1 loading cycles; short-loop elastica fit v1')
+        values['bend_weft'].update(value=3e-5, origin='user', source=None)
+        doc['custom'] = {'seweasy': {'schema': 1, 'properties': values}}
+        files[manifest] = json.dumps(doc).encode()
+        content = fmt.import_fabric(fmt.pack(files), 'old-copy.u3ma')
+        self.assertIsNone(content['properties']['bend_warp']['value'])
+        self.assertEqual(content['properties']['bend_weft'], values['bend_weft'])
 
     def test_u3ma_headers_follow_restricted_zip_spec(self):
         raw = self.sample
@@ -288,8 +326,47 @@ class FabricStorageTest(unittest.TestCase):
         exported = fabrics.export_fabric(self.alice, saved['id'])
         self.assertIsNone(fmt.import_fabric(exported, 'saved.u3ma')['properties']['bend_warp']['value'])
 
+    def test_normalizer_upgrade_retires_flagged_fits_without_overwriting_edits(self):
+        from webapp.models import Fabric
+        from webapp.fabric_measurements import VERSION
+        record = fabrics.import_fabric(self.alice, shirley_package(), 'shirley.u3ma')
+        for weft_value, origin in ((3e-5, 'user'), (None, 'unknown')):
+            with self.subTest(origin=origin):
+                with fabrics.SessionLocal() as db:
+                    row = db.get(Fabric, record['id'])
+                    content = deepcopy(row.content)
+                    content['physics_normalization'] = {'version': 1, 'bending_fits': {}}
+                    content['properties']['bend_warp'].update(value=1.72e-5, origin='estimated',
+                        source='FAB raw_data.L U1/D1 loading cycles; short-loop elastica fit v1')
+                    content['properties']['bend_weft'].update(value=weft_value, origin=origin, source=None)
+                    row.content = content
+                    db.commit()
+                derived = fabrics.get_fabric(self.alice, record['id'])
+                self.assertEqual(derived['content']['physics_normalization']['version'], VERSION)
+                self.assertIsNone(derived['content']['properties']['bend_warp']['value'])
+                self.assertEqual(derived['content']['properties']['bend_weft']['value'], weft_value)
+                self.assertEqual(derived['content']['properties']['bend_weft']['origin'], origin)
+                # Detail reads are not writes; only save persists the new normalization.
+                with fabrics.SessionLocal() as db:
+                    self.assertEqual(db.get(Fabric, record['id']).content['physics_normalization']['version'], 1)
+                saved = self.save(derived)
+                self.assertEqual(saved['content'], fabrics.get_fabric(self.alice, record['id'])['content'])
+
 
 class MeasurementFitTest(unittest.TestCase):
+    def test_quality_flags_only_block_the_affected_direction_and_keep_curves(self):
+        from webapp.fabric_measurements import normalize
+        fab = json.loads((fmt.SPEC/'cupro_physics.json').read_text())
+        fab['raw_data']['warnings'] = {'BendRigidityWarp': 'low-force', 'FutureVendorTest': 'unknown-code'}
+        before = deepcopy(fab)
+        values, curves, metadata = normalize(fab)
+        self.assertIsNone(values['bend_warp']['value'])
+        self.assertAlmostEqual(values['bend_weft']['value'], 1.60237475888735e-5)
+        self.assertEqual(len(curves), 102)
+        self.assertEqual(metadata['raw_warnings'], fab['raw_data']['warnings'])
+        self.assertEqual(metadata['warnings'][0]['source'], 'FAB raw_data.warnings.BendRigidityWarp')
+        self.assertEqual(fab, before)
+
     def test_elastica_recovers_rigidity_despite_force_tare(self):
         import numpy as np
         from webapp.fabric_measurements import fit_loop, loop_factor

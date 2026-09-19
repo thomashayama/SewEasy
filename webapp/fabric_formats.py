@@ -199,13 +199,19 @@ def import_fabric(raw, filename):
         if values[key]['value'] is None and vendor.get(vendor_key) is not None:
             values[key].update(value=number(vendor[vendor_key]), origin='reported', source=f'FAB custom.browzwear.{vendor_key}')
     extension = (document.get('custom') or {}).get('seweasy')
-    from webapp.fabric_measurements import normalize
+    from webapp.fabric_measurements import normalize, is_loop_estimate
     normalized, curves, normalization = normalize(fab)
     values.update(normalized)
     if isinstance(extension, dict) and extension.get('schema') == 1 and 'properties' in extension:
         # Our exports explicitly distinguish edits from original measurements.
         values = deepcopy(extension['properties'])
     validate_properties(values)
+    # Old SewEasy exports can contain estimates made before we honored FAB
+    # quality flags. Retire those estimates without replacing edits or clears.
+    for warning in normalization['warnings']:
+        key = warning['property']
+        if is_loop_estimate(values[key]):
+            values[key] = normalized[key]
     return dict(
         schema=1, name=material['name'], description=material['description'], properties=values,
         appearance={side: deepcopy(material[side]) for side in ('front', 'back', 'side')},

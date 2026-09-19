@@ -7,11 +7,19 @@ clamp compliance; the spread between cycles is retained, not hidden.
 """
 import json
 import math
+from copy import deepcopy
 from statistics import median
 
-VERSION = 1
+VERSION = 2
 GRAM_FORCE_N = .00980665
 PHYSICS_REFERENCE = 'https://help.browzwear.com/en/articles/13065506-physics-reference'
+
+
+def is_loop_estimate(item):
+    """Recognize only our own derived values, never a user override or clear."""
+    return item.get('origin') == 'estimated' and item.get('source') in {
+        f'FAB raw_data.{direction} U1/D1 loading cycles; short-loop elastica fit v1'
+        for direction in ('L', 'W')}
 
 
 def loop_factor(ratio):
@@ -48,7 +56,19 @@ def normalize(fab):
     """No fetching; skip unsupported/malformed optional measurements."""
     raw = (fab or {}).get('raw_data') or {}
     vendor = ((fab or {}).get('custom') or {}).get('browzwear') or {}
-    values, curves, fits = {}, [], {}
+    values, curves, fits, warnings = {}, [], {}, []
+    raw_warnings = raw.get('warnings') or {}
+    # Preserve all vendor flags, but only interpret the documented axis names.
+    # A good mathematical fit does not repair a low-force measurement.
+    if isinstance(raw_warnings, dict):
+        for axis, suffix in (('warp', 'Warp'), ('weft', 'Weft')):
+            field = 'BendRigidity' + suffix
+            code = raw_warnings.get(field)
+            if code:
+                source = f'FAB raw_data.warnings.{field}'
+                message = f'{axis.title()} bending: source warning ({code}); no automatic estimate.'
+                warnings.append(dict(property='bend_'+axis, code=code, source=source, message=message))
+                values['bend_'+axis] = dict(value=None, unit='N*m', origin='unknown', source=message)
     stretch = vendor.get('stretch') if isinstance(vendor, dict) else None
     if isinstance(stretch, dict):
         for axis, field in (('warp', 'length'), ('weft', 'width')):
@@ -89,7 +109,8 @@ def normalize(fab):
                         length_m=length, width_m=width, x_unit='m', y_unit='N',
                         points=points, source=source))
                     # Skip conditioning and long loops where self-weight matters more.
-                    if axis != 'bias' and name in ('U1', 'D1') and branch > 0 and branch % 2 == 0:
+                    if ('bend_'+axis not in values and axis != 'bias' and name in ('U1', 'D1')
+                            and branch > 0 and branch % 2 == 0):
                         fit = fit_loop(points, length, width)
                         if fit:
                             axis_fits.append(dict(fit, source=source))
@@ -102,4 +123,5 @@ def normalize(fab):
                 value=median(estimates), range=[min(estimates), max(estimates)], cycles=axis_fits)
             values[key] = dict(value=median(estimates), unit='N*m', origin='estimated',
                 source=f'FAB raw_data.{direction} U1/D1 loading cycles; short-loop elastica fit v1')
-    return values, curves, dict(version=VERSION, bending_fits=fits, stretch_reference=PHYSICS_REFERENCE)
+    return values, curves, dict(version=VERSION, bending_fits=fits, stretch_reference=PHYSICS_REFERENCE,
+                               warnings=warnings, raw_warnings=deepcopy(raw_warnings))

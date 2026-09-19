@@ -40,13 +40,18 @@ def _normalized_content(row):
     """Upgrade old imports on detail reads without rewriting the user's record.
 
     Lists never read blobs. A subsequent save persists the normalization marker,
-    so intentionally cleared fields stay cleared. Existing values always win.
+    so intentionally cleared fields stay cleared. Only our derived bending
+    estimates are refreshed when the normalizer changes; user values win.
     """
     content = deepcopy(row.content)
-    if not content.get('physics_normalization') and row.source_name and row.source_bytes:
+    from webapp.fabric_measurements import VERSION, is_loop_estimate
+    previous = content.get('physics_normalization') or {}
+    if previous.get('version', 0) < VERSION and row.source_name and row.source_bytes:
         imported = formats.import_fabric(row.source_bytes, row.source_name)
         for key, item in imported['properties'].items():
-            if content['properties'][key]['value'] is None and content['properties'][key]['origin'] == 'unknown':
+            existing = content['properties'][key]
+            if (is_loop_estimate(existing) or (not previous and existing['value'] is None
+                                             and existing['origin'] == 'unknown')):
                 content['properties'][key] = item
         content['curves'] = imported['curves']
         content['physics_normalization'] = imported['physics_normalization']
