@@ -31,8 +31,8 @@
 .se-favorite.q-btn:before {box-shadow:none;}
 .se-favorite.q-btn .q-focus-helper {display:none;}
 .se-favorite.q-btn .q-icon {font-size:20px;}
-.se-favorite.q-btn:hover {color:#183452;}
 .se-favorite.q-btn.is-favorite {color:#bb5267;}
+.se-favorite.q-btn:hover, .se-favorite.q-btn:focus-visible {color:#facc15;}
 .se-home .se-library-tab {border-radius:0; padding:8px 2px 16px; color:#61768b; font-size:15px; min-height:0;}
 .se-home .se-library-tab.q-tab--active {color:#183452; font-weight:600;}
 .se-library-count {margin-left:8px; color:#7a8c9e; font-size:12px; font-weight:400;}
