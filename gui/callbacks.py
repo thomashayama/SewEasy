@@ -304,7 +304,9 @@ class GUIState:
                 self.def_pattern_display()
             with ui.element('div').classes('se-studio-inspector'):
                 self.ui_fabric_panel = FabricPanel()
-                self.ui_fabric_panel.configure(docked=True)
+                from webapp.fabrics import assignable
+                self.ui_fabric_panel.configure(docked=True,
+                                               library=assignable(self.user['email'] if self.user else None))
                 self.ui_fabric_panel.on('close', self.close_fabric_panel)
                 self.ui_fabric_panel.on('clear', lambda: self.set_pattern_selection([]))
                 self.ui_fabric_panel.on('select-all', lambda: self.set_pattern_selection(list(self.pattern_state.panel_svg_paths)))
@@ -878,9 +880,15 @@ class GUIState:
         async with self._fabric_edit_lock:
             self.ui_fabric_panel.configure(busy=True)
             try:
+                material = None
+                if data.get('field') == 'material' and any(
+                        item['id'] == data.get('value') for item in self.ui_fabric_panel._props['library']):
+                    from webapp.fabrics import library_snapshot
+                    # Detached now, so later library edits cannot restyle this garment.
+                    material = library_snapshot(self.user['email'] if self.user else None, data['value'])
                 await asyncio.get_running_loop().run_in_executor(
                     self._async_executor, self.pattern_state.edit_panel_fabrics,
-                    panels, data.get('field'), data.get('value'))
+                    panels, data.get('field'), data.get('value'), material)
                 self.update_pattern_display()
                 self.ui_browser_drape.configure(panel_colors=self.pattern_state.display_panel_colors(),
                                                 panel_fabrics=self.pattern_state.display_panel_fabrics())

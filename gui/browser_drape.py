@@ -34,6 +34,7 @@ class SceneDraft:
     fabrics: dict
     garment: str
     garment_types: dict
+    materials: dict = None
 
 
 def snapshot_scene(pattern_state):
@@ -50,7 +51,8 @@ def snapshot_scene(pattern_state):
     upper = pattern_state.design_params['meta']['upper']['v']
     garment = 'outfit' if items else 'element-top' if upper == 'ElementTubeTop' else 'current-design'
     return SceneDraft(pattern, deepcopy(pattern_state.body_params.params), deepcopy(colors), deepcopy(fabrics),
-                      garment, {f'g{i}__': item['params']['meta']['upper']['v'] for i, item in enumerate(items)})
+                      garment, {f'g{i}__': item['params']['meta']['upper']['v'] for i, item in enumerate(items)},
+                      pattern_state.display_panel_materials())
 
 
 def prepare_scene(pattern_state, target, resolution=1.5):
@@ -76,10 +78,18 @@ def prepare_scene(pattern_state, target, resolution=1.5):
         data = panel_mesh_data(box, body)
         from seweasy.meshgen.browser_hardware import button_attachments
         buttons = button_attachments(box, pattern.pattern, data)
+        from webapp.garment_materials import garment_settings, panel_weights
+        materials = draft.materials or {}
         meta = dict(garment=draft.garment,
                     resolution_cm=resolution, panels=len(box.panelNames),
-                    panel_stiffness=pattern.pattern.get('panel_stiffness', {}))
+                    panel_stiffness=pattern.pattern.get('panel_stiffness', {}),
+                    panel_weight_gsm=panel_weights(materials))
         scene = build_scene(data, meta, target.stem)
+        # Damping, body friction and the contact margin are solver-wide, so they
+        # are resolved from the assigned materials by rest area, not per piece.
+        scene['material_settings'] = garment_settings(materials, scene['panel_area_m2'])
+        scene['panel_materials'] = {panel: material.get('name', '')
+                                    for panel, material in materials.items()}
         scene['buttons'] = buttons
         scene['body_fit'] = fit
         scene['body_note'] = fit['note']

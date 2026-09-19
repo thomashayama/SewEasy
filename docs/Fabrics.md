@@ -18,7 +18,8 @@ a same-grain control verifies identical inputs produce identical results.
 Reported measurements, estimated bending, and missing-value assumptions are
 shown separately. These experiments are not yet physically calibrated. See
 [the swatch model and validation](FabricSwatch.md) for its assumptions and
-numerical checks. Library fabrics are not assigned to saved garment pieces yet.
+numerical checks. Assigning a library fabric to garment pieces is described
+below; a garment drape applies fewer properties than a swatch does.
 
 ## Storage
 
@@ -40,9 +41,37 @@ catalog revisions do not rewrite them. Attribution, licenses and property
 sources survive editing, copying and U3MA export/reimport.
 
 `fabrics.snapshot()` produces a detached assignment value with a
-`source_fabric_id`. Consumers must embed that snapshot instead of re-reading
-the library during simulation; later library edits must not alter a garment.
-The garment assignment UI is a separate follow-up.
+`source_fabric_id`. Consumers embed that snapshot instead of re-reading the
+library during simulation, so later library edits never alter a saved garment.
+It carries the properties, provenance and solver tuning; curves, textures and
+original bytes stay in the library.
+
+## Assigning a fabric to a garment
+
+Select pieces in the sewing pattern and choose a saved fabric under **Fabric
+type**; **Common fabrics** and **My fabrics** appear beside the drape presets.
+The assignment is stored in the garment's own appearance: `panel_materials`
+names the fabric per piece, and `materials` holds its detached copy keyed by
+fabric id. Unreferenced copies are dropped, so a garment carries only what it
+uses. Each garment in an outfit keeps its own pool, and copies, shares and forks
+carry both. Changing an assignment changes the appearance, so the saved
+thumbnail is invalidated exactly as a design edit is.
+
+What the garment solver does with each measured property:
+
+| Property | Scope | Effect on the drape |
+| --- | --- | --- |
+| Weight | Per piece | Vertex mass is rest triangle area × g/m². Unassigned pieces keep 300 g/m². |
+| Warp/weft bending | Per piece | Averaged into one isotropic bending multiplier, rigidity ÷ 1e-5 N·m, clamped to 0.5–30. Retuning **Bending stiffness** afterwards keeps the piece's fabric identity. |
+| Damping | Per garment | Rest-area-weighted mean of the assigned fabrics; the solver damps velocity garment-wide. |
+| Friction | Per garment | Rest-area-weighted mean, used as the positional body-friction factor. It is not a Coulomb coefficient. |
+| Thickness | Per garment | Raises the solver's 4 mm numerical contact margin when a fabric is thicker. It never lowers the margin, and the measurement is never overwritten by it. |
+| Warp/weft stretch, shear | Stored only | Garment panels use scalar distance constraints and a strain limiter, not N/m membrane stiffness. The orthotropic model exists only in the swatch. |
+| Textures | Stored only | The garment renderer draws procedural prints; imported U3M maps are preserved but not decoded. |
+
+Grain direction is not a garment setting: with an isotropic solver it would
+change nothing, and print rotation remains a separate appearance choice.
+Assigning a fabric does not import its colours or prints.
 
 ## Quantities and provenance
 

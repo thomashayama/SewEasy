@@ -292,6 +292,9 @@ export class Cloth {
     const placement=placePanels(scene);this.initialPositions=placement.positions;this.placement=placement.adjustments;this.supportTargets=placement.support;
     this.settings={substeps:12,width:1,wind:0,stretch:0.00001,bend:0.03,seam:0.0000001,thickness:0.004,gravity:9.81,damping:2,friction:0.4,sewDuration:1.6,selfCollision:true,bodyCollision:true,bodyMethod:'sdf',strainLimit:1.02,strainPasses:2,surfaceContact:true};
     this.settings.holdNeckline=this.supportTargets.length>0;
+    // Solver-wide values the assigned fabrics resolved on the server. Per-piece
+    // mass and bending already arrive in the mesh itself.
+    Object.assign(this.settings,scene.material_settings||{});
     // These controlled load fixtures start planar and have only in-plane forces.
     // Their dihedral energy stays zero; don't repeatedly solve zero bend forces.
     this.planarSwatch=scene.garment==='fabric-swatch'&&['stretch','shear'].includes(scene.fabric_test?.mode);

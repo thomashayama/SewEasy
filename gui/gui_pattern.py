@@ -120,7 +120,10 @@ class GUIPattern:
         # Per-panel bending-stiffness multipliers (panel_name -> factor). User
         # overrides on top of any garment default; applied in the 3D drape.
         self.panel_stiffness = {}
-        self.panel_materials = {}  # Preset IDs, stored separately from colors/prints.
+        self.panel_materials = {}  # Preset or library fabric IDs, kept apart from colors/prints.
+        # Detached copies of the library fabrics this garment is cut from, keyed
+        # by fabric id. Later library edits must not change a saved garment.
+        self.materials = {}
         # panel_name -> svgpathtools Path (SVG coords), for 2D click hit-tests
         self.panel_svg_paths = {}
         self.design_sampler = pyg.DesignSampler()
@@ -254,10 +257,14 @@ class GUIPattern:
         self._view_serialize()
 
     def garment_appearance(self):
+        used = set(self.panel_materials.values())
         return dict(fabric_color=self.fabric_color, panel_colors=dict(self.panel_colors),
                     panel_fabrics=deepcopy(self.panel_fabrics),
                     panel_stiffness=dict(self.panel_stiffness),
-                    panel_materials=dict(self.panel_materials))
+                    panel_materials=dict(self.panel_materials),
+                    # Only what this garment still uses; a removed piece's fabric
+                    # should not ride along in every future copy.
+                    materials={k: deepcopy(v) for k, v in self.materials.items() if k in used})
 
     def sync_outfit_garment(self):
         if self.outfit_items:
@@ -280,6 +287,25 @@ class GUIPattern:
         self.panel_fabrics = deepcopy(look.get('panel_fabrics', {}))
         self.panel_stiffness = deepcopy(look.get('panel_stiffness', {}))
         self.panel_materials = deepcopy(look.get('panel_materials', {}))
+        self.materials = deepcopy(look.get('materials', {}))
+
+    def display_panel_materials(self):
+        """Displayed piece -> the fabric it is cut from, resolved per garment."""
+        if not self.outfit_items:
+            return {panel: deepcopy(self.materials[identity])
+                    for panel, identity in self.panel_materials.items() if identity in self.materials}
+        if not hasattr(self.sew_pattern, 'garments'):
+            return {}                   # An outfit that has not been redrafted yet.
+        self.sync_outfit_garment()
+        result = {}
+        for i, (item, garment) in enumerate(zip(self.outfit_items, self.sew_pattern.garments)):
+            look = item.get('appearance', {})
+            pool = look.get('materials', {})
+            for panel in garment.assembly().pattern['panels']:
+                identity = look.get('panel_materials', {}).get(panel)
+                if identity in pool:
+                    result[f'g{i}__{panel}'] = deepcopy(pool[identity])
+        return result
 
     def display_panel_colors(self):
         if not self.outfit_items:
@@ -312,12 +338,23 @@ class GUIPattern:
         return {
             p: {**dict(kind='plain', fg='#eef2f8', bg=colors.get(p, self.fabric_color), scale=.6),
                 **deepcopy(prints.get(p, {})), 'stiffness': stiffness.get(p, 1.0),
-                'material': self.panel_material_of(p)} for p in panels}
+                'material': self.panel_material_of(p),
+                'material_name': self.panel_material_name(p)} for p in panels}
+
+    def panel_material_name(self, panel):
+        """The saved fabric's own name, so a shared garment can still show it."""
+        assigned, local = self._panel_appearance_map(panel, 'panel_materials')
+        pool, _ = self._panel_appearance_map(panel, 'materials')
+        return (pool.get(assigned.get(local)) or {}).get('name', '')
 
     def panel_material_of(self, panel):
         from .fabric_library import FABRICS_BY_ID
         materials, local = self._panel_appearance_map(panel, 'panel_materials')
         stiffness, _ = self._panel_appearance_map(panel, 'panel_stiffness')
+        pool, _ = self._panel_appearance_map(panel, 'materials')
+        if materials.get(local) in pool:
+            # A saved fabric keeps its identity even when the drape is retuned.
+            return materials[local]
         preset = FABRICS_BY_ID.get(materials.get(local))
         if preset and stiffness.get(local) == preset['stiffness']:
             return preset['id']
@@ -340,8 +377,12 @@ class GUIPattern:
             panel = local
         return getattr(self, field), panel
 
-    def edit_panel_fabrics(self, panels, field, value=None):
-        """Apply one property to a selection without replacing its other properties."""
+    def edit_panel_fabrics(self, panels, field, value=None, material=None):
+        """Apply one property to a selection without replacing its other properties.
+
+        `material` is a detached library snapshot (webapp.fabrics.snapshot). It is
+        stored with the garment so later library edits cannot change this drape.
+        """
         import math
         import re
         from seweasy.pattern.fabrics import KINDS
@@ -357,7 +398,7 @@ class GUIPattern:
             if value not in KINDS:
                 raise ValueError('Unknown fabric pattern.')
         elif field == 'material':
-            if value not in ('default', 'custom') and value not in FABRICS_BY_ID:
+            if value not in ('default', 'custom') and value not in FABRICS_BY_ID and material is None:
                 raise ValueError('Unknown fabric type.')
         elif field in ('scale', 'stiffness'):
             value = float(value)
@@ -375,13 +416,25 @@ class GUIPattern:
             elif field in ('stiffness', 'material'):
                 overrides, local = self._panel_appearance_map(panel, 'panel_stiffness')
                 materials, _ = self._panel_appearance_map(panel, 'panel_materials')
-                materials.pop(local, None)
+                pool, _ = self._panel_appearance_map(panel, 'materials')
+                # A piece stays cut from its saved fabric when its drape is retuned.
+                if not (field == 'stiffness' and materials.get(local) in pool):
+                    materials.pop(local, None)
                 if field == 'stiffness':
                     overrides[local] = value
                 elif value == 'default':
                     overrides.pop(local, None)
                 elif value == 'custom':
                     overrides[local] = settings[panel]['stiffness']
+                elif material is not None:
+                    from webapp.garment_materials import stiffness_for
+                    pool[value] = deepcopy(material)
+                    materials[local] = value
+                    stiffness = stiffness_for(material)
+                    if stiffness is None:
+                        overrides.pop(local, None)
+                    else:
+                        overrides[local] = stiffness
                 else:
                     overrides[local] = FABRICS_BY_ID[value]['stiffness']
                     materials[local] = value
@@ -392,6 +445,12 @@ class GUIPattern:
                 overrides[local] = spec
                 colors, local = self._panel_appearance_map(panel, 'panel_colors')
                 colors[local] = spec['bg']
+        if field in ('reset', 'material'):
+            for panel in panels:
+                assigned, _ = self._panel_appearance_map(panel, 'panel_materials')
+                pool, _ = self._panel_appearance_map(panel, 'materials')
+                for stale in [k for k in pool if k not in set(assigned.values())]:
+                    pool.pop(stale)
         self.sync_outfit_garment()
         if self.sew_pattern is not None and field not in ('stiffness', 'material'):
             self._view_serialize()

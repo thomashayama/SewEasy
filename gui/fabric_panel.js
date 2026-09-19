@@ -20,7 +20,13 @@ export default {
           <select aria-label="Fabric type" :value="shared('material')??''" @change="edit('material',$event.target.value)">
             <option v-if="shared('material')===null" value="" disabled>Mixed fabrics</option>
             <option value="default">Garment default</option>
-            <option v-for="fabric in materials" :key="fabric.id" :value="fabric.id">{{fabric.label}}</option>
+            <option v-if="assignedName" :value="shared('material')">{{assignedName}}</option>
+            <optgroup v-for="group in libraryGroups" :key="group.name" :label="group.name">
+              <option v-for="fabric in group.items" :key="fabric.id" :value="fabric.id">{{fabric.label}}</option>
+            </optgroup>
+            <optgroup label="Drape presets">
+              <option v-for="fabric in materials" :key="fabric.id" :value="fabric.id">{{fabric.label}}</option>
+            </optgroup>
             <option value="custom">Custom</option>
           </select>
         </label>
@@ -62,7 +68,7 @@ export default {
     </div>
     <footer v-if="selection.length" role="status">{{busy?'Applying fabric…':'Applied to all selected pieces'}}</footer>
   </aside>`,
-  props: {selection:Array, open:Boolean, docked:Boolean, available:Number, busy:Boolean, materials:Array},
+  props: {selection:Array, open:Boolean, docked:Boolean, available:Number, busy:Boolean, materials:Array, library:Array},
   data: () => ({pending:{}, swatches:[{name:'Oxford blue',color:'#b7cde5'},{name:'White',color:'#f8fafc'},
     {name:'Silver',color:'#bfc6cf'},{name:'Rose',color:'#deb5c0'},{name:'Navy',color:'#263f5d'}]}),
   beforeUnmount() {Object.values(this.pending).forEach(p=>clearTimeout(p.timer));},
@@ -78,7 +84,27 @@ export default {
       if(id===null)return 'Choose a fabric for all selected sections.';
       if(id==='default')return 'Original stiffness, including structured collars and cuffs.';
       if(id==='custom')return 'Your own stiffness setting.';
+      const saved=(this.library||[]).find(fabric=>fabric.id===id);
+      if(saved)return 'Saved fabric: its weight and bending drive this piece. Edit the fabric in your account.';
+      if(this.assignedName)return 'Saved with this garment. It is not in your fabric library.';
       return this.materials.find(fabric=>fabric.id===id)?.description||'';
+    },
+    libraryGroups() {
+      const groups=[];
+      for(const fabric of this.library||[]){
+        const name=fabric.group||'Fabrics';
+        let group=groups.find(g=>g.name===name);
+        if(!group)groups.push(group={name,items:[]});
+        group.items.push(fabric);
+      }
+      return groups;
+    },
+    assignedName() {
+      // A fabric can travel with a shared garment, or be deleted after assignment.
+      const id=this.shared('material');
+      if(!id||id==='default'||id==='custom')return '';
+      if((this.library||[]).some(f=>f.id===id)||this.materials.some(f=>f.id===id))return '';
+      return this.selection[0]?.material_name||'Saved fabric';
     },
   },
   methods: {

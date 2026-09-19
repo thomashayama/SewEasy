@@ -43,9 +43,17 @@ def build_scene(data, meta, name):
     rest = uv[faces]
     area = np.abs(np.cross(rest[:, 1]-rest[:, 0], rest[:, 2]-rest[:, 0])) / 2
     assert np.all(area > 1e-12)
+    # Assigned materials give a panel its own areal density; unassigned panels
+    # keep the 300 g/m² this solver has always used.
+    weights = meta.get('panel_weight_gsm') or {}
+    density = np.array([float(weights.get(str(panel), 300.)) / 1000 for panel in data['face_panels']])
+    assert np.all(np.isfinite(density)) and np.all(density > 0)
     mass = np.zeros(n)
-    np.add.at(mass, faces.ravel(), np.repeat(area * 0.3 / 3, 3))
+    np.add.at(mass, faces.ravel(), np.repeat(area * density / 3, 3))
     assert np.all(mass > 0)
+    panel_area = {}
+    for panel, face_area in zip(data['face_panels'], area):
+        panel_area[str(panel)] = panel_area.get(str(panel), 0.) + float(face_area)
     edges, incident, neighbors = {}, [[] for _ in range(n)], [set() for _ in range(n)]
     for fi, (a, b, c) in enumerate(faces):
         for u, v, opposite in [(a, b, c), (b, c, a), (c, a, b)]:
@@ -163,7 +171,8 @@ def build_scene(data, meta, name):
     body = trimesh.Trimesh(data['body_vertices'], data['body_faces'], process=False)
     nodes, body_faces = bvh(body.vertices, body.faces)
     scene = dict(name=name, garment=meta['garment'], resolution_cm=meta['resolution_cm'],
-                 mass_density_kg_m2=0.3,
+                 mass_density_kg_m2=float(mass.sum() / area.sum()),
+                 panel_area_m2=panel_area, panel_weight_gsm={p: float(w) for p, w in weights.items()},
                  vertices=positions.tolist(), inverse_mass=(1 / mass).tolist(), uv=uv.tolist(),
                  faces=faces.tolist(), vertex_panels=vertex_panels, sewn_ids=world_ids.tolist(), constraints=ordered, batches=batches,
                  incident_faces=incident, neighbors=[sorted(x) for x in neighbors],

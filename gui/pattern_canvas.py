@@ -30,7 +30,7 @@ class FabricPanel(Element, component='fabric_panel.js'):
     def __init__(self):
         super().__init__()
         self._props.update(selection=[], open=False, available=0, busy=False,
-                           materials=list(FABRIC_PRESETS))
+                           materials=list(FABRIC_PRESETS), library=[])
 
     def configure(self, **props):
         self._props.update(props)

@@ -67,7 +67,9 @@ continue to draft from body measurements normally.
 
 Appearance is independent of construction: `fabric_color` is a hex color;
 `panel_colors`, `panel_stiffness`, `panel_materials` and `panel_fabrics` map panel
-names to overrides. A panel fabric accepts `kind`, `fg`, `bg`, and `scale`.
+names to overrides. `panel_materials` names a drape preset or a saved fabric, and
+`materials` carries that fabric's own detached copy, keyed by its id, so a library
+edit never restyles a saved garment. A panel fabric accepts `kind`, `fg`, `bg`, and `scale`.
 Supported prints: plain, stripe, pinstripe, polka_dot, gingham, windowpane.
 Use complete fabric specs with six-digit hex colors and scale in centimeters.
 

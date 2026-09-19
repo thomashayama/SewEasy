@@ -67,7 +67,8 @@ def appearance(value):
     value = bounded_json(value or {})
     if not isinstance(value, dict):
         raise ValueError('Appearance must be an object.')
-    allowed = {'fabric_color', 'panel_colors', 'panel_stiffness', 'panel_materials', 'panel_fabrics'}
+    allowed = {'fabric_color', 'panel_colors', 'panel_stiffness', 'panel_materials', 'panel_fabrics',
+               'materials'}
     if set(value) - allowed:
         raise ValueError('Unknown appearance field.')
     for key in allowed - {'fabric_color'}:
@@ -95,11 +96,38 @@ def appearance(value):
            for v in value.get('panel_stiffness', {}).values()):
         raise ValueError('Panel stiffness must be between .01 and 100.')
     from gui.fabric_library import FABRICS_BY_ID
+    from webapp.fabric_formats import validate_properties
+    from webapp.fabric_catalog import metadata
+    from webapp.garment_materials import stiffness_for
+    saved = value.get('materials', {})
+    for identity, material in saved.items():
+        if not isinstance(material, dict) or set(material) - {
+                'source_fabric_id', 'name', 'standard', 'description', 'properties',
+                'solver_tuning', 'catalog'}:
+            raise ValueError('A saved material carries its id, name, properties and provenance.')
+        if material.get('source_fabric_id', identity) != identity:
+            raise ValueError('A saved material must be keyed by its own fabric id.')
+        label(material.get('name', ''))
+        validate_properties(material.get('properties'))
+        if not isinstance(material.get('solver_tuning', {}), dict):
+            raise ValueError('Solver tuning must be an object.')
+        if material.get('catalog') is not None:
+            material['catalog'] = metadata(material['catalog'])
+        material['source_fabric_id'] = identity
     for panel, material in value.get('panel_materials', {}).items():
-        if material not in FABRICS_BY_ID and material not in ('custom', 'default'):
+        if not isinstance(material, str):
             raise ValueError('Unknown fabric material.')
-        if material in FABRICS_BY_ID:
+        # Library ids are only resolvable against the pool sent with them; a
+        # partial update may name a material an earlier one already saved.
+        if material in saved:
+            stiffness = stiffness_for(saved[material])
+            if stiffness is not None:
+                value.setdefault('panel_stiffness', {}).setdefault(panel, stiffness)
+        elif material in FABRICS_BY_ID:
             value.setdefault('panel_stiffness', {}).setdefault(panel, FABRICS_BY_ID[material]['stiffness'])
+        elif material not in ('custom', 'default'):
+            if 'materials' in value or not re.fullmatch(r'[A-Za-z0-9:_-]{1,64}', material):
+                raise ValueError('Unknown fabric material.')
     return value
 
 

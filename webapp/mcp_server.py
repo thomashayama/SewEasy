@@ -34,7 +34,7 @@ class OutfitMember(BaseModel):
     model_config = ConfigDict(extra='forbid')
     garment_id: str
     parameters: dict = Field(default_factory=dict, description='Dotted parameter paths to values; apply only inside this outfit.')
-    appearance: dict = Field(default_factory=dict, description='Optional fabric_color, panel_colors, panel_fabrics, panel_stiffness, panel_materials.')
+    appearance: dict = Field(default_factory=dict, description='Optional fabric_color, panel_colors, panel_fabrics, panel_stiffness, panel_materials, materials.')
 
 
 def account(ctx):

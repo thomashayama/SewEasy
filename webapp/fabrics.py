@@ -186,10 +186,45 @@ def update_fabric(email, identity, edit_token, *, name, description, values):
         return _record(_owned(db, email, identity))
 
 
+APPLIED_KEYS = ('description', 'properties', 'solver_tuning', 'catalog')
+
+
+def _applied(record):
+    content = record['content']
+    return dict(source_fabric_id=record['id'], name=record['name'], standard=record['standard'],
+                **{key: deepcopy(content[key]) for key in APPLIED_KEYS if key in content})
+
+
 def snapshot(email, identity):
-    """Embed this value in an assignment; never dereference it to apply later edits."""
-    record = get_fabric(email, identity)
-    return dict(source_fabric_id=identity, name=record['name'], **deepcopy(record['content']))
+    """Embed this value in an assignment; never dereference it to apply later edits.
+
+    Curves, textures and original bytes stay in the library. A garment needs the
+    properties and their provenance, and a full record copied into every saved
+    outfit that uses the fabric would carry megabytes of measurement branches.
+    """
+    return _applied(get_fabric(email, identity))
+
+
+def library_snapshot(email, identity):
+    """Standard fabrics are public; a saved fabric still needs its own account."""
+    if str(identity).startswith('standard:'):
+        for item in standard_fabrics():
+            if item['id'] == identity:
+                return _applied(item)
+        raise ValueError('Fabric unavailable.')
+    return snapshot(email, identity)
+
+
+def assignable(email=None):
+    """Fabrics a signed-in or guest studio may cut a piece from."""
+    from webapp.fabric_catalog import standard_fabrics as catalog_fabrics
+    owned = []
+    if email:
+        try:
+            owned = [dict(id=r['id'], label=r['name'], group='My fabrics') for r in list_fabrics(email)]
+        except ValueError:
+            owned = []
+    return owned + [dict(id=r['id'], label=r['name'], group='Common fabrics') for r in catalog_fabrics()]
 
 
 def export_fabric(email, identity):
