@@ -8,6 +8,7 @@ const linear = hex => [1,3,5].map(i => (parseInt(hex.slice(i,i+2),16)/255)**2.2)
 // Six seconds of cloth motion prepares a useful drape without running the GPU
 // indefinitely while editing a pattern. This is a warm-up, not a convergence test.
 const WARMUP_SECONDS=6;
+const WIND_STRENGTH=3;
 
 export default {
   template: `<div class="se-browser-drape" :data-state="state" :data-scene="loadedScene" :data-frames="frames">
@@ -30,6 +31,7 @@ export default {
       <button data-se-local class="se-drape-icon" @click="center" aria-label="Recenter" title="Recenter view">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 4H4v4m12-4h4v4M4 16v4h4m12-4v4h-4"/><circle cx="12" cy="12" r="3"/></svg>
       </button>
+      <button data-se-local class="se-drape-icon se-drape-wind" @click="toggleWind" aria-label="Wind" :aria-pressed="wind" :title="wind ? 'Turn wind off' : 'Turn wind on'">Wind {{wind ? 'on' : 'off'}}</button>
       <details class="se-drape-more" @keydown.esc.prevent="$event.currentTarget.open = false">
         <summary class="se-drape-icon" aria-label="More 3D controls" title="More 3D controls">
           <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/></svg>
@@ -57,11 +59,11 @@ export default {
   props: {scene_url:String, active:Boolean, docked:Boolean, preparing:Boolean, error:String,
     fabric_color:String, panel_colors:Object, panel_fabrics:Object, body_color:String, show_body:Boolean},
   data: () => ({ready:false, warmed:false, progress:'Choose a garment to preview.', failure:'', paused:false,
-    fps:0, frames:0, loadedScene:'', hasSupport:false, support:false,
+    fps:0, frames:0, loadedScene:'', hasSupport:false, support:false, wind:false,
     bodyNote:'Default mannequin',fitRows:[],hasButtons:false,buttonsClosed:true}),
   computed: {
     state() {return this.error || this.failure ? 'error' : !this.preparing && !this.scene_url ? 'empty' : this.preparing || !this.ready ? 'preparing' :
-      this.paused ? 'paused' : this.active ? 'running' : this.warmed ? 'ready' : 'warming';},
+      this.paused ? 'paused' : this.active || (this.wind && this.docked) ? 'running' : this.warmed ? 'ready' : 'warming';},
   },
   mounted() {
     engines.set(this, {generation:0, disposed:false, loading:false, frame:0});
@@ -114,6 +116,7 @@ export default {
         cloth=await Cloth.create(e.device,scene,()=>{this.progress='Preparing cloth and mannequin in your browser…';});
         if(generation!==e.generation || e.disposed){cloth.destroy();cloth=null;return;}
         e.cloth=cloth;cloth=null;
+        e.cloth.settings.wind=this.wind?WIND_STRENGTH:0;
         e.renderer=new Renderer(e.device,this.$refs.canvas,e.cloth,navigator.gpu.getPreferredCanvasFormat(),{systemTheme:true});
         const height=scene.body_fit?.measurements?.height?.actual_cm/100 || 1.72;
         e.defaultCamera={yaw:0,pitch:0,distance:height*1.9,target:[...e.cloth.motion.center],pan:[0,0]};
@@ -140,7 +143,8 @@ export default {
       const e=engines.get(this);if(!e || e.disposed)return;
       try {
         const visible=this.active && this.$el.getClientRects().length>0;
-        const simulate=!this.paused && (visible || !this.warmed);
+        const windVisible=this.wind && this.docked && this.$el.getClientRects().length>0;
+        const simulate=!this.paused && (visible || windVisible || !this.warmed);
         if(document.hidden || !simulate)e.last=null;
         const interval=1000/(visible?60:30);
         if(!document.hidden && this.ready && !this.preparing && !this.error && !this.failure && !e.loading &&
@@ -174,6 +178,12 @@ export default {
     front() {this.wake();const e=engines.get(this);if(!this.paused)e.cloth.motion.front();e.renderer.camera.yaw=this.paused?e.cloth.motion.yaw:0;e.renderer.camera.pitch=0;e.renderer.dirty=true;},
     center() {const e=engines.get(this);Object.assign(e.renderer.camera,{...e.defaultCamera,target:[...e.defaultCamera.target],pan:[0,0]});e.renderer.dirty=true;},
     setSupport() {engines.get(this).cloth.settings.holdNeckline=this.support;},
+    toggleWind() {
+      const e=engines.get(this);if(!e?.cloth)return;
+      this.wind=!this.wind;e.cloth.settings.wind=this.wind?WIND_STRENGTH:0;
+      // Let the dock settle after switching off; keep an explicit Pause intact.
+      e.warmupRemaining=WARMUP_SECONDS;this.warmed=false;e.last=null;
+    },
     toggleButtons() {const e=engines.get(this);this.buttonsClosed=!this.buttonsClosed;e.cloth.scene.buttons.forEach((_,i)=>e.cloth.setButton(i,this.buttonsClosed));this.paused=false;this.wake();},
     retry() {const e=engines.get(this);e.url='';this.failure='';if(this.error)this.$emit('retry');else this.load();},
   },

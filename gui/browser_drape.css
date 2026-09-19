@@ -8,6 +8,7 @@
 .se-drape-controls { position:absolute; bottom:55px; right:14px; display:flex; align-items:center; gap:2px; padding:3px; border:1px solid #1d2b4214; border-radius:10px; background:#fafaf7ed; color:#5a6270; font-size:.75rem; z-index:1; }
 .se-drape-icon { display:flex; align-items:center; justify-content:center; width:34px; height:34px; padding:0; border:0; border-radius:6px; background:transparent; color:inherit; cursor:pointer; }
 .se-drape-icon svg { width:17px; height:17px; fill:none; stroke:currentColor; stroke-width:1.7; stroke-linecap:round; stroke-linejoin:round; }
+.se-drape-icon.se-drape-wind { width:auto; min-width:64px; padding:0 8px; font:inherit; white-space:nowrap; }
 .se-drape-controls button:hover, .se-drape-icon:hover, .se-drape-more[open] > summary { background:#e4ebf6; color:#1d2b42; }
 .se-drape-controls button[aria-pressed=true] { background:#e4ebf6; color:#35558a; }
 .se-browser-drape button:focus-visible, .se-browser-drape summary:focus-visible { outline:2px solid #35558a; outline-offset:2px; }

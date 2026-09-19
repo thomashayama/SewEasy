@@ -8,7 +8,7 @@ const source=readFileSync(new URL('../gui/browser_drape.js',import.meta.url),'ut
   .replace(/^import .*;$/gm,'').replace('export default {','globalThis.component = {');
 
 function setup({gpu,fetch}={}) {
-  const emitted=[],destroyed=[],elapsed=[],renderers=[];
+  const emitted=[],destroyed=[],elapsed=[],renderers=[],winds=[];
   const device={queue:{onSubmittedWorkDone:async()=>{},submit(){}},createCommandEncoder:()=>({finish(){}}),lost:new Promise(()=>{}),
     addEventListener(){},destroy(){destroyed.push('device');}};
   const context=vm.createContext({navigator:gpu===false?{}:{gpu:{
@@ -16,7 +16,7 @@ function setup({gpu,fetch}={}) {
     fetch,performance:{now:()=>1000},AbortController,document:{hidden:false},
     requestAnimationFrame:()=>1,cancelAnimationFrame(){},
     Cloth:{create:async(_device,scene)=>({scene,frame:0,motion:{center:[0,.86,0]},supportTargets:[],settings:{holdNeckline:false},
-      encode(_encoder,_queries,dt){elapsed.push(dt);this.frame++;},destroy(){destroyed.push(scene.name);}})},
+      encode(_encoder,_queries,dt){elapsed.push(dt);winds.push(this.settings.wind);this.frame++;},destroy(){destroyed.push(scene.name);}})},
     Renderer:class {constructor(){this.bodyView={};this.controls={};this.camera={target:[0,1,0],pan:[0,0]};renderers.push(this);}render(){this.dirty=false;}setFabricColors(){}destroy(){}}
   });
   vm.runInContext(source,context);
@@ -25,7 +25,7 @@ function setup({gpu,fetch}={}) {
     fabric_color:'#ffffff',body_color:'#ffffff',panel_colors:{},show_body:true,
     $refs:{canvas:{}},$el:{getClientRects:()=>[{}]},$emit:(...event)=>emitted.push(event)};
   for(const [key,fn] of Object.entries(component.methods))instance[key]=fn.bind(instance);
-  return {instance,component,emitted,destroyed,elapsed,renderers,context};
+  return {instance,component,emitted,destroyed,elapsed,renderers,context,winds};
 }
 
 async function until(predicate) {
@@ -144,5 +144,39 @@ test('interacting with the dock wakes physics, settles again and respects explic
   s.instance.paused=true;s.component.watch.paused.call(s.instance);s.instance.wake();
   await s.instance.tick(now+2000);assert.equal(s.elapsed.length,before+36);
   assert.equal(requests,1);assert.equal(s.renderers.length,1);
+  s.component.beforeUnmount.call(s.instance);
+});
+
+test('wind keeps the dock running, switches off without a reload and settles back to idle',async()=>{
+  let requests=0;
+  const s=setup({fetch:async()=>{requests++;return {ok:true,json:async()=>({name:'wind'})};}});
+  s.instance.active=false;s.instance.docked=true;
+  s.component.mounted.call(s.instance);await until(()=>s.instance.ready);
+  let now=1000;
+  while(!s.instance.warmed){await s.instance.tick(now);now+=34;}
+  assert.equal(s.instance.wind,false);assert.ok(s.winds.every(w=>w===0));
+  const renderer=s.renderers[0],camera=JSON.stringify(renderer.camera),before=s.elapsed.length;
+  s.instance.toggleWind();
+  for(let i=0;i<200;i++){await s.instance.tick(now);now+=34;}
+  assert.equal(s.elapsed.length,before+200);assert.ok(s.winds.slice(before).every(w=>w===3));
+  assert.equal(s.instance.warmed,true);assert.equal(JSON.stringify(renderer.camera),camera);
+  s.instance.toggleWind();const off=s.elapsed.length;
+  while(!s.instance.warmed){await s.instance.tick(now);now+=34;}
+  assert.ok(s.winds.slice(off).every(w=>w===0));assert.equal(s.elapsed.length,off+180);
+  await s.instance.tick(now+1000);assert.equal(s.elapsed.length,off+180);
+  assert.equal(requests,1);assert.equal(s.renderers.length,1);
+  s.component.beforeUnmount.call(s.instance);
+});
+
+test('wind respects Pause and hidden tabs, and carries across scene replacement',async()=>{
+  const s=setup({fetch:async()=>({ok:true,json:async()=>({name:'wind-pause'})})});
+  s.component.mounted.call(s.instance);await until(()=>s.instance.ready);
+  s.instance.paused=true;s.component.watch.paused.call(s.instance);s.instance.toggleWind();
+  await s.instance.tick(1000);assert.equal(s.elapsed.length,0);assert.equal(s.instance.paused,true);
+  s.instance.paused=false;s.component.watch.paused.call(s.instance);
+  s.context.document.hidden=true;await s.instance.tick(2000);assert.equal(s.elapsed.length,0);
+  s.context.document.hidden=false;await s.instance.tick(3000);assert.equal(s.winds.at(-1),3);
+  s.instance.scene_url='/geo/test/wind-revision.json';s.component.watch.scene_url.call(s.instance);
+  await until(()=>s.instance.ready);await s.instance.tick(4000);assert.equal(s.winds.at(-1),3);
   s.component.beforeUnmount.call(s.instance);
 });
