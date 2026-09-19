@@ -4,15 +4,17 @@ Open **Account → Fabrics**. Import a U3M 1.1 material, edit its properties,
 save a named copy, or export a U3MA package. The import dialog includes a
 published cupro measurement sample; its minimal material wrapper is ours.
 
-The fabric menu's **Compare weight in 3D** opens two independent WebGPU
-simulations of the same tee on the default mannequin: the current 300 g/m²
-reference and the saved fabric's weight. The CPU only triangulates the
-reference pattern once per process. Simulation and rendering run in the browser.
-Vertex masses change in proportion to areal density; gravity, geometry,
-bending, stretch, friction, and all other settings remain identical.
-This tests data integration and numerical stability, not whether a real cupro
-garment will drape accurately. Library fabrics are not assigned to saved
-garment pieces yet.
+The fabric menu's **Test fabric swatch** compares two clamped strips: a
+300 g/m² reference and the saved fabric's weight. Synchronized browser WebGPU
+simulations show tip drop in millimetres and overlaid profiles. An equal-weight
+control verifies that matching inputs give matching results. The former fitted
+tee comparison was too insensitive to be a useful demonstration.
+
+Only particle mass changes between the swatches. The shared bending coefficient
+is an explicit assumption, not a converted vendor measurement. This tests the
+weight response, not whether a real cupro garment will drape accurately. See
+[the swatch model and validation](FabricSwatch.md) for its assumptions and
+numerical checks. Library fabrics are not assigned to saved garment pieces yet.
 
 ## Storage
 
@@ -88,6 +90,7 @@ Reference schemas and sample attribution: [webapp/u3m_spec](../webapp/u3m_spec).
 Run `python -m unittest test_fabrics -v` in the GUI environment. Tests cover
 the published sample, schema and U3MA headers, preservation, edits and copies,
 account isolation, stale writes, deferred BLOBs, private preview access, and
-actual tee mass = pattern area × imported areal density. Browser checks also
+actual swatch mass = pattern area × imported areal density, including its
+clamped portion. Browser checks also
 cover sample import, save, export, reimport, blank/invalid values, and the live
 WebGPU comparison.
