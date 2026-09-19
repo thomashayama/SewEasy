@@ -1,5 +1,6 @@
 """Account-owned fabric records and immutable, body-independent snapshots."""
 from copy import deepcopy
+import re
 from uuid import uuid4
 
 from sqlalchemy import select, update
@@ -154,8 +155,30 @@ def copy_fabric(email, identity, name=None):
     return _create(email, name or _copy_name(email, source['name']), source['content'], raw, filename)
 
 
-def update_fabric(email, identity, edit_token, *, name, description, values):
-    """Compare-and-swap prevents overwrites from another tab or stale editor."""
+def _imported(row):
+    """What the stored original says, before any edit made here."""
+    if not (row.source_name and row.source_bytes):
+        return {}
+    try:
+        return formats.import_fabric(row.source_bytes, row.source_name)['properties']
+    except ValueError:
+        return {}
+
+
+def imported_properties(email, identity):
+    """An override never discards the measurement it replaced; the file still has it."""
+    if identity.startswith('standard:'):
+        return {}
+    with SessionLocal() as db:
+        return _imported(_owned(db, email, identity))
+
+
+def update_fabric(email, identity, edit_token, *, name, description, values, restore=(), display_color=None):
+    """Compare-and-swap prevents overwrites from another tab or stale editor.
+
+    `restore` names properties to take back from the imported file, provenance
+    included. `display_color` is left alone when None and cleared when empty.
+    """
     if identity.startswith('standard:'):
         raise ValueError('Save a copy before editing a standard fabric.')
     with SessionLocal() as db:
@@ -164,8 +187,24 @@ def update_fabric(email, identity, edit_token, *, name, description, values):
         if not isinstance(description, str) or len(description) > 4000:
             raise ValueError('Keep the description under 4,000 characters.')
         content['description'] = description
+        if display_color is not None:
+            if display_color and not re.fullmatch(r'#[0-9a-fA-F]{6}', str(display_color)):
+                raise ValueError('Use a six-digit hex color, or leave it blank.')
+            look = content.setdefault('appearance', {})
+            look.pop('display_color', None)
+            if display_color:
+                look['display_color'] = display_color.lower()
         if not isinstance(values, dict) or not set(values) <= set(formats.PROPERTY_UNITS):
             raise ValueError('Unknown fabric property.')
+        restore = set(restore) - set(values)
+        if not restore <= set(formats.PROPERTY_UNITS):
+            raise ValueError('Unknown fabric property.')
+        if restore:
+            imported = _imported(row)
+            if not imported:
+                raise ValueError('This fabric has no imported measurements to restore.')
+            for key in restore:
+                content['properties'][key] = deepcopy(imported[key])
         for key, value in values.items():
             normalized = None if value is None or value == '' else formats.number(value)
             item = content['properties'][key]
@@ -191,8 +230,12 @@ APPLIED_KEYS = ('description', 'properties', 'solver_tuning', 'catalog')
 
 def _applied(record):
     content = record['content']
-    return dict(source_fabric_id=record['id'], name=record['name'], standard=record['standard'],
-                **{key: deepcopy(content[key]) for key in APPLIED_KEYS if key in content})
+    result = dict(source_fabric_id=record['id'], name=record['name'], standard=record['standard'],
+                  **{key: deepcopy(content[key]) for key in APPLIED_KEYS if key in content})
+    color = (content.get('appearance') or {}).get('display_color')
+    if color:
+        result['display_color'] = color
+    return result
 
 
 def snapshot(email, identity):

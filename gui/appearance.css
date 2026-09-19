@@ -76,7 +76,7 @@ body .se-library-art>.se-thumbnail {background:transparent;}
  body .se-fabric-color input[type=text] {color:var(--se-graphite);}
  body :is(.se-fabric-panel footer,.se-studio-inspector .se-fabric-panel footer) {background:var(--se-paper); color:var(--se-muted); border-color:var(--se-chalkline);}
  body :is(.se-fabric-drape,.se-fabric-selection,.se-fabric-custom,.se-fabric-stiffness,.se-fabric-panel fieldset) {border-color:var(--se-chalkline);}
- body :is(.se-fabric-drape summary,.se-fabric-selection summary,.se-fabric-custom summary,.se-fabric-selection-actions button,.se-fabric-reset) {color:var(--se-indigo);}
+ body :is(.se-fabric-drape summary,.se-fabric-selection summary,.se-fabric-custom summary,.se-fabric-selection-actions button,.se-fabric-reset,.se-fabric-outdated button) {color:var(--se-indigo);}
  body .se-color-swatches button {box-shadow:0 0 0 3px var(--se-surface); border-color:var(--se-chalkline);}
  body .se-color-swatches button[aria-pressed=true] {outline-color:var(--se-indigo);}
  body .se-fabric-empty svg {fill:var(--se-raised); stroke:var(--se-indigo);}

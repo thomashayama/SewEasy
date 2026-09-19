@@ -20,9 +20,11 @@ SUPPORT = {
     'weight': ('piece', 'Vertex mass is rest triangle area × g/m².'),
     'bend_warp': ('piece', 'Averaged with the weft rigidity into one isotropic bending multiplier.'),
     'bend_weft': ('piece', 'Averaged with the warp rigidity into one isotropic bending multiplier.'),
-    'damping': ('garment', 'Area-weighted mean; the solver damps velocity for the whole garment.'),
-    'friction': ('garment', 'Area-weighted mean, used as the positional body-friction factor, '
-                            'which is not a Coulomb coefficient.'),
+    'damping': ('garment', 'Mean over the garment by rest area; pieces without a value count at the '
+                           'solver default. The solver damps velocity for the whole garment.'),
+    'friction': ('garment', 'Mean over the garment by rest area; pieces without a value count at the '
+                            'solver default. Used as the positional body-friction factor, which is '
+                            'not a Coulomb coefficient.'),
     'thickness': ('garment', 'Raises the 4 mm numerical contact margin when a material is thicker. '
                              'It never lowers the margin and never replaces the measurement.'),
     'stretch_warp': ('stored', 'Garment panels use scalar distance constraints and a strain limiter, '
@@ -85,11 +87,13 @@ def garment_settings(materials, areas):
         return {}
     values = {panel: applied(material) for panel, material in materials.items()}
     result = {}
+    total = sum(float(area) for area in areas.values())
     for key, default in (('damping', DEFAULT_DAMPING), ('friction', DEFAULT_FRICTION)):
-        weighted = [(float(areas.get(panel) or 0.), item[key])
-                    for panel, item in values.items() if item[key] is not None]
-        total = sum(area for area, _ in weighted)
-        result[key] = sum(area * value for area, value in weighted) / total if total else default
+        # Every piece votes by area. One without a value votes for the solver
+        # default, so a single cuff cannot set the whole garment's friction.
+        weighted = sum(float(area) * (values[panel][key] if panel in values and values[panel][key] is not None
+                                      else default) for panel, area in areas.items())
+        result[key] = weighted / total if total else default
     thickness = [item['thickness_mm'] / 1000 for item in values.values() if item['thickness_mm']]
     result['thickness'] = max([MIN_CLEARANCE_M, *thickness])
     return result

@@ -345,6 +345,50 @@ class FabricStorageTest(unittest.TestCase):
         self.assertEqual(snapshot['source_fabric_id'], self.record['id'])
         self.assertNotIn('edit_token', snapshot)
 
+    def test_an_override_keeps_the_imported_measurement_restorable_with_its_provenance(self):
+        measured = deepcopy(self.record['content']['properties']['weight'])
+        changed = self.save(values={'weight': '80', 'friction': ''})
+        self.assertEqual(changed['content']['properties']['weight']['origin'], 'user')
+        imported = fabrics.imported_properties(self.alice, self.record['id'])
+        self.assertEqual(imported['weight'], measured)
+        self.assertEqual(imported['friction']['value'], .2)       # a cleared field is still in the file
+        restored = fabrics.update_fabric(self.alice, changed['id'], changed['edit_token'], name=changed['name'],
+                                         description='', values={}, restore=['weight', 'friction'])
+        self.assertEqual(restored['content']['properties']['weight'], measured)
+        self.assertEqual(restored['content']['properties']['friction']['origin'], 'reported')
+        # An edit made after restoring wins; it is a new value, not the file's.
+        edited = fabrics.update_fabric(self.alice, restored['id'], restored['edit_token'], name=restored['name'],
+                                       description='', values={'weight': '90'}, restore=['weight'])
+        self.assertEqual(edited['content']['properties']['weight']['origin'], 'user')
+        self.assertEqual(fabrics.imported_properties(self.bob, 'standard:canvas'), {})
+        with self.assertRaisesRegex(ValueError, 'unavailable'):
+            fabrics.imported_properties(self.bob, self.record['id'])
+        blank = fabrics.create_fabric(self.alice, 'Hand entered')
+        with self.assertRaisesRegex(ValueError, 'no imported measurements'):
+            fabrics.update_fabric(self.alice, blank['id'], blank['edit_token'], name='Hand entered',
+                                  description='', values={}, restore=['weight'])
+
+    def test_display_color_travels_with_copies_snapshots_and_exports(self):
+        saved = fabrics.update_fabric(self.alice, self.record['id'], self.record['edit_token'],
+                                      name=self.record['name'], description='', values={}, display_color='#1F3A5F')
+        self.assertEqual(saved['content']['appearance']['display_color'], '#1f3a5f')
+        self.assertEqual(fabrics.snapshot(self.alice, saved['id'])['display_color'], '#1f3a5f')
+        self.assertEqual(fabrics.copy_fabric(self.alice, saved['id'])['content']['appearance']['display_color'], '#1f3a5f')
+        exported = fabrics.export_fabric(self.alice, saved['id'])
+        self.assertEqual(fmt.import_fabric(exported, 'navy.u3ma')['appearance']['display_color'], '#1f3a5f')
+        # None leaves it alone; an empty value clears it everywhere it travelled.
+        kept = self.save(saved, name='Navy cupro')
+        self.assertEqual(kept['content']['appearance']['display_color'], '#1f3a5f')
+        cleared = fabrics.update_fabric(self.alice, kept['id'], kept['edit_token'], name=kept['name'],
+                                        description='', values={}, display_color='')
+        self.assertNotIn('display_color', cleared['content']['appearance'])
+        self.assertNotIn('display_color', fabrics.snapshot(self.alice, cleared['id']))
+        self.assertNotIn('display_color', fmt.import_fabric(
+            fabrics.export_fabric(self.alice, cleared['id']), 'plain.u3ma')['appearance'])
+        with self.assertRaisesRegex(ValueError, 'hex'):
+            fabrics.update_fabric(self.alice, cleared['id'], cleared['edit_token'], name=cleared['name'],
+                                  description='', values={}, display_color='navy')
+
     def test_unchanged_values_preserve_measurement_provenance(self):
         value = self.record['content']['properties']['weight']['value']
         saved = self.save(values={'weight': str(value)})

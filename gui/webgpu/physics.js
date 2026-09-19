@@ -294,6 +294,7 @@ export class Cloth {
     this.settings.holdNeckline=this.supportTargets.length>0;
     // Solver-wide values the assigned fabrics resolved on the server. Per-piece
     // mass and bending already arrive in the mesh itself.
+    this.referenceContact={damping:this.settings.damping,friction:this.settings.friction,thickness:this.settings.thickness};
     Object.assign(this.settings,scene.material_settings||{});
     // These controlled load fixtures start planar and have only in-plane forces.
     // Their dihedral energy stays zero; don't repeatedly solve zero bend forces.
@@ -463,7 +464,13 @@ export class Cloth {
     }
     this.updateParams();
     const encoder=d.createCommandEncoder();this.dispatch(encoder,this.normalPass);d.queue.submit([encoder.finish()]);await d.queue.onSubmittedWorkDone();
-    await this.checkKernels();
+    // The kernel fixtures assert reference numbers. They verify the kernels,
+    // so they must not inherit the contact values of whichever fabric this
+    // garment is cut from.
+    const applied=this.scene.material_settings?{...this.settings}:null;
+    if(applied){Object.assign(this.settings,this.referenceContact);this.updateParams();}
+    try{await this.checkKernels();}
+    finally{if(applied){Object.assign(this.settings,applied);this.updateParams();}}
   }
   async checkKernels(){
     if(this.buttonSolve){

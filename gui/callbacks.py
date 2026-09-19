@@ -867,10 +867,36 @@ class GUIState:
         self.selected_panels = list(dict.fromkeys(p for p in panels if p in self.pattern_state.panel_svg_paths))
         self.ui_pattern_display.configure(selected=self.selected_panels)
         settings = self.pattern_state.panel_fabric_settings(self.selected_panels)
+        outdated = self._outdated_materials(settings)
         self.ui_fabric_panel.configure(
-            selection=[dict(id=p, label=self.panel_label(p), **settings[p]) for p in self.selected_panels],
+            selection=[dict(id=p, label=self.panel_label(p), **settings[p], material_outdated=p in outdated)
+                       for p in self.selected_panels],
             available=len(self.pattern_state.panel_svg_paths),
             **({'open': True} if open_panel and self.selected_panels else {}))
+
+    def _outdated_materials(self, settings):
+        """Pieces whose saved fabric copy no longer matches the library's.
+
+        A garment never follows a library edit on its own; this only lets the
+        panel offer the update.
+        """
+        from webapp.fabrics import library_snapshot
+        library = {item['id'] for item in self.ui_fabric_panel._props['library']}
+        if not any(item['material'] in library for item in settings.values()):
+            return set()
+        assigned, current, outdated = self.pattern_state.display_panel_materials(), {}, set()
+        for panel, item in settings.items():
+            identity = item['material']
+            if identity not in library or panel not in assigned:
+                continue
+            if identity not in current:
+                try:
+                    current[identity] = library_snapshot(self.user['email'] if self.user else None, identity)
+                except ValueError:
+                    current[identity] = None
+            if current[identity] is not None and current[identity] != assigned[panel]:
+                outdated.add(panel)
+        return outdated
 
     async def edit_selected_fabric(self, e):
         data = e.args

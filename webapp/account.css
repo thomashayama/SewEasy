@@ -9,6 +9,7 @@
 .se-account .se-stitch-card {border:1px solid var(--home-line); border-radius:6px; padding:20px; box-shadow:none;}
 .se-account .se-section-label {color:var(--home-ink);}
 .se-account .se-param-label {color:var(--home-muted);}
+.se-fabric-chip {width:16px; height:16px; flex:none; border-radius:50%; border:1px solid var(--home-line);}
 @media(prefers-color-scheme:dark) {
  .se-account .se-account-nav-active {background:var(--se-selected); color:var(--se-indigo);}
 }

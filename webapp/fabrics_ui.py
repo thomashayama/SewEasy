@@ -6,6 +6,10 @@ from nicegui import run, ui
 from webapp import fabrics
 from webapp import fabric_formats as formats
 from webapp.fabric_catalog import evidence_label, metadata, standard_fabrics
+from webapp.garment_materials import SUPPORT
+
+# What a garment drape does with a property; the swatch uses all of them.
+DRAPE_SCOPE = {'piece': 'drapes each piece', 'garment': 'drapes the whole garment', 'stored': 'swatch tests only'}
 
 
 async def fabric_library(email):
@@ -13,7 +17,10 @@ async def fabric_library(email):
         record = await run.io_bound(fabrics.get_fabric, email, identity)
         content = record['content']
         standard = record['standard']
-        inputs, initial = {}, {}
+        inputs, initial, restored = {}, {}, {}
+        # An edit or a cleared field can hide what the original file measured.
+        imported = (await run.io_bound(fabrics.imported_properties, email, identity)
+                    if record.get('has_source') else {})
         with ui.context.client, ui.dialog().props('persistent') as dialog, ui.card().classes('se-stitch-card w-full max-w-xl gap-4'):
             with ui.row().classes('w-full items-center justify-between'):
                 ui.label('Fabric properties').classes('se-section-label text-lg')
@@ -42,24 +49,44 @@ async def fabric_library(email):
                 prop = content['properties'][key]
                 initial[key] = '' if prop['value'] is None else f'{prop["value"]:.8g}'
                 with ui.column().classes('gap-1 min-w-0'):
-                    inputs[key] = ui.input(label, value=initial[key], placeholder='Unknown').props(
+                    inputs[key] = ui.input(label, value=initial[key], placeholder='Unknown',
+                                           on_change=lambda: refresh()).props(
                         'outlined dense clearable inputmode=decimal').classes('w-full')
                     if standard:
                         inputs[key].props('readonly').props(remove='clearable')
                     origin = {'unknown': 'Not supplied', 'user': 'Your value', 'reported': 'Reported value',
                               'measured': 'Measured', 'estimated': 'Estimate'}[prop['origin']]
-                    with ui.label(origin).classes('se-param-label text-xs'):
-                        if prop.get('source'):
-                            ui.tooltip(prop['source']).classes('max-w-sm')
+                    scope, effect = SUPPORT[key]
+                    with ui.label(f'{origin} · {DRAPE_SCOPE[scope]}').classes('se-param-label text-xs'):
+                        ui.tooltip(' '.join(filter(None, [prop.get('source'), effect]))).classes('max-w-sm')
+                    original = imported.get(key) or {}
+                    if not standard and original.get('value') is not None and original['value'] != prop['value']:
+                        text = f'{original["value"]:.8g}'
+
+                        def restore(key=key, text=text):
+                            restored[key] = text
+                            inputs[key].set_value(text)
+                        # The file's own measurement survives an override or a cleared field.
+                        with ui.row().classes('items-center gap-1'):
+                            ui.label(f'Imported: {text}').classes('se-param-label text-xs')
+                            ui.button('Restore', on_click=restore).props(
+                                f'flat dense no-caps size=sm aria-label="Restore imported {label}"')
 
             with ui.grid(columns=2).classes('w-full gap-x-4 gap-y-3'):
                 field('weight', 'Weight (g/m²)')
                 field('thickness', 'Thickness (mm)')
                 field('friction', 'Friction coefficient')
+                initial_color = (content.get('appearance') or {}).get('display_color', '')
+                with ui.column().classes('gap-1 min-w-0'):
+                    color = ui.color_input('Display color', value=initial_color, on_change=lambda: refresh()).props(
+                        'outlined dense clearable').classes('w-full')
+                    if standard:
+                        color.props('readonly').props(remove='clearable')
+                    ui.label('Pieces cut from this fabric start this color.').classes('se-param-label text-xs')
             with ui.expansion('Additional physical properties').classes('w-full'):
-                ui.label('Weight, directional bending and stretch, shear, and damping drive the swatch tests. '
-                         'Leave unknown values blank; test assumptions are shown in the preview. '
-                         'Thickness and friction are stored for future contact tests.').classes('se-param-label mb-3')
+                ui.label('Swatch tests use every value here. A garment drape uses weight and bending per piece, '
+                         'and damping, friction and thickness for the whole garment; stretch and shear are '
+                         'swatch-only. Leave unknown values blank.').classes('se-param-label mb-3')
                 with ui.grid(columns=2).classes('w-full gap-3'):
                     for key, label in (
                         ('stretch_warp', 'Warp stretch stiffness (N/m)'), ('stretch_weft', 'Weft stretch stiffness (N/m)'),
@@ -93,31 +120,55 @@ async def fabric_library(email):
                              if len(warnings) == 1 else
                              f'{len(warnings)} texture references declare sizes that do not match their images.'
                              ).classes('se-param-label text-sm').props('role=note')
+            if not standard:
+                ui.label('Garments already cut from this fabric keep their saved copy. Choose the fabric '
+                         'again in the sewing pattern to apply a change.').classes('se-param-label text-sm')
             error = ui.label('').classes('text-negative text-sm').props('role=alert')
 
+            def dirty():
+                return (name.value != record['name'] or (description.value or '') != content['description']
+                        or (color.value or '') != initial_color
+                        or any((item.value or '') != initial[key] for key, item in inputs.items()))
+
+            def refresh():
+                if standard or 'save' not in controls:
+                    return
+                unsaved = dirty()
+                controls['state'].set_text('Unsaved changes' if unsaved else 'All changes saved')
+                controls['cancel'].set_text('Discard changes' if unsaved else 'Close')
+                controls['save'].set_enabled(unsaved)
+
             async def save():
-                save_button.disable()
+                controls['save'].disable()
                 try:
-                    changed = {key: field.value for key, field in inputs.items()
-                               if (field.value or '') != initial[key]}
+                    # A restored field returns with its provenance; an edit after restoring is an edit.
+                    back = {key for key, text in restored.items() if (inputs[key].value or '') == text}
+                    changed = {key: item.value for key, item in inputs.items()
+                               if (item.value or '') != initial[key] and key not in back}
                     await run.io_bound(fabrics.update_fabric, email, identity, record['edit_token'],
-                                       name=name.value, description=description.value or '', values=changed)
+                                       name=name.value, description=description.value or '', values=changed,
+                                       restore=back, display_color=color.value or '')
                     dialog.close()
                     listing.refresh()
                     ui.notify('Fabric saved', type='positive')
                 except ValueError as exc:
                     error.set_text(str(exc))
-                finally:
-                    save_button.enable()
-            with ui.row().classes('w-full justify-end gap-2'):
-                ui.button('Close' if standard else 'Cancel', on_click=dialog.close).props('flat no-caps')
+                    controls['save'].enable()
+            controls = {}
+            with ui.row().classes('w-full items-center justify-end gap-2'):
+                if not standard:
+                    controls['state'] = ui.label('All changes saved').classes('se-param-label text-sm mr-auto').props('role=status')
+                controls['cancel'] = ui.button('Close', on_click=dialog.close).props('flat no-caps')
                 if standard:
                     async def make_copy():
                         dialog.close()
                         await copy(identity)
                     ui.button('Save a copy', icon='content_copy', on_click=make_copy).props('unelevated no-caps')
                 else:
-                    save_button = ui.button('Save', on_click=save).props('unelevated no-caps')
+                    controls['save'] = ui.button('Save', on_click=save).props('unelevated no-caps')
+                    controls['save'].disable()
+            name.on_value_change(lambda: refresh())
+            description.on_value_change(lambda: refresh())
         dialog.open()
         await dialog
         dialog.delete()
@@ -219,7 +270,7 @@ async def fabric_library(email):
             ui.button('New fabric', on_click=new_fabric).props('flat no-caps')
             ui.button('Import U3M', icon='file_upload', on_click=import_dialog).props('unelevated no-caps')
     ui.label('Try a swatch, inspect its sources, or save a copy to edit. '
-             'Swatch previews use these properties; garment assignment is coming next.').classes('se-param-label')
+             'Cut pieces from a fabric under Fabric type in the sewing pattern.').classes('se-param-label')
     with ui.row().classes('w-full items-center justify-between gap-3'):
         collection = ui.toggle({'common': 'Common fabrics', 'saved': 'My fabrics'}, value='common',
                                on_change=lambda: listing.refresh()).props('no-caps unelevated')
@@ -255,7 +306,12 @@ async def fabric_library(email):
             with ui.card().classes('se-stitch-card w-full p-3 gap-1'):
                 with ui.row().classes('w-full items-center justify-between gap-3'):
                     with ui.column().classes('gap-0 min-w-0'):
-                        ui.button(record['name'], on_click=lambda _, i=record['id']: edit(i)).props('flat no-caps align=left').classes('font-medium -ml-3')
+                        with ui.row(wrap=False).classes('items-center gap-2'):
+                            shade = (record['content'].get('appearance') or {}).get('display_color')
+                            if shade:
+                                ui.element('span').classes('se-fabric-chip').style(f'background:{shade}').props(
+                                    f'role=img aria-label="Display color {shade}"')
+                            ui.button(record['name'], on_click=lambda _, i=record['id']: edit(i)).props('flat no-caps align=left').classes('font-medium' + ('' if shade else ' -ml-3'))
                         catalog = record['content'].get('catalog')
                         if catalog:
                             ui.label(f'{catalog["composition"]} · {catalog["construction"]}').classes('se-param-label text-sm')

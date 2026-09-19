@@ -30,6 +30,9 @@ export default {
             <option value="custom">Custom</option>
           </select>
         </label>
+        <p v-if="outdated" class="se-fabric-outdated" role="note">This fabric changed in your library after it was applied here.
+          <button v-if="shared('material')" @click="edit('material',shared('material'))">Apply current fabric</button>
+        </p>
         <div class="se-color-swatches" aria-label="Fabric colors">
           <button v-for="swatch in swatches" :key="swatch.color" :style="{'--swatch':swatch.color}" :aria-label="swatch.name+' fabric'"
             :aria-pressed="shared('bg')===swatch.color" :title="swatch.name" @click="edit('bg',swatch.color)"></button>
@@ -89,6 +92,7 @@ export default {
       if(this.assignedName)return 'Saved with this garment. It is not in your fabric library.';
       return this.materials.find(fabric=>fabric.id===id)?.description||'';
     },
+    outdated() {return this.selection.some(p=>p.material_outdated);},
     libraryGroups() {
       const groups=[];
       for(const fabric of this.library||[]){

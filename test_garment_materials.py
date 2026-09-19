@@ -72,6 +72,9 @@ class MappingTest(unittest.TestCase):
         self.assertAlmostEqual(thick['thickness'], .009)
         self.assertEqual(thick['damping'], materials.DEFAULT_DAMPING)
         self.assertEqual(materials.garment_settings({}, {}), {})
+        # One slippery cuff on an otherwise unassigned shirt barely moves the garment.
+        cuff = materials.garment_settings({'cuff': material(friction=0.)}, {'cuff': .02, 'body': .98})
+        self.assertAlmostEqual(cuff['friction'], materials.DEFAULT_FRICTION * .98)
 
 
 class AssignmentTest(unittest.TestCase):
@@ -124,6 +127,34 @@ class AssignmentTest(unittest.TestCase):
         settings = p.panel_fabric_settings(self.panels[:1])[self.panels[0]]
         self.assertEqual(settings['stiffness'], 12.)
         self.assertEqual(settings['material'], POPLIN)
+
+    def test_a_fabric_with_a_display_color_tints_the_pieces_cut_from_it(self):
+        p = self.pattern
+        panel, other = self.panels
+        p.edit_panel_fabrics([panel], 'kind', 'stripe')
+        navy = dict(fabrics.library_snapshot(None, DENIM), display_color='#1f3a5f')
+        p.edit_panel_fabrics([panel], 'material', DENIM, navy)
+        self.assertEqual(p.panel_colors[panel], '#1f3a5f')
+        self.assertEqual(p.panel_fabrics[panel]['bg'], '#1f3a5f')     # the print keeps its motif
+        self.assertEqual(p.panel_fabrics[panel]['kind'], 'stripe')
+        # A fabric without a colour leaves the piece's own colour alone.
+        p.edit_panel_fabrics([other], 'bg', '#aa5500')
+        self.assign([other], POPLIN)
+        self.assertEqual(p.panel_colors[other], '#aa5500')
+        p.edit_panel_fabrics([panel], 'bg', '#ffffff')                # and stays recolourable
+        self.assertEqual(p.panel_materials[panel], DENIM)
+
+    def test_a_library_edit_reaches_a_garment_only_when_reapplied(self):
+        p = self.pattern
+        panel = self.panels[0]
+        self.assign([panel], POPLIN)
+        revised = fabrics.library_snapshot(None, POPLIN)
+        revised['properties']['weight'].update(value=140., origin='user')
+        self.assertNotEqual(revised, p.display_panel_materials()[panel])    # what the panel flags
+        self.assertEqual(p.materials[POPLIN]['properties']['weight']['value'], 100.)
+        p.edit_panel_fabrics([panel], 'material', POPLIN, revised)          # "Apply current fabric"
+        self.assertEqual(p.display_panel_materials()[panel], revised)
+        self.assertEqual(set(p.materials), {POPLIN})
 
     def test_two_garments_in_one_outfit_keep_separate_fabrics(self):
         p = self.pattern

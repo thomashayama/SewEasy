@@ -27,6 +27,14 @@ test('assigned fabrics set damping, body friction and the contact margin',()=>{
   assert.equal(cloth.settings.strainLimit,1.02);
 });
 
+test('kernel self-checks keep the reference contact values to assert against',()=>{
+  // Their expected numbers assume friction .4 and a 4 mm margin; a fabric with
+  // its own friction must not make a correct kernel look broken.
+  const cloth=new Cloth({},scene({material_settings:{damping:9.2,friction:.2,thickness:.009}}));
+  assert.deepEqual(cloth.referenceContact,{damping:2,friction:0.4,thickness:0.004});
+  assert.equal(cloth.settings.friction,0.2);
+});
+
 test('explicit settings still win, so swatch fixtures are unaffected',()=>{
   const cloth=new Cloth({},scene({material_settings:{damping:9.2}}));
   Object.assign(cloth.settings,{damping:0});      // what Cloth.create applies afterwards

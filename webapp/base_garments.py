@@ -103,8 +103,11 @@ def appearance(value):
     for identity, material in saved.items():
         if not isinstance(material, dict) or set(material) - {
                 'source_fabric_id', 'name', 'standard', 'description', 'properties',
-                'solver_tuning', 'catalog'}:
+                'solver_tuning', 'catalog', 'display_color'}:
             raise ValueError('A saved material carries its id, name, properties and provenance.')
+        if 'display_color' in material and not (isinstance(material['display_color'], str) and re.fullmatch(
+                r'#[0-9a-fA-F]{6}', material['display_color'])):
+            raise ValueError('Colors must be six-digit hex values.')
         if material.get('source_fabric_id', identity) != identity:
             raise ValueError('A saved material must be keyed by its own fabric id.')
         label(material.get('name', ''))

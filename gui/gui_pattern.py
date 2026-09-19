@@ -435,6 +435,14 @@ class GUIPattern:
                         overrides.pop(local, None)
                     else:
                         overrides[local] = stiffness
+                    if material.get('display_color'):
+                        # The owner gave this fabric a colour; a piece cut from it
+                        # starts that colour and stays freely recolourable.
+                        colors, _ = self._panel_appearance_map(panel, 'panel_colors')
+                        colors[local] = material['display_color']
+                        prints, _ = self._panel_appearance_map(panel, 'panel_fabrics')
+                        if local in prints:
+                            prints[local]['bg'] = material['display_color']
                 else:
                     overrides[local] = FABRICS_BY_ID[value]['stiffness']
                     materials[local] = value
@@ -452,7 +460,8 @@ class GUIPattern:
                 for stale in [k for k in pool if k not in set(assigned.values())]:
                     pool.pop(stale)
         self.sync_outfit_garment()
-        if self.sew_pattern is not None and field not in ('stiffness', 'material'):
+        recolored = field == 'material' and bool((material or {}).get('display_color'))
+        if self.sew_pattern is not None and (field not in ('stiffness', 'material') or recolored):
             self._view_serialize()
 
     @staticmethod

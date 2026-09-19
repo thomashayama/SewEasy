@@ -21,6 +21,30 @@ shown separately. These experiments are not yet physically calibrated. See
 numerical checks. Assigning a library fabric to garment pieces is described
 below; a garment drape applies fewer properties than a swatch does.
 
+## Editing a fabric
+
+Each numeric field shows its unit, its provenance, and what a garment drape
+does with it: **drapes each piece**, **drapes the whole garment**, or **swatch
+tests only**. Hover the line for the measurement source and the mapping.
+Values must be finite and non-negative; there are no arbitrary safe ranges.
+
+An override never discards a measurement. When a field differs from the
+original file, including a field that was cleared, the editor shows
+**Imported: _value_** with **Restore**. Restoring brings the file's value back
+with its measured or reported provenance, rather than relabelling it as yours.
+
+**Display color** is the library's own swatch colour. It appears beside the
+fabric's name, tints pieces cut from the fabric, which stay recolourable, and
+travels through copies and U3MA export. Vendor front and back maps are untouched.
+
+The footer reads **All changes saved** or **Unsaved changes**; Save is enabled
+only when something changed, and the other button becomes **Discard changes**.
+A stale editor is still refused by the edit token.
+
+A garment keeps the copy of a fabric it was cut from. When that fabric later
+changes in the library, selecting the piece shows **Apply current fabric**;
+nothing updates until it is pressed.
+
 ## Storage
 
 `fabrics` is an additive SQLAlchemy table, created by the existing `init_db`
@@ -63,8 +87,8 @@ What the garment solver does with each measured property:
 | --- | --- | --- |
 | Weight | Per piece | Vertex mass is rest triangle area × g/m². Unassigned pieces keep 300 g/m². |
 | Warp/weft bending | Per piece | Averaged into one isotropic bending multiplier, rigidity ÷ 1e-5 N·m, clamped to 0.5–30. Retuning **Bending stiffness** afterwards keeps the piece's fabric identity. |
-| Damping | Per garment | Rest-area-weighted mean of the assigned fabrics; the solver damps velocity garment-wide. |
-| Friction | Per garment | Rest-area-weighted mean, used as the positional body-friction factor. It is not a Coulomb coefficient. |
+| Damping | Per garment | Mean over the whole garment by rest area; a piece without a value counts at the solver default, so one cuff cannot set it. The solver damps velocity garment-wide. |
+| Friction | Per garment | The same rest-area mean, used as the positional body-friction factor. It is not a Coulomb coefficient. |
 | Thickness | Per garment | Raises the solver's 4 mm numerical contact margin when a fabric is thicker. It never lowers the margin, and the measurement is never overwritten by it. |
 | Warp/weft stretch, shear | Stored only | Garment panels use scalar distance constraints and a strain limiter, not N/m membrane stiffness. The orthotropic model exists only in the swatch. |
 | Textures | Stored only | The garment renderer draws procedural prints; imported U3M maps are preserved but not decoded. |

@@ -296,6 +296,9 @@ def import_fabric(raw, filename):
     )
     if catalog is not None:
         result['catalog'] = catalog
+    color = extension.get('display_color') if isinstance(extension, dict) else None
+    if isinstance(color, str) and re.fullmatch(r'#[0-9a-fA-F]{6}', color):
+        result['appearance']['display_color'] = color.lower()
     return result
 
 
@@ -350,6 +353,10 @@ def export_fabric(record, source_bytes=None, source_name=None):
     previous = document['custom'].get('seweasy')
     document['custom']['seweasy'] = dict(previous if isinstance(previous, dict) else {},
         schema=1, properties=content['properties'], solver_tuning=content['solver_tuning'])
+    # The library's own swatch colour; U3M front/back maps stay as the vendor wrote them.
+    document['custom']['seweasy'].pop('display_color', None)
+    if (content.get('appearance') or {}).get('display_color'):
+        document['custom']['seweasy']['display_color'] = content['appearance']['display_color']
     from webapp.fabric_catalog import metadata
     catalog = metadata(content.get('catalog'))
     if catalog is not None:
