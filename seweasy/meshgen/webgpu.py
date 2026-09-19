@@ -163,6 +163,7 @@ def build_scene(data, meta, name):
     body = trimesh.Trimesh(data['body_vertices'], data['body_faces'], process=False)
     nodes, body_faces = bvh(body.vertices, body.faces)
     scene = dict(name=name, garment=meta['garment'], resolution_cm=meta['resolution_cm'],
+                 mass_density_kg_m2=0.3,
                  vertices=positions.tolist(), inverse_mass=(1 / mass).tolist(), uv=uv.tolist(),
                  faces=faces.tolist(), vertex_panels=vertex_panels, sewn_ids=world_ids.tolist(), constraints=ordered, batches=batches,
                  incident_faces=incident, neighbors=[sorted(x) for x in neighbors],

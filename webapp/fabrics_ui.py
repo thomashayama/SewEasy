@@ -1,0 +1,198 @@
+"""Small fabric workbench for exercising the U3M storage/import/export path."""
+import re
+
+from nicegui import run, ui
+
+from webapp import fabrics
+from webapp import fabric_formats as formats
+
+
+async def fabric_library(email):
+    async def edit(identity):
+        record = await run.io_bound(fabrics.get_fabric, email, identity)
+        content = record['content']
+        inputs, initial = {}, {}
+        with ui.context.client, ui.dialog().props('persistent') as dialog, ui.card().classes('se-stitch-card w-full max-w-xl gap-4'):
+            with ui.row().classes('w-full items-center justify-between'):
+                ui.label('Fabric properties').classes('se-section-label text-lg')
+                ui.button(icon='close', on_click=dialog.close).props('flat round dense aria-label="Close fabric editor"')
+            name = ui.input('Fabric name', value=record['name']).props('outlined dense maxlength=120').classes('w-full')
+            description = ui.textarea('Notes', value=content['description']).props('outlined dense rows=2 maxlength=4000').classes('w-full')
+
+            def field(key, label):
+                prop = content['properties'][key]
+                initial[key] = '' if prop['value'] is None else f'{prop["value"]:.8g}'
+                with ui.column().classes('gap-1 min-w-0'):
+                    inputs[key] = ui.input(label, value=initial[key], placeholder='Unknown').props(
+                        'outlined dense clearable inputmode=decimal').classes('w-full')
+                    origin = {'unknown': 'Not supplied', 'user': 'Your value', 'reported': 'Supplier value',
+                              'measured': 'Measured', 'estimated': 'Estimate'}[prop['origin']]
+                    ui.label(origin).classes('se-param-label text-xs')
+
+            with ui.grid(columns=2).classes('w-full gap-x-4 gap-y-3'):
+                field('weight', 'Weight (g/m²)')
+                field('thickness', 'Thickness (mm)')
+                field('friction', 'Friction coefficient')
+            with ui.expansion('Additional physical properties').classes('w-full'):
+                ui.label('Leave unknown values blank. These physical values are stored for future drape calibration.').classes('se-param-label mb-3')
+                with ui.grid(columns=2).classes('w-full gap-3'):
+                    for key, label in (
+                        ('stretch_warp', 'Warp stretch stiffness (N/m)'), ('stretch_weft', 'Weft stretch stiffness (N/m)'),
+                        ('bend_warp', 'Warp bending rigidity (N·m)'), ('bend_weft', 'Weft bending rigidity (N·m)'),
+                        ('shear', 'Shear stiffness (N/m)'), ('damping', 'Damping rate (1/s)'),
+                    ):
+                        field(key, label)
+            if content.get('source'):
+                source = content['source']
+                ui.label(f'Imported from {source.get("filename", source["format"])}').classes('se-param-label break-all')
+                if source.get('has_raw_measurements'):
+                    ui.label('Original test curves are preserved. Editing these values does not change the source file.').classes('se-param-label')
+            error = ui.label('').classes('text-negative text-sm').props('role=alert')
+
+            async def save():
+                save_button.disable()
+                try:
+                    changed = {key: field.value for key, field in inputs.items()
+                               if (field.value or '') != initial[key]}
+                    await run.io_bound(fabrics.update_fabric, email, identity, record['edit_token'],
+                                       name=name.value, description=description.value or '', values=changed)
+                    dialog.close()
+                    listing.refresh()
+                    ui.notify('Fabric saved', type='positive')
+                except ValueError as exc:
+                    error.set_text(str(exc))
+                finally:
+                    save_button.enable()
+            with ui.row().classes('w-full justify-end gap-2'):
+                ui.button('Cancel', on_click=dialog.close).props('flat no-caps')
+                save_button = ui.button('Save', on_click=save).props('unelevated no-caps')
+        dialog.open()
+        await dialog
+        dialog.delete()
+
+    async def import_dialog():
+        with ui.context.client, ui.dialog().props('persistent') as dialog, ui.card().classes('se-stitch-card w-full max-w-lg gap-3'):
+            ui.label('Import a fabric').classes('se-section-label text-lg')
+            ui.label('U3M 1.1 · up to 20 MB. Include companion textures and measurement files in a U3MA or ZIP package.').classes('se-param-label')
+            status = ui.label('').classes('text-negative text-sm').props('role=alert')
+
+            async def import_bytes(raw, filename):
+                upload.disable(); sample.disable()
+                status.set_text('Reading fabric…')
+                try:
+                    record = await run.io_bound(fabrics.import_fabric, email, raw, filename)
+                    dialog.submit(record)
+                except ValueError as exc:
+                    status.set_text(str(exc))
+                finally:
+                    upload.enable(); sample.enable()
+
+            async def uploaded(event):
+                await import_bytes(event.content.read(formats.MAX_UPLOAD + 1), event.name)
+
+            upload = ui.upload(on_upload=uploaded, auto_upload=True, max_file_size=formats.MAX_UPLOAD,
+                               on_rejected=lambda: status.set_text('Choose a U3M/U3MA/ZIP file under 20 MB.')) \
+                .props('accept=".u3m,.u3ma,.zip" hide-upload-btn label="Choose fabric file"').classes('w-full')
+
+            async def use_sample():
+                await import_bytes(await run.io_bound(formats.sample_package), 'SU-1098 Cupro.u3ma')
+
+            sample = ui.button('Try the measured cupro sample', icon='science', on_click=use_sample).props('flat no-caps')
+            ui.label('Published Browzwear measurements from the U3M reference repository, packaged by SewEasy. No appearance textures.').classes('se-param-label text-xs')
+            ui.button('Cancel', on_click=dialog.close).props('flat no-caps').classes('self-end')
+        dialog.open()
+        result = await dialog
+        dialog.delete()
+        if result:
+            listing.refresh()
+            await edit(result['id'])
+
+    async def new_fabric():
+        with ui.context.client, ui.dialog() as dialog, ui.card().classes('se-stitch-card w-full max-w-sm'):
+            ui.label('New fabric').classes('se-section-label')
+            name = ui.input('Fabric name').props('outlined dense maxlength=120').classes('w-full')
+            error = ui.label('').classes('text-negative text-sm')
+
+            async def create():
+                button.disable()
+                try:
+                    record = await run.io_bound(fabrics.create_fabric, email, name.value)
+                    dialog.submit(record)
+                except ValueError as exc:
+                    error.set_text(str(exc))
+                finally:
+                    button.enable()
+            with ui.row().classes('justify-end w-full'):
+                ui.button('Cancel', on_click=dialog.close).props('flat no-caps')
+                button = ui.button('Create', on_click=create).props('unelevated no-caps')
+        dialog.open()
+        result = await dialog
+        dialog.delete()
+        if result:
+            listing.refresh()
+            await edit(result['id'])
+
+    async def copy(identity):
+        try:
+            record = await run.io_bound(fabrics.copy_fabric, email, identity)
+            listing.refresh()
+            await edit(record['id'])
+        except ValueError as exc:
+            ui.notify(str(exc), type='negative')
+
+    async def compare(identity):
+        from webapp.fabric_preview import comparison_dialog
+        try:
+            await comparison_dialog(email, identity)
+        except ValueError as exc:
+            ui.notify(str(exc), type='negative')
+
+    async def download(record, original=False):
+        try:
+            if original:
+                filename, raw = await run.io_bound(fabrics.original_file, email, record['id'])
+            else:
+                raw = await run.io_bound(fabrics.export_fabric, email, record['id'])
+                filename = re.sub(r'[^\w .()-]', '_', record['name']) + '.u3ma'
+            ui.download(raw, filename=filename, media_type='application/octet-stream')
+        except ValueError as exc:
+            ui.notify(str(exc), type='negative')
+
+    with ui.row().classes('w-full items-center justify-between gap-3'):
+        with ui.column().classes('gap-1'):
+            ui.label('Fabrics').classes('se-section-label text-2xl')
+            ui.label('Your materials, measurements, and original files.').classes('se-param-label')
+        with ui.row().classes('gap-2'):
+            ui.button('New fabric', on_click=new_fabric).props('flat no-caps')
+            ui.button('Import U3M', icon='file_upload', on_click=import_dialog).props('unelevated no-caps')
+    ui.label('Fabric library preview · Compare weight in 3D from a fabric’s menu. '
+             'Full material calibration and garment assignments are next.').classes('se-param-label')
+
+    @ui.refreshable
+    async def listing():
+        records = await run.io_bound(fabrics.list_fabrics, email)
+        if not records:
+            with ui.card().classes('se-stitch-card w-full p-6 gap-2'):
+                ui.label('Start with a fabric you know.').classes('text-lg font-medium')
+                ui.label('Import its material file, try the measured cupro sample, or enter your own values.').classes('se-param-label')
+        for record in records:
+            values = record['content']['properties']
+            summary = []
+            for key, unit in (('weight', 'g/m²'), ('thickness', 'mm')):
+                if values[key]['value'] is not None:
+                    summary.append(f'{values[key]["value"]:.4g} {unit}')
+            with ui.card().classes('se-stitch-card w-full p-3 gap-1'):
+                with ui.row(wrap=False).classes('w-full items-center justify-between gap-3'):
+                    with ui.column().classes('gap-0 min-w-0'):
+                        ui.button(record['name'], on_click=lambda _, i=record['id']: edit(i)).props('flat no-caps align=left').classes('font-medium -ml-3')
+                        ui.label(' · '.join(summary) or 'Physical properties not supplied').classes('se-param-label')
+                    with ui.button(icon='more_horiz').props('flat round aria-label="Fabric actions"'):
+                        with ui.menu():
+                            ui.menu_item('Edit', on_click=lambda _, i=record['id']: edit(i))
+                            ui.menu_item('Save a copy', on_click=lambda _, i=record['id']: copy(i))
+                            if values['weight']['value'] is not None:
+                                ui.menu_item('Compare weight in 3D', on_click=lambda _, i=record['id']: compare(i))
+                            ui.menu_item('Export U3MA', on_click=lambda _, r=record: download(r))
+                            if record['has_source']:
+                                ui.menu_item('Download original', on_click=lambda _, r=record: download(r, True))
+    await listing()

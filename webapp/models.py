@@ -149,6 +149,20 @@ class BaseGarment(TimestampMixin, Base):
     files = deferred(Column(JSON, nullable=False))
 
 
+class Fabric(TimestampMixin, Base):
+    """Private reusable fabric; source bytes stay separate from editable values."""
+    __tablename__ = 'fabrics'
+    __table_args__ = (UniqueConstraint('owner_email', 'name', name='uq_fabric_owner_name'),)
+    id = Column(String, primary_key=True)
+    owner_email = Column(String, ForeignKey('users.email', ondelete='CASCADE'), nullable=False, index=True)
+    name = Column(String, nullable=False)
+    content = Column(JSON, nullable=False)
+    # Opaque optimistic-lock token, not a user-visible version/history.
+    edit_token = Column(String, nullable=False)
+    source_name = Column(String)
+    source_bytes = deferred(Column(LargeBinary))
+
+
 class AgentRender(Base):
     """Expiring draft artifacts; browser output attaches to the original item."""
     __tablename__ = 'agent_renders'

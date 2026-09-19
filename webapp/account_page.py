@@ -54,6 +54,7 @@ SECTIONS = {
     'account': ('person', 'Account'),
     'measurements': ('straighten', 'Measurements'),
     'garments': ('checkroom', 'Garments'),
+    'fabrics': ('texture', 'Fabrics'),
     'shared': ('folder_shared', 'Shared with me'),
     'friends': ('people_outline', 'Friends'),
     'settings': ('settings', 'Settings'),
@@ -801,6 +802,10 @@ async def account_page(request: Request):
         from webapp.friends_ui import friends_panel
         friends_panel(email)
 
+    async def build_fabrics():
+        from webapp.fabrics_ui import fabric_library
+        await fabric_library(email)
+
     builders = {
         'account': build_account,
         'measurements': build_measurements,
@@ -810,6 +815,7 @@ async def account_page(request: Request):
         'agents': build_agents,
         'bases': build_bases,
         'friends': build_friends,
+        'fabrics': build_fabrics,
     }
     section = request.query_params.get('section', 'account')
     await show(section if section in builders else 'account')
