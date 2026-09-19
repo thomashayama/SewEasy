@@ -98,14 +98,23 @@ def home_page(request: Request):
         button = ui.button(on_click=toggle, color=None).props('flat round dense :ripple=false').classes('se-favorite')
         update()
 
-    def access_text(kind, item):
+    def access_status(kind, item):
         access = state['access'].get(f'{kind}:{item["id"]}', {})
-        return access_label(access.get('visibility', 'private'), access.get('invited', False))
+        mode = access.get('visibility', 'private')
+        icon = {'private': 'lock_outline', 'friends': 'people_outline', 'link': 'link', 'public': 'public'}[mode]
+        return icon, access_label(mode, access.get('invited', False))
 
-    def caption(item, detail):
+    def caption(item, detail=None, status=None):
         with ui.column().classes('se-library-caption'):
             title = ui.label(item['name']).classes('se-library-name')
-            ui.label(detail).classes('se-home-muted')
+            with ui.row(wrap=False).classes('se-library-meta'):
+                if status:
+                    icon, label = status
+                    indicator = ui.icon(icon).classes('se-library-status').props('role=img aria-hidden=false')
+                    indicator._props['aria-label'] = label
+                    indicator.tooltip(label)
+                if detail:
+                    ui.label(detail).classes('se-home-muted')
             if source_label(item):
                 title.tooltip(source_label(item))
 
@@ -126,7 +135,8 @@ def home_page(request: Request):
                     .props('flat no-caps').classes('se-library-card') as card:
                 card._props['aria-label'] = f'{"Customize" if standard else "Open garment"} {item["name"]}'
                 illustrations([item], 'se-library-art')
-                caption(item, 'Your base garment' if standard == 'custom-base' else 'Standard garment' if standard else access_text('garment', item))
+                caption(item, status=('design_services', 'Your base garment') if standard == 'custom-base' else
+                        ('checkroom', 'Standard garment') if standard else access_status('garment', item))
             if not standard:
                 item_actions('garment', item)
                 favorite_button('garment', item['id'], item['name'])
@@ -137,7 +147,7 @@ def home_page(request: Request):
                 card._props['aria-label'] = f'Open outfit {item["name"]}'
                 illustrations(item['garments'], 'se-library-art', outfit_id=item['revision_id'])
                 count = len(item['garments'])
-                caption(item, f'{count} garment' + ('s' if count != 1 else '') + ' · ' + access_text('outfit', item))
+                caption(item, f'{count} garment' + ('s' if count != 1 else ''), status=access_status('outfit', item))
             item_actions('outfit', item)
             favorite_button('outfit', item['id'], item['name'])
 
@@ -148,7 +158,10 @@ def home_page(request: Request):
                 card._props['aria-label'] = f'View shared {snapshot["name"]}'
                 illustrations(snapshot['garments'] if item['kind'] == 'outfit' else [snapshot],
                               'se-library-art', image=item.get('thumbnail'))
-                caption(snapshot, item['owner_name'])
+                mode = item.get('visibility', 'private')
+                caption(snapshot, item['owner_name'], status=(
+                    {'private': 'lock_outline', 'friends': 'people_outline', 'link': 'link', 'public': 'public'}[mode],
+                    access_label(mode, mode == 'private' and not item['is_owner'])))
             favorite_button(item['kind'] if item['is_owner'] else 'share',
                             item['revision_id'] if item['is_owner'] else item['id'], snapshot['name'])
 
