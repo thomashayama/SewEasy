@@ -264,7 +264,7 @@ class FabricStorageTest(unittest.TestCase):
 
 
 class FabricSceneTest(unittest.TestCase):
-    def test_real_garment_mass_matches_pattern_area_times_imported_gsm(self):
+    def test_swatch_mass_matches_area_times_imported_gsm_including_clamp(self):
         import numpy as np
         from webapp.fabric_preview import default_scene, with_weight
         scene = default_scene()
@@ -273,10 +273,30 @@ class FabricSceneTest(unittest.TestCase):
         content = fmt.import_fabric(fmt.sample_package(), 'cupro.u3ma')
         gsm = content['properties']['weight']['value']
         measured = with_weight(scene, gsm)
-        self.assertAlmostEqual(sum(1 / x for x in measured['inverse_mass']), area * gsm / 1000, places=10)
-        self.assertAlmostEqual(sum(1 / x for x in scene['inverse_mass']), area * .3, places=10)
+        self.assertAlmostEqual(sum(measured['vertex_mass_kg']), area * gsm / 1000, places=10)
+        self.assertAlmostEqual(measured['fabric_test']['total_mass_kg'], area * gsm / 1000, places=10)
+        self.assertAlmostEqual(sum(scene['vertex_mass_kg']), area * .3, places=10)
         self.assertEqual(measured['constraints'], scene['constraints'])
-        self.assertGreater(len(scene['faces']), 1000)
+        self.assertEqual(measured['interior_hinges'], scene['interior_hinges'])
+        for i, (mass, inverse) in enumerate(zip(measured['vertex_mass_kg'], measured['inverse_mass'])):
+            if i in scene['swatch']['pins']:
+                self.assertEqual(inverse, 0)
+            else:
+                self.assertAlmostEqual(mass * inverse, 1)
+        self.assertAlmostEqual(area, .09*.04)
+
+    def test_swatches_have_a_clamped_root_and_no_constraint_write_races(self):
+        from webapp.fabric_preview import default_scene
+        scene = default_scene()
+        self.assertEqual(len(scene['swatch']['pins']), 10)
+        self.assertTrue(all(scene['vertices'][i][0] <= 0 for i in scene['swatch']['pins']))
+        self.assertTrue(all(abs(scene['vertices'][i][0]-.08) < 1e-12 for i in scene['swatch']['tip']))
+        for key, batches, indices in (('constraints', 'batches', lambda c: c[:2]),
+                                      ('interior_hinges', 'interior_hinge_batches', lambda h: h['ids'])):
+            for start, count in scene[batches]:
+                vertices = [i for c in scene[key][start:start+count] for i in indices(c)]
+                self.assertEqual(len(set(vertices)), len(vertices))
+        self.assertTrue(all(h['compliance'] > 0 and h['angle'] == 0 for h in scene['interior_hinges']))
 
 
 if __name__ == '__main__':

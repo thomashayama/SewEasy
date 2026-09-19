@@ -35,6 +35,38 @@ struct Batch { start:u32, count:u32, pad:vec2<u32> }
  q[h.b.z]=vec4<f32>(f.xyz+f.w*lambda*g3,f.w);
 }`;
 
+// Four distinct particles for an interior mesh edge. Unlike a sewing hinge,
+// there are no duplicated endpoints to average or weld. Used by the swatch
+// experiment; garment bending remains unchanged until material calibration.
+export const interiorHingeShader = `
+struct Hinge { ids:vec4<u32>, rest:vec4<f32> }
+struct Batch { start:u32, count:u32, accumulate:u32, pad:u32 }
+@group(0) @binding(2) var<storage,read_write> hinges:array<Hinge>;
+@group(1) @binding(0) var<uniform> batch:Batch;
+@compute @workgroup_size(64) fn main(@builtin(global_invocation_id) gid:vec3<u32>){
+ if(gid.x>=batch.count){return;}
+ let h=hinges[batch.start+gid.x];
+ let a=q[h.ids.x];let b=q[h.ids.y];let c=q[h.ids.z];let d=q[h.ids.w];
+ let edge=b.xyz-a.xyz;let length2=dot(edge,edge);if(length2<1e-12){return;}
+ let len=sqrt(length2);let n0=cross(edge,c.xyz-a.xyz);let n1=cross(d.xyz-a.xyz,edge);
+ let area0=dot(n0,n0);let area1=dot(n1,n1);if(min(area0,area1)<1e-18){return;}
+ let u=n0/sqrt(area0);let v=n1/sqrt(area1);
+ let delta=atan2(dot(cross(u,v),edge/len),clamp(dot(u,v),-1.0,1.0))-h.rest.x;
+ let error=atan2(sin(delta),cos(delta));
+ let g2=-len*n0/area0;let g3=-len*n1/area1;
+ let t2=dot(c.xyz-a.xyz,edge)/length2;let t3=dot(d.xyz-a.xyz,edge)/length2;
+ let g0=-(1.0-t2)*g2-(1.0-t3)*g3;let g1=-t2*g2-t3*g3;
+ let denom=a.w*dot(g0,g0)+b.w*dot(g1,g1)+c.w*dot(g2,g2)+d.w*dot(g3,g3);
+ let alpha=h.rest.y/(params.motion.x*params.motion.x);
+ let previous=select(0.0,h.rest.z,batch.accumulate!=0u);
+ let lambda=-(error+alpha*previous)/max(denom+alpha,1e-12);
+ hinges[batch.start+gid.x].rest.z=previous+lambda;
+ q[h.ids.x]=vec4<f32>(a.xyz+a.w*lambda*g0,a.w);
+ q[h.ids.y]=vec4<f32>(b.xyz+b.w*lambda*g1,b.w);
+ q[h.ids.z]=vec4<f32>(c.xyz+c.w*lambda*g2,c.w);
+ q[h.ids.w]=vec4<f32>(d.xyz+d.w*lambda*g3,d.w);
+}`;
+
 // Multi-panel junctions must finish sewing as one point, rather than a chain
 // of pair constraints that leaves the last pair open. Preserve center of mass
 // and share motion history so contact friction cannot pull the copies apart.

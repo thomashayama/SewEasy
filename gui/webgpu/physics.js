@@ -1,9 +1,10 @@
 // SewEasy browser cloth experiment. Original WGSL implementation of small-step
 // XPBD distance constraints; see README.md for paper references and limits.
-import {strainShader, strainTopology, contactNeighbors, placePanels, waistbandTethers} from './strain.js?v=14';
-import {hingeShader, collarWeldShader} from './bending.js?v=2';
+import {strainShader, strainTopology, contactNeighbors, placePanels, waistbandTethers} from './strain.js?v=15';
+import {hingeShader, interiorHingeShader, collarWeldShader} from './bending.js?v=3';
 import {MannequinMotion,bodyMotionWGSL} from './motion.js?v=2';
 import {buttonClosureShader,closureColors,closureRest} from './closures.js?v=2';
+import {swatchShader} from './swatch_solver.js?v=1';
 const common = `
 struct Params { motion: vec4<f32>, material: vec4<f32>, counts: vec4<u32>, contact: vec4<f32>, limits:vec4<f32> }
 @group(0) @binding(0) var<storage, read_write> q: array<vec4<f32>>;
@@ -16,6 +17,7 @@ const integrate = common + `
 @compute @workgroup_size(64) fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
  let i = gid.x; if (i >= params.counts.x) { return; }
  let p = q[i]; previous[i] = p;
+ if(p.w==0.0){velocity[i]=vec4<f32>(0);return;}
  let dt = params.motion.x;
  let ramp = clamp((params.motion.y - params.contact.w) / 0.3, 0.0, 1.0);
  let wind = params.motion.w * sin(params.motion.y * 2.5 + p.y * 4.0);
@@ -34,6 +36,7 @@ struct Batch { start: u32, count: u32, pad: vec2<u32> }
  let c = edges[batch.start + gid.x];
  let a = c.ids.x; let b = c.ids.y;
  let pa = q[a]; let pb = q[b]; let d = pa.xyz - pb.xyz;
+ if(pa.w+pb.w==0.0){return;}
  let length_now = length(d); if (length_now < 1e-9) { return; }
  var rest = length(vec2<f32>(c.rest.x * params.motion.z, c.rest.y));
  var compliance = params.material.x;
@@ -280,7 +283,7 @@ export function vec4(values, w=0) {return new Float32Array(values.flatMap((p,i)=
 function csr(rows) {const values=[],ranges=[];for(const row of rows){ranges.push(values.length,row.length);values.push(...row);}return [new Uint32Array(ranges),new Uint32Array(values)];}
 
 export class Cloth {
-  static async create(device, scene,progress=()=>{}) {const c=new Cloth(device,scene);c.progress=progress;try{await c.initialize();return c;}catch(error){c.destroy();throw error;}}
+  static async create(device, scene,progress=()=>{},settings={}) {const c=new Cloth(device,scene);Object.assign(c.settings,settings);c.progress=progress;try{await c.initialize();return c;}catch(error){c.destroy();throw error;}}
   constructor(device,scene) {
     this.device=device;this.scene=scene;this.n=scene.vertices.length;this.frame=0;this.owned=[];
     this.time=0;this.frameDt=1/60;
@@ -341,6 +344,17 @@ export class Cloth {
       let offset=0;for(const color of buttonColors){this.buttonBatches.push({count:color.length,bind:d.createBindGroup({layout:this.buttonSolve.pipeline.getBindGroupLayout(1),entries:[{binding:0,resource:{buffer:this.make(new Uint32Array([offset,color.length,0,0]),GPUBufferUsage.UNIFORM)}}]})});offset+=color.length;}
     }
     this.hingeBatches=[];
+    this.interiorHingeBatches=[];
+    if(s.interior_hinges?.length){
+      const raw=new ArrayBuffer(s.interior_hinges.length*32),u=new Uint32Array(raw),f=new Float32Array(raw);
+      s.interior_hinges.forEach((h,i)=>{u.set(h.ids,i*8);f.set([h.angle,h.compliance,0,0],i*8+4);});
+      this.interiorHinges=this.make(new Uint8Array(raw));
+      this.interiorHingeSolve=await this.pipeline(common+interiorHingeShader,[...base,[2,this.interiorHinges]],'Swatch interior bending');
+      this.interiorHingeBatches=s.interior_hinge_batches.map(([start,count])=>{
+        const binding=accumulate=>d.createBindGroup({layout:this.interiorHingeSolve.pipeline.getBindGroupLayout(1),entries:[{binding:0,resource:{buffer:this.make(new Uint32Array([start,count,accumulate,0]),GPUBufferUsage.UNIFORM)}}]});
+        return {count,bind:binding(0),accumulatedBind:binding(1)};
+      });
+    }
     if(s.hinges?.length){
       const raw=new ArrayBuffer(s.hinges.length*48),u=new Uint32Array(raw),f=new Float32Array(raw);
       s.hinges.forEach((h,i)=>{u.set(h.ids.slice(0,3),i*12);u.set(h.ids.slice(3),i*12+4);f.set([h.angle,h.compliance,0,0],i*12+8);});
@@ -389,7 +403,7 @@ export class Cloth {
     }
     const seams=seamColors.flat(),sr=new ArrayBuffer(seams.length*32),su=new Uint32Array(sr),sf=new Float32Array(sr);
     seams.forEach((c,i)=>{su.set([c[0],c[1],c[2],0],i*8);sf.set(c.slice(3),i*8+4);});
-    this.seamEdges=this.make(new Uint8Array(sr));
+    this.seamEdges=this.make(new Uint8Array(sr.byteLength?sr:32));
     this.seamSolve={...this.solve,bind:d.createBindGroup({layout:this.solve.pipeline.getBindGroupLayout(0),entries:[...base,[2,this.seamEdges]].map(([binding,b])=>({binding,resource:{buffer:b}}))})};
     let offset=0;this.seamBatches=seamColors.map(color=>{const batch={count:color.length,bind:d.createBindGroup({layout:this.solve.pipeline.getBindGroupLayout(1),entries:[{binding:0,resource:{buffer:this.make(new Uint32Array([offset,color.length,0,0]),GPUBufferUsage.UNIFORM)}}]})};offset+=color.length;return batch;});
     const waistSeams=seamColors.map(color=>color.filter(c=>c.slice(0,2).some(i=>/(^|__)wb_/.test(s.vertex_panels?.[i]||''))));
@@ -400,7 +414,7 @@ export class Cloth {
       this.waistSeamSolve={...this.solve,bind:d.createBindGroup({layout:this.solve.pipeline.getBindGroupLayout(0),entries:[...base,[2,this.make(new Uint8Array(wr))]].map(([binding,b])=>({binding,resource:{buffer:b}}))})};
       let offset=0;for(const color of waistSeams){if(color.length)this.waistSeamBatches.push({count:color.length,bind:d.createBindGroup({layout:this.solve.pipeline.getBindGroupLayout(1),entries:[{binding:0,resource:{buffer:this.make(new Uint32Array([offset,color.length,0,0]),GPUBufferUsage.UNIFORM)}}]})});offset+=color.length;}
     }
-    this.gridSize=[160,224,64];const lo=[0,1,2].map(a=>Math.min(...s.body_vertices.map(p=>p[a]))-.07),hi=[0,1,2].map(a=>Math.max(...s.body_vertices.map(p=>p[a]))+.07);
+    this.gridSize=this.settings.bodyCollision?[160,224,64]:[2,2,2];const lo=[0,1,2].map(a=>Math.min(...s.body_vertices.map(p=>p[a]))-.07),hi=[0,1,2].map(a=>Math.max(...s.body_vertices.map(p=>p[a]))+.07);
     this.gridRaw=new ArrayBuffer(48);new Float32Array(this.gridRaw).set([...lo,0,...lo.map((v,i)=>(hi[i]-v)/(this.gridSize[i]-1)),0]);
     new Uint32Array(this.gridRaw).set([...this.gridSize,0],8);this.grid=this.make(new Uint8Array(this.gridRaw),GPUBufferUsage.UNIFORM);
     const cells=this.gridSize.reduce((a,b)=>a*b);this.field=this.make(new Float32Array(cells));
@@ -418,6 +432,11 @@ export class Cloth {
     this.applySelf=await this.pipeline(applySelf,[...base,[2,this.scratch]],'Apply self contact');
     this.velocityPass=await this.pipeline(updateVelocity,[...base,[2,this.previous],[3,this.velocity]],'Velocity');
     this.normalPass=await this.pipeline(computeNormals,[...base,[2,this.faces],[3,this.incidentRanges],[4,this.incident],[5,this.normals],[6,this.uv]],'Normals and strain display');
+    if(s.garment==='fabric-swatch'&&this.n<=128&&s.interior_hinges.length<=256){
+      const ranges=[...s.batches.map(([start,count])=>[start,count,0,0]),...s.interior_hinge_batches.map(([start,count])=>[start,count,1,0])];
+      if(ranges.some(r=>r[1]>128))throw Error('Swatch constraint batch exceeds workgroup capacity.');
+      this.fastSwatch=await this.pipeline(swatchShader,[...base,[2,this.previous],[3,this.velocity],[4,this.edges],[5,this.make(new Uint32Array(ranges.flat()))],[6,this.interiorHinges]],'Clamped swatch workgroup');
+    }
     this.updateParams();
     const encoder=d.createCommandEncoder();this.dispatch(encoder,this.normalPass);d.queue.submit([encoder.finish()]);await d.queue.onSubmittedWorkDone();
     await this.checkKernels();
@@ -442,10 +461,10 @@ export class Cloth {
       this.kernelChecks.unbuttoning_removes_attachment_force=points.every((p,i)=>p.every((v,k)=>Math.abs(open[i][k]-v)<1e-7));
       this.time=0;this.updateParams();
     }
-    const s=this.scene,d=this.device,fixture=vec4(s.vertices,s.inverse_mass);
+    const s=this.scene,d=this.device,testMass=s.inverse_mass.map(w=>w||1),fixture=vec4(s.vertices,testMass);
     const place=(a,b,distance)=>{
-      for(let i=0;i<this.n;i++)fixture.set([10+i*.03,10,10,s.inverse_mass[i]],i*4);
-      fixture.set([0,0,0,s.inverse_mass[a]],a*4);fixture.set([distance,0,0,s.inverse_mass[b]],b*4);
+      for(let i=0;i<this.n;i++)fixture.set([10+i*.03,10,10,testMass[i]],i*4);
+      fixture.set([0,0,0,testMass[a]],a*4);fixture.set([distance,0,0,testMass[b]],b*4);
       d.queue.writeBuffer(this.q,0,fixture);
     };
     const gap=(p,a,b)=>Math.hypot(...p[a].map((x,i)=>x-p[b][i]));
@@ -463,7 +482,7 @@ export class Cloth {
     const e=d.createCommandEncoder();this.dispatch(e,this.solve,1,batch);d.queue.submit([e.finish()]);
     const distance=gap(await this.readPositions(),c[0],c[1]);
     const alpha=this.settings.stretch/(1/(60*this.settings.substeps))**2;
-    const expected=rest+rest*alpha/(s.inverse_mass[c[0]]+s.inverse_mass[c[1]]+alpha);
+    const expected=rest+rest*alpha/(testMass[c[0]]+testMass[c[1]]+alpha);
     this.kernelChecks={...this.kernelChecks,self_contact_separates:Math.abs(separated-.008)<1e-5,adjacent_vertices_excluded:Math.abs(excluded-.003)<1e-5,xpbd_distance_matches_equation:Math.abs(distance-expected)<1e-5};
     if(this.hingeSolve){
       const raw=new ArrayBuffer(48),u=new Uint32Array(raw),f=new Float32Array(raw);
@@ -555,14 +574,40 @@ export class Cloth {
       const support=d.createCommandEncoder();this.dispatch(support,this.supportPass,this.supportTargets.length);d.queue.submit([support.finish()]);const p=(await this.readPositions())[id];
       this.kernelChecks.neckline_support_only_changes_height=Math.abs(p[1]-y)<1e-6&&Math.abs(p[0]-.123)<1e-6&&Math.abs(p[2]-.234)<1e-6;
     }
+    if(this.interiorHingeSolve){
+      const raw=new ArrayBuffer(32),u=new Uint32Array(raw),f=new Float32Array(raw);
+      u.set([0,1,2,3]); // Flat rest angle, zero compliance for this kernel check.
+      d.queue.writeBuffer(this.interiorHinges,0,raw);
+      const batch=d.createBindGroup({layout:this.interiorHingeSolve.pipeline.getBindGroupLayout(1),entries:[{binding:0,resource:{buffer:this.make(new Uint32Array([0,1,0,0]),GPUBufferUsage.UNIFORM)}}]});
+      const points=[[0,.12,0],[.01,.12,0],[0,.13,0],[0,.11,-.005]];
+      d.queue.writeBuffer(this.q,0,vec4(points,[0,0,0,1]));
+      const e=d.createCommandEncoder();for(let i=0;i<20;i++)this.dispatch(e,this.interiorHingeSolve,1,batch);d.queue.submit([e.finish()]);
+      const p=await this.readPositions();
+      this.kernelChecks.interior_bending_restores_flat_rest_angle=Math.abs(p[3][2])<1e-6;
+      this.kernelChecks.interior_bending_preserves_pins=points.slice(0,3).every((v,i)=>v.every((x,a)=>Math.abs(x-p[i][a])<1e-7));
+      const h=s.interior_hinges[0];u.set(h.ids);f.set([h.angle,h.compliance,0,0],4);d.queue.writeBuffer(this.interiorHinges,0,raw);
+      this.reset();this.time=2;this.updateParams();
+      d.queue.writeBuffer(this.velocity,0,new Float32Array(this.n*4).fill(1));
+      const integrate=d.createCommandEncoder();this.dispatch(integrate,this.integrate);d.queue.submit([integrate.finish()]);
+      const integrated=await this.readPositions();
+      this.kernelChecks.integration_preserves_pins=s.inverse_mass.every((w,i)=>w!==0||s.vertices[i].every((v,a)=>Math.abs(v-integrated[i][a])<1e-7));
+    }
     this.reset();await d.queue.onSubmittedWorkDone();
+    if(this.fastSwatch){
+      const optimized=this.fastSwatch;
+      const step=async()=>{this.time=1;const e=d.createCommandEncoder();this.encode(e);d.queue.submit([e.finish()]);return this.readPositions();};
+      const fast=await step();this.reset();this.fastSwatch=null;
+      const reference=await step();this.fastSwatch=optimized;
+      this.kernelChecks.swatch_workgroup_matches_reference=fast.every((p,i)=>Math.hypot(...p.map((v,a)=>v-reference[i][a]))<1e-5);
+      this.reset();await d.queue.onSubmittedWorkDone();
+    }
     if(!Object.values(this.kernelChecks).every(Boolean))throw Error('GPU kernel checks failed: '+JSON.stringify(this.kernelChecks));
   }
   updateParams(){
     const s=this.settings,count=this.frameSubsteps||s.substeps,raw=new ArrayBuffer(80),f=new Float32Array(raw),u=new Uint32Array(raw);
     f.set([this.frameDt/count,this.time,s.width,s.wind,s.stretch,s.bend,s.seam,s.thickness]);
     u.set([this.n,count,+s.selfCollision,this.hashSize],8);
-    f.set([s.gravity,s.damping,s.friction,s.sewDuration],12);f.set([s.strainLimit,0,0,0],16);this.device.queue.writeBuffer(this.params,0,raw);
+    f.set([s.gravity,s.damping,s.friction,s.sewDuration],12);f.set([s.strainLimit,s.swatchIterations||1,0,0],16);this.device.queue.writeBuffer(this.params,0,raw);
   }
   writeMotion(advance){
     const count=this.frameSubsteps||this.settings.substeps;
@@ -594,6 +639,10 @@ export class Cloth {
     // Dispatches remain ordered in one pass, avoiding thousands of separate
     // compute-pass begin/end commands per frame.
     const pass=encoder.beginComputePass({label:'cloth step',...(querySet?{timestampWrites:{querySet,beginningOfPassWriteIndex:0,endOfPassWriteIndex:1}}:{})});
+    if(this.fastSwatch&&this.settings.stretch===0&&this.settings.width===1&&this.settings.wind===0&&!this.settings.bodyCollision&&!this.settings.selfCollision){
+      pass.setPipeline(this.fastSwatch.pipeline);pass.setBindGroup(0,this.fastSwatch.bind);pass.dispatchWorkgroups(1);
+      this.dispatchInPass(pass,this.normalPass);pass.end();return;
+    }
     for(let step=0;step<this.frameSubsteps;step++){
       this.motionStep=step;
       this.dispatchInPass(pass,this.integrate);
@@ -606,6 +655,11 @@ export class Cloth {
       }
       for(const batch of this.seamBatches)this.dispatchInPass(pass,this.seamSolve,batch.count,batch.bind);
       for(const batch of this.hingeBatches)this.dispatchInPass(pass,this.hingeSolve,batch.count,batch.bind);
+      for(const batch of this.interiorHingeBatches||[])this.dispatchInPass(pass,this.interiorHingeSolve,batch.count,batch.bind);
+      if(this.interiorHingeBatches?.length)for(let iteration=1;iteration<(this.settings.swatchIterations||1);iteration++){
+        for(const batch of this.batches)this.dispatchInPass(pass,this.solve,batch.count,batch.bind);
+        for(const batch of this.interiorHingeBatches)this.dispatchInPass(pass,this.interiorHingeSolve,batch.count,batch.accumulatedBind);
+      }
       // Button seats can share a triangle corner with a permanent seam.
       // Couple the solves so the button cannot pull that construction seam apart.
       for(let iteration=0;iteration<(this.buttonBatches.length?3:1);iteration++){

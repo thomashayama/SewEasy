@@ -165,7 +165,7 @@ async def fabric_library(email):
         with ui.row().classes('gap-2'):
             ui.button('New fabric', on_click=new_fabric).props('flat no-caps')
             ui.button('Import U3M', icon='file_upload', on_click=import_dialog).props('unelevated no-caps')
-    ui.label('Fabric library preview · Compare weight in 3D from a fabric’s menu. '
+    ui.label('Fabric library preview · Test a swatch from a fabric’s menu. '
              'Full material calibration and garment assignments are next.').classes('se-param-label')
 
     @ui.refreshable
@@ -191,7 +191,7 @@ async def fabric_library(email):
                             ui.menu_item('Edit', on_click=lambda _, i=record['id']: edit(i))
                             ui.menu_item('Save a copy', on_click=lambda _, i=record['id']: copy(i))
                             if values['weight']['value'] is not None:
-                                ui.menu_item('Compare weight in 3D', on_click=lambda _, i=record['id']: compare(i))
+                                ui.menu_item('Test fabric swatch', on_click=lambda _, i=record['id']: compare(i))
                             ui.menu_item('Export U3MA', on_click=lambda _, r=record: download(r))
                             if record['has_source']:
                                 ui.menu_item('Download original', on_click=lambda _, r=record: download(r, True))

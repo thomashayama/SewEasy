@@ -86,6 +86,7 @@ export function waistbandTethers(scene) {
 }
 
 export function placePanels(scene) {
+ if(scene.garment==='fabric-swatch')return {positions:scene.vertices.map(p=>[...p]),adjustments:[],support:[]};
  // A collared shirt already has a drafted neck height. Raising it can sew
  // the stand around the jaw on larger profiles and trap the whole shirt.
  const lift=scene.garment==='element-top'||scene.hinges?.length?0:.06;

@@ -1,5 +1,5 @@
-import {Cloth} from './physics.js?v=18';
-import {Renderer} from './render.js?v=23';
+import {Cloth} from './physics.js?v=19';
+import {Renderer} from './render.js?v=24';
 
 export async function captureThumbnail(scene,canvas,onProgress=()=>{}){
   const adapter=await navigator.gpu.requestAdapter({powerPreference:'low-power'});
