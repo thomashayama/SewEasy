@@ -30,6 +30,7 @@ export default {
             <option value="custom">Custom</option>
           </select>
         </label>
+        <button type="button" class="se-fabric-browse" @click="$emit('browse')">Browse fabrics…</button>
         <p v-if="outdated" class="se-fabric-outdated" role="note">This fabric changed in your library after it was applied here.
           <button v-if="shared('material')" @click="edit('material',shared('material'))">Apply current fabric</button>
         </p>

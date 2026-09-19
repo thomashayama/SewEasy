@@ -17,7 +17,9 @@ imports. Choosing one cuts the selected pieces from that fabric, which sets
 their weight and bending from its measurements; see
 [the support matrix](Fabrics.md). Select all pieces to apply one fabric to a
 whole garment. A fabric assigned in a garment someone shared keeps its name even
-when it is not in your library.
+when it is not in your library. **Browse fabrics…** opens the full library as a
+picker, with search, weight classes and hearts; choosing a fabric there keeps the
+current selection.
 
 Closing the panel clears the selection outlines and keeps the fabric edits.
 Reopen it with **Fabric** above the workspace.

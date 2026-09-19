@@ -21,6 +21,27 @@ shown separately. These experiments are not yet physically calibrated. See
 numerical checks. Assigning a library fabric to garment pieces is described
 below; a garment drape applies fewer properties than a swatch does.
 
+## Browsing, favorites and the studio picker
+
+The library has three views. **Common fabrics** is the read-only collection,
+**My fabrics** the account's imports and copies, and **Favorites** whatever has
+been hearted from either. The search box matches name, notes, fiber and weave;
+**Weight** filters by the usual apparel classes: light under 135 g/m², medium to
+270 g/m², heavy above (4 and 8 oz/yd²). A fabric with no weight matches no class.
+
+A heart stores only the fabric's stable id, in the same account-scoped table as
+garment and outfit favorites under its own kind, so it follows the account across
+devices and never appears in, or is counted by, the wardrobe's Favorites tab.
+Hearting a standard fabric makes no copy. A heart whose fabric no longer resolves
+is skipped in listings and can still be removed. Guests see Common fabrics only.
+
+In the sewing pattern, **Browse fabrics…** under Fabric type opens this same list
+as a picker, starting on Favorites when there are any. **Use fabric** applies the
+choice to the pieces that were selected and returns to the pattern with the
+selection and every unsaved design change untouched; Cancel or Escape changes
+nothing. The quick list under Fabric type shows each fabric once: Favorites
+first, then the rest of My fabrics and Common fabrics.
+
 ## Editing a fabric
 
 Each numeric field shows its unit, its provenance, and what a garment drape
@@ -95,7 +116,8 @@ What the garment solver does with each measured property:
 
 Grain direction is not a garment setting: with an isotropic solver it would
 change nothing, and print rotation remains a separate appearance choice.
-Assigning a fabric does not import its colours or prints.
+Assigning a fabric applies its display colour when it has one; prints and vendor
+texture maps are not imported.
 
 ## Quantities and provenance
 

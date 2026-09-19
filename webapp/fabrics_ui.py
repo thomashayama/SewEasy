@@ -1,9 +1,11 @@
 """Small fabric workbench for exercising the U3M storage/import/export path."""
+from pathlib import Path
 import re
 
 from nicegui import run, ui
+from sqlalchemy.exc import SQLAlchemyError
 
-from webapp import fabrics
+from webapp import fabric_favorites, fabrics
 from webapp import fabric_formats as formats
 from webapp.fabric_catalog import evidence_label, metadata, standard_fabrics
 from webapp.garment_materials import SUPPORT
@@ -12,7 +14,9 @@ from webapp.garment_materials import SUPPORT
 DRAPE_SCOPE = {'piece': 'drapes each piece', 'garment': 'drapes the whole garment', 'stored': 'swatch tests only'}
 
 
-async def fabric_library(email):
+async def fabric_library(email, choose=None):
+    """The account's fabric library. With `choose`, the same list becomes the studio's picker."""
+    ui.add_css(Path(__file__).with_name('fabrics.css').read_text(encoding='utf-8'))
     async def edit(identity):
         record = await run.io_bound(fabrics.get_fabric, email, identity)
         content = record['content']
@@ -262,20 +266,71 @@ async def fabric_library(email):
         except ValueError as exc:
             ui.notify(str(exc), type='negative')
 
+    hearts = await run.io_bound(fabric_favorites.keys, email)
+    pending_hearts = set()
+
+    def heart_button(record):
+        """The wardrobe's heart: optimistic, reverted if the save fails."""
+        identity = record['id']
+
+        def update():
+            selected = identity in hearts
+            button.props(f'icon={"favorite" if selected else "favorite_border"} aria-pressed={str(selected).lower()}')
+            button.classes(add='is-favorite' if selected else '', remove='' if selected else 'is-favorite')
+            button._props['aria-label'] = (f'{"Remove" if selected else "Add"} {record["name"]} '
+                                           f'{"from" if selected else "to"} favorites')
+            button.update()
+
+        async def toggle():
+            if identity in pending_hearts:
+                return
+            if not email:
+                ui.notify('Sign in to save favorites.', type='info')
+                return
+            selected = identity in hearts
+            pending_hearts.add(identity)
+            (hearts.discard if selected else hearts.add)(identity)
+            update()
+            try:
+                await run.io_bound(fabric_favorites.set_favorite, email, identity, not selected)
+            except (ValueError, SQLAlchemyError) as error:
+                (hearts.add if selected else hearts.discard)(identity)
+                ui.notify(str(error) if isinstance(error, ValueError) else
+                          'Could not save favorite. Please try again.', type='warning')
+            finally:
+                pending_hearts.discard(identity)
+                update()
+                if collection.value == 'favorites':
+                    listing.refresh()
+
+        button = ui.button(on_click=toggle, color=None).props('flat round dense :ripple=false').classes('se-fabric-heart')
+        update()
+
     with ui.row().classes('w-full items-center justify-between gap-3'):
         with ui.column().classes('gap-1'):
-            ui.label('Fabrics').classes('se-section-label text-2xl')
-            ui.label('Your materials, measurements, and original files.').classes('se-param-label')
-        with ui.row().classes('gap-2'):
-            ui.button('New fabric', on_click=new_fabric).props('flat no-caps')
-            ui.button('Import U3M', icon='file_upload', on_click=import_dialog).props('unelevated no-caps')
-    ui.label('Try a swatch, inspect its sources, or save a copy to edit. '
-             'Cut pieces from a fabric under Fabric type in the sewing pattern.').classes('se-param-label')
+            ui.label('Choose a fabric' if choose else 'Fabrics').classes('se-section-label text-2xl')
+            ui.label('It is applied to the selected pieces.' if choose else
+                     'Your materials, measurements, and original files.').classes('se-param-label')
+        if not choose:
+            with ui.row().classes('gap-2'):
+                ui.button('New fabric', on_click=new_fabric).props('flat no-caps')
+                ui.button('Import U3M', icon='file_upload', on_click=import_dialog).props('unelevated no-caps')
+    if not choose:
+        ui.label('Try a swatch, inspect its sources, or save a copy to edit. '
+                 'Cut pieces from a fabric under Fabric type in the sewing pattern.').classes('se-param-label')
     with ui.row().classes('w-full items-center justify-between gap-3'):
-        collection = ui.toggle({'common': 'Common fabrics', 'saved': 'My fabrics'}, value='common',
+        # A guest studio has no account library or hearts to show.
+        views = {'favorites': 'Favorites', 'saved': 'My fabrics', 'common': 'Common fabrics'} if email else {
+            'common': 'Common fabrics'}
+        collection = ui.toggle(views, value='favorites' if choose and hearts else 'common',
                                on_change=lambda: listing.refresh()).props('no-caps unelevated')
-        search = ui.input('Search fabrics', placeholder='Name, fiber, or weave',
-                          on_change=lambda: listing.refresh()).props('outlined dense clearable debounce=250').classes('w-full sm:w-64')
+        with ui.row().classes('items-center gap-2 w-full sm:w-auto'):
+            # A label, not an aria-label prop: Quasar puts that on a wrapper, not the combobox.
+            weight = ui.select({'': 'Any weight', **fabrics.WEIGHT_CLASSES}, value='', label='Weight',
+                               on_change=lambda: listing.refresh()).props(
+                'outlined dense options-dense').classes('w-full sm:w-52')
+            search = ui.input('Search fabrics', placeholder='Name, fiber, or weave',
+                              on_change=lambda: listing.refresh()).props('outlined dense clearable debounce=250').classes('w-full sm:w-64')
 
     listing_generation = 0
 
@@ -284,19 +339,36 @@ async def fabric_library(email):
         nonlocal listing_generation
         listing_generation += 1
         generation = listing_generation
-        query = (search.value or '').strip().casefold()
-        records = standard_fabrics() if collection.value == 'common' else await run.io_bound(fabrics.list_fabrics, email)
+        query = search.value or ''
+        loading = ui.row().classes('items-center gap-2 py-4')
+        with loading:
+            ui.spinner(size='sm')
+            ui.label('Loading fabrics…').classes('se-param-label').props('role=status')
+        try:
+            if collection.value == 'common':
+                records = standard_fabrics()
+            elif collection.value == 'favorites':
+                records = await run.io_bound(fabric_favorites.favorites, email)
+            else:
+                records = await run.io_bound(fabrics.list_fabrics, email)
+        except (ValueError, SQLAlchemyError):
+            records = None
         # A filter/tab change can finish before an older database read. Only
         # the latest render may populate the refreshable container.
         if generation != listing_generation:
             return
-        records = [record for record in records if query in ' '.join((
-            record['name'], record['content']['description'],
-            record['content'].get('catalog', {}).get('composition', ''),
-            record['content'].get('catalog', {}).get('construction', ''))).casefold()]
+        loading.delete()
+        if records is None:
+            ui.label('Your fabrics could not be loaded. Check your connection and try again.').classes(
+                'se-param-label py-4').props('role=alert')
+            return
+        total = len(records)
+        records = [record for record in records if fabrics.matches(record, query, weight.value)]
         if not records:
-            ui.label('No fabrics match your search.' if query else
-                     'Save a copy from Common fabrics, import a material, or create your own.').classes('se-param-label py-4')
+            empty = {'favorites': 'Tap a heart to keep a fabric here. Nothing is copied.',
+                     'saved': 'Save a copy from Common fabrics, import a material, or create your own.',
+                     'common': 'No common fabrics are available.'}[collection.value]
+            ui.label('No fabrics match your search or weight.' if total else empty).classes('se-param-label py-4')
         for record in records:
             values = record['content']['properties']
             summary = []
@@ -311,13 +383,22 @@ async def fabric_library(email):
                             if shade:
                                 ui.element('span').classes('se-fabric-chip').style(f'background:{shade}').props(
                                     f'role=img aria-label="Display color {shade}"')
-                            ui.button(record['name'], on_click=lambda _, i=record['id']: edit(i)).props('flat no-caps align=left').classes('font-medium' + ('' if shade else ' -ml-3'))
+                            if choose and not email:
+                                ui.label(record['name']).classes('font-medium')     # Properties need an account.
+                            else:
+                                ui.button(record['name'], on_click=lambda _, i=record['id']: edit(i)).props('flat no-caps align=left').classes('font-medium' + ('' if shade else ' -ml-3'))
                         catalog = record['content'].get('catalog')
                         if catalog:
                             ui.label(f'{catalog["composition"]} · {catalog["construction"]}').classes('se-param-label text-sm')
                         ui.label(' · '.join(summary) or 'Physical properties not supplied').classes('se-param-label')
                         ui.label(evidence_label(record['content'])).classes('se-param-label text-xs mt-1')
                     with ui.row(wrap=False).classes('se-fabric-actions items-center gap-1'):
+                        heart_button(record)
+                        if choose:
+                            # The studio keeps its selection; only the fabric comes back.
+                            ui.button('Use fabric', on_click=lambda _, i=record['id']: choose(i)).props(
+                                f'unelevated no-caps aria-label="Use {record["name"]}"')
+                            continue
                         if values['weight']['value'] is not None:
                             ui.button('Test swatch', icon='science', on_click=lambda _, i=record['id']: compare(i)).props('flat no-caps')
                         if record['standard']:

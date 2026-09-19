@@ -389,6 +389,68 @@ class FabricStorageTest(unittest.TestCase):
             fabrics.update_fabric(self.alice, cleared['id'], cleared['edit_token'], name=cleared['name'],
                                   description='', values={}, display_color='navy')
 
+    def test_hearts_reference_fabrics_without_copying_and_stay_out_of_the_wardrobe(self):
+        from webapp import fabric_favorites as hearts
+        from webapp.favorites import Favorites
+        from webapp.wardrobe import Wardrobe
+        poplin = 'standard:catalog:light-cotton-poplin'
+        with patch.object(hearts, 'SessionLocal', fabrics.SessionLocal):
+            hearts.set_favorite(self.alice, poplin, True)
+            hearts.set_favorite(self.alice, self.record['id'], True)
+            hearts.set_favorite(self.alice, self.record['id'], True)       # a second tab
+            self.assertEqual(hearts.keys(self.alice), {poplin, self.record['id']})
+            # Most recent first, each once; hearting a standard fabric made no copy.
+            self.assertEqual([r['id'] for r in hearts.favorites(self.alice)], [self.record['id'], poplin])
+            self.assertEqual(len(fabrics.list_fabrics(self.alice)), 1)
+            self.assertEqual(hearts.keys(self.bob), set())
+            with self.assertRaisesRegex(ValueError, 'unavailable'):
+                hearts.set_favorite(self.bob, self.record['id'], True)   # someone else's fabric
+            with self.assertRaisesRegex(ValueError, 'Sign in'):
+                hearts.set_favorite(None, poplin, True)
+            self.assertEqual((hearts.keys(None), hearts.favorites(None)), (set(), []))
+            # A heart whose fabric no longer resolves is skipped, not an error.
+            from webapp.models import WardrobeFavorite
+            with fabrics.SessionLocal() as db:
+                db.add(WardrobeFavorite(owner_email=self.alice, kind='fabric', item_id='standard:catalog:retired'))
+                db.commit()
+            self.assertEqual(len(hearts.favorites(self.alice)), 2)
+            hearts.set_favorite(self.alice, 'standard:catalog:retired', False)   # and can still be removed
+            self.assertNotIn('standard:catalog:retired', hearts.keys(self.alice))
+            # The quick list shows each fabric once, hearts first.
+            groups = {}
+            for item in fabrics.assignable(self.alice):
+                groups.setdefault(item['group'], []).append(item['id'])
+            self.assertEqual(groups['Favorites'], [self.record['id'], poplin])
+            self.assertNotIn('My fabrics', groups)
+            self.assertNotIn(poplin, groups['Common fabrics'])
+            self.assertEqual(len(groups['Common fabrics']), 11)
+            self.assertEqual({i['group'] for i in fabrics.assignable(None)}, {'Common fabrics'})
+        # Garment and outfit favorites neither count nor list fabric hearts.
+        import webapp.favorites as wardrobe_favorites
+        with patch.object(wardrobe_favorites, 'SessionLocal', fabrics.SessionLocal):
+            wardrobe = Favorites(Wardrobe(self.alice, {}))
+            self.assertEqual(wardrobe.keys(), set())
+            self.assertEqual(wardrobe.list(), [])
+            with self.assertRaises(ValueError):
+                wardrobe.set('fabric', poplin, True)
+
+    def test_weight_classes_follow_the_apparel_boundaries(self):
+        content = deepcopy(self.record['content'])
+        for weight, expected in ((None, None), (60, 'light'), (134.9, 'light'), (135, 'medium'),
+                                 (270, 'medium'), (270.1, 'heavy'), (400, 'heavy')):
+            content['properties']['weight']['value'] = weight
+            self.assertEqual(fabrics.weight_class(content), expected)
+        self.assertEqual(set(fabrics.WEIGHT_CLASSES), {'light', 'medium', 'heavy'})
+        common = fabrics.standard_fabrics()
+        names = lambda **filters: {r['name'] for r in common if fabrics.matches(r, **filters)}
+        self.assertEqual(names(weight='heavy'), {'Cotton denim', 'Cotton canvas'})
+        self.assertEqual(names(query='  KNIT '), {'Cotton jersey', 'Stretch jersey'})        # weave text, any case
+        self.assertEqual(names(query='cotton', weight='light'), {'Lightweight cotton poplin'})
+        self.assertEqual(names(query='velvet'), set())
+        # Drape presets have no weight, so a weight filter never claims them.
+        self.assertFalse(any(fabrics.matches(r, weight='light') for r in common if r['id'] == 'standard:canvas'))
+        self.assertTrue(fabrics.matches(self.record, query='cupro'))
+
     def test_unchanged_values_preserve_measurement_provenance(self):
         value = self.record['content']['properties']['weight']['value']
         saved = self.save(values={'weight': str(value)})

@@ -38,6 +38,8 @@
 .se-fabric-unit {position:absolute; right:0; font-weight:400; color:#5a6270;}
 .se-fabric-stiffness {padding-bottom:18px; border-bottom:1px solid #dbe0e6;}
 .se-fabric-material small, .se-fabric-stiffness small {display:block; margin-top:6px; font-weight:400;}
+.se-fabric-browse {display:block; margin:-10px 0 18px; padding:0; border:0; background:none; color:#35558a; font:inherit; font-size:12px; font-weight:600; cursor:pointer;}
+.se-fabric-browse:hover {text-decoration:underline;}
 .se-fabric-outdated {margin:-6px 0 20px; font-size:12px; line-height:1.45; color:#5a6270;}
 .se-fabric-outdated button {display:block; margin-top:6px; padding:0; border:0; background:none; color:#35558a; font:inherit; font-weight:600; cursor:pointer;}
 .se-fabric-outdated button:hover {text-decoration:underline;}

@@ -311,6 +311,7 @@ class GUIState:
                 self.ui_fabric_panel.on('clear', lambda: self.set_pattern_selection([]))
                 self.ui_fabric_panel.on('select-all', lambda: self.set_pattern_selection(list(self.pattern_state.panel_svg_paths)))
                 self.ui_fabric_panel.on('edit', self.edit_selected_fabric)
+                self.ui_fabric_panel.on('browse', self.browse_fabrics)
             with ui.element('section').classes('se-preview-dock').props('aria-label="3D preview"') as self.ui_drape_stage:
                 with ui.row(wrap=False).classes('se-preview-header'):
                     ui.label('3D preview').classes('font-semibold')
@@ -898,8 +899,30 @@ class GUIState:
                 outdated.add(panel)
         return outdated
 
+    async def browse_fabrics(self, _=None):
+        """The account library's own list, as a picker for the pieces already selected."""
+        from webapp.fabrics import assignable
+        from webapp.fabrics_ui import fabric_library
+        panels = list(self.selected_panels)
+        if not panels:
+            return
+        email = self.user['email'] if self.user else None
+        with ui.context.client, ui.dialog() as dialog, ui.card().classes('se-stitch-card se-fabric-chooser gap-4'):
+            await fabric_library(email, choose=lambda identity: dialog.submit(identity))
+            ui.button('Cancel', on_click=dialog.close).props('flat no-caps').classes('self-end')
+        dialog.open()
+        identity = await dialog
+        dialog.delete()
+        # A heart or an import made while browsing belongs in the quick list too.
+        self.ui_fabric_panel.configure(library=assignable(email))
+        if identity:
+            # The selection and every unsaved design change are exactly as they were.
+            await self._apply_fabric_edit(dict(panels=panels, field='material', value=identity))
+
     async def edit_selected_fabric(self, e):
-        data = e.args
+        await self._apply_fabric_edit(e.args)
+
+    async def _apply_fabric_edit(self, data):
         panels = [p for p in data.get('panels', []) if p in self.pattern_state.panel_svg_paths]
         if not panels:
             return

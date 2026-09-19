@@ -258,16 +258,44 @@ def library_snapshot(email, identity):
     return snapshot(email, identity)
 
 
+# 4 and 8 oz/yd², the usual apparel boundaries between light, medium and heavy cloth.
+WEIGHT_CLASSES = dict(light='Light · under 135 g/m²', medium='Medium · 135–270 g/m²',
+                      heavy='Heavy · over 270 g/m²')
+
+
+def weight_class(content):
+    value = content['properties']['weight']['value']
+    if value is None:
+        return None
+    return 'light' if value < 135 else 'medium' if value <= 270 else 'heavy'
+
+
+def matches(record, query='', weight=''):
+    """The library's search box and weight filter, shared by the account page and the studio picker."""
+    content = record['content']
+    catalog = content.get('catalog') or {}
+    text = ' '.join((record['name'], content.get('description', ''), catalog.get('composition', ''),
+                     catalog.get('construction', ''))).casefold()
+    return (query or '').strip().casefold() in text and (not weight or weight_class(content) == weight)
+
+
 def assignable(email=None):
-    """Fabrics a signed-in or guest studio may cut a piece from."""
+    """Fabrics a signed-in or guest studio may cut a piece from, each listed once."""
     from webapp.fabric_catalog import standard_fabrics as catalog_fabrics
-    owned = []
+    from webapp.fabric_favorites import favorites
+    owned, hearted = [], []
     if email:
         try:
-            owned = [dict(id=r['id'], label=r['name'], group='My fabrics') for r in list_fabrics(email)]
+            owned, hearted = list_fabrics(email), favorites(email)
         except ValueError:
-            owned = []
-    return owned + [dict(id=r['id'], label=r['name'], group='Common fabrics') for r in catalog_fabrics()]
+            owned, hearted = [], []
+    # The artistic presets already are the panel's own "Drape presets" group.
+    hearted = [r for r in hearted if not r['id'].startswith('standard:') or r['id'].startswith('standard:catalog:')]
+    first = {r['id'] for r in hearted}
+    groups = (('Favorites', hearted),
+              ('My fabrics', [r for r in owned if r['id'] not in first]),
+              ('Common fabrics', [r for r in catalog_fabrics() if r['id'] not in first]))
+    return [dict(id=r['id'], label=r['name'], group=group) for group, records in groups for r in records]
 
 
 def export_fabric(email, identity):

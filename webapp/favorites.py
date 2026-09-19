@@ -6,6 +6,10 @@ from webapp.models import WardrobeFavorite, User
 from webapp.wardrobe_sharing import WardrobeSharing
 
 
+# Fabric hearts share the table (webapp/fabric_favorites.py) but are not wardrobe items.
+KINDS = ('garment', 'outfit', 'share')
+
+
 class Favorites:
     def __init__(self, store):
         self.store = store
@@ -14,12 +18,13 @@ class Favorites:
         if not self.store.email:
             return set()
         with SessionLocal() as db:
-            return {f'{r.kind}:{r.item_id}' for r in db.query(WardrobeFavorite).filter_by(owner_email=self.store.email)}
+            return {f'{r.kind}:{r.item_id}' for r in db.query(WardrobeFavorite).filter(
+                WardrobeFavorite.owner_email == self.store.email, WardrobeFavorite.kind.in_(KINDS))}
 
     def set(self, kind, item_id, enabled):
         if not self.store.email:
             raise ValueError('Sign in to save favorites.')
-        if kind not in ('garment', 'outfit', 'share'):
+        if kind not in KINDS:
             raise ValueError('Choose a garment or outfit.')
         if kind == 'share':
             try:
@@ -49,8 +54,9 @@ class Favorites:
         if not self.store.email:
             return []
         with SessionLocal() as db:
-            refs = [(r.kind, r.item_id) for r in db.query(WardrobeFavorite).filter_by(
-                owner_email=self.store.email).order_by(WardrobeFavorite.created_at.desc())]
+            refs = [(r.kind, r.item_id) for r in db.query(WardrobeFavorite).filter(
+                WardrobeFavorite.owner_email == self.store.email, WardrobeFavorite.kind.in_(KINDS)
+            ).order_by(WardrobeFavorite.created_at.desc())]
         result, sharing = [], WardrobeSharing(self.store)
         library = self.store.read()
         owned = {f'{kind}:{item["id"]}': item for kind, bucket in (('garment', 'garments'), ('outfit', 'outfits'))

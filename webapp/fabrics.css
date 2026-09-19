@@ -1,0 +1,10 @@
+/* Shared by Account → Fabrics and the studio's fabric chooser. */
+.se-fabric-chip {width:16px; height:16px; flex:none; border-radius:50%; border:1px solid var(--home-line,#c5ccd8);}
+/* The wardrobe's heart, inline in a row instead of pinned to a card corner. */
+.se-fabric-heart.q-btn {width:36px; height:36px; min-height:36px; padding:0; background:transparent!important; color:var(--home-muted,#61768b); box-shadow:none;}
+.se-fabric-heart.q-btn:before {box-shadow:none;}
+.se-fabric-heart.q-btn .q-focus-helper {display:none;}
+.se-fabric-heart.q-btn .q-icon {font-size:20px;}
+.se-fabric-heart.q-btn.is-favorite {color:#bb5267;}
+.se-fabric-heart.q-btn:hover, .se-fabric-heart.q-btn:focus-visible {color:#facc15;}
+.se-fabric-chooser {width:min(760px,96vw); max-width:none!important; max-height:88vh; overflow:auto;}
