@@ -40,6 +40,20 @@ without WebGPU and do not start a graphics device.
 
 ## Standard images
 
+Thumbnails preserve alpha through GPU readback and WebP normalization. The page
+supplies a pale background in light mode and a radial studio glow in dark mode;
+fabric colors and lighting are unchanged. Older opaque private thumbnails are
+treated as missing by the queue and replaced on the next Home visit. Until then,
+the illustrated fallback remains available. Existing shared snapshots retain
+their original image until refreshed by the owner.
+
+To regenerate all six bundled images with transparency, run
+`python benchmarks/regenerate_thumbnails.py` in the full meshing environment,
+open `http://127.0.0.1:8768`, and click **Regenerate**. The local-only tool drafts
+only built-in presets, uses the production browser capture pipeline, and writes
+only the six bundled WebPs. Stop the server after the page confirms completion.
+Bundled image URLs include a version to avoid reusing old opaque browser caches.
+
 The six standard garment renders live in `assets/garment_thumbnails/`, using
 fixed preset names such as `DressShirt.webp` and `Pants.webp`. They contain only
 built-in presets, never personal designs or measurements. To refresh a preset

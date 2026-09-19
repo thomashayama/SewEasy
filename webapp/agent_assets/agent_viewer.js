@@ -1,4 +1,4 @@
-import { captureThumbnail } from '/webgpu/capture.js';
+import { captureThumbnail } from '/webgpu/capture.js?v=2';
 const root=location.pathname.replace(/\/$/,''),status=document.querySelector('#status'),progress=document.querySelector('#progress'),retry=document.querySelector('#retry');
 document.querySelector('#pattern').src=root+'/pattern.png';
 for(const [id,asset] of [['svg-link','pattern.svg'],['png-link','pattern.png']])document.getElementById(id).href=root+'/'+asset;
@@ -9,7 +9,7 @@ async function render(){
     const info=await infoResponse.json();
     if(!info.has_scene){status.textContent='2D pattern ready.';progress.hidden=true;return;}
     if(info.state==='ready_3d'){
-      const canvas=document.querySelector('#render'),image=document.createElement('img');image.src=root+'/thumbnail.webp';image.alt='3D garment on the default mannequin';canvas.replaceWith(image);
+      const canvas=document.querySelector('#render'),image=document.createElement('img');image.src=root+'/thumbnail.webp';image.alt='3D garment on the default mannequin';image.id='render';canvas.replaceWith(image);
       status.textContent='3D render saved to your library.';progress.hidden=true;return;
     }
     if(!navigator.gpu)throw Error('3D needs a browser with WebGPU. The 2D pattern is ready to download.');
@@ -19,7 +19,7 @@ async function render(){
     status.textContent='Saving render…';
     const saved=await fetch(root+'/complete',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({image})});
     if(!saved.ok){const error=await saved.json();throw Error(error.detail || 'Could not save the render.');}
-    const preview=document.createElement('img');preview.src=image;preview.alt='3D garment on the default mannequin';
+    const preview=document.createElement('img');preview.src=image;preview.alt='3D garment on the default mannequin';preview.id='render';
     document.querySelector('#render').replaceWith(preview);
     status.textContent='3D render saved to your library.';document.body.dataset.renderState='ready';progress.hidden=true;
   }catch(error){

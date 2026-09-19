@@ -15,7 +15,7 @@ from webapp.db import Base
 from webapp.models import User
 from webapp.wardrobe import Wardrobe
 from webapp.garment_catalog import standard_garments, starter_item
-from webapp.thumbnail_cache import ROOT, bundled_thumbnail, normalize_image, prepare_thumbnail_scene, preview_key, thumbnail_key, SIZE
+from webapp.thumbnail_cache import ROOT, bundled_thumbnail, normalize_image, prepare_thumbnail_scene, preview_key, thumbnail_key, transparent_thumbnail, SIZE
 from webapp.thumbnail_migration import LEGACY_BODIES, legacy_key
 
 
@@ -53,9 +53,11 @@ class ThumbnailTest(unittest.TestCase):
             with self.subTest(garment=item['name']):
                 key = thumbnail_key('garment', item['id'])
                 with patch('webapp.thumbnail_cache.Path.read_bytes', side_effect=AssertionError('Read body file')):
-                    self.assertEqual(bundled_thumbnail(key), f'/garment-thumbnails/{item["standard"]}.webp')
+                    self.assertEqual(bundled_thumbnail(key), f'/garment-thumbnails/{item["standard"]}.webp?v=2')
                 with Image.open(ROOT / 'assets/garment_thumbnails' / f'{item["standard"]}.webp') as image:
                     self.assertEqual(image.size, SIZE)
+                    self.assertEqual(image.mode, 'RGBA')
+                    self.assertEqual(image.getchannel('A').getextrema(), (0, 255))
                     self.assertGreater(min(ImageStat.Stat(image.convert('RGB')).stddev), 5)
 
     def test_saved_ids_keep_images_separate_even_when_designs_are_identical(self):
@@ -129,6 +131,23 @@ class ThumbnailTest(unittest.TestCase):
             self.assertEqual(store.read()['thumbnails'][thumbnail_key('outfit', current['revision_id'])], current_image)
             self.assertIn(key, store.read()['thumbnails'])
         engine.dispose()
+
+    def test_normalization_preserves_transparency_and_opaque_fabric(self):
+        image = Image.new('RGBA', SIZE, (0, 0, 0, 0))
+        image.paste((240, 235, 230, 255), (100, 100, 200, 200))
+        image.putpixel((99, 100), (240, 235, 230, 128))
+        out = BytesIO()
+        image.save(out, format='WEBP', lossless=True)
+        source = 'data:image/webp;base64,' + base64.b64encode(out.getvalue()).decode()
+        normalized = normalize_image(source)
+        with Image.open(BytesIO(base64.b64decode(normalized.split(',', 1)[1]))) as result:
+            self.assertEqual(result.getpixel((0, 0))[3], 0)
+            self.assertEqual(result.getpixel((150, 150))[3], 255)
+            self.assertEqual(result.getpixel((99, 100))[3], 128)
+        self.assertTrue(transparent_thumbnail(normalized))
+        self.assertFalse(transparent_thumbnail(raster()))
+        self.assertFalse(transparent_thumbnail(None))
+        self.assertFalse(transparent_thumbnail('data:image/webp;base64,!!!'))
 
     def test_invalid_or_oversize_uploads_are_rejected(self):
         for value in ('data:image/svg+xml,<svg/>', 'data:image/webp;base64,!!!', raster((32, 32)),

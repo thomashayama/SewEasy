@@ -12,7 +12,7 @@ from nicegui import app, ui
 from nicegui.element import Element
 
 from webapp.garment_catalog import standard_garments, thumbnail
-from webapp.thumbnail_cache import ROOT, bundled_thumbnail, prepare_thumbnail_scene, preview_key, thumbnail_key
+from webapp.thumbnail_cache import ROOT, bundled_thumbnail, prepare_thumbnail_scene, preview_key, thumbnail_key, transparent_thumbnail
 from webapp.wardrobe import same_items
 
 SCENES = ROOT / 'tmp_gui/thumbnail-scenes'
@@ -38,7 +38,7 @@ class ThumbnailQueue(Element, component='thumbnail_renderer.js'):
         self.folder = SCENES / uuid4().hex
         ui.add_css('''
             .se-thumbnail {min-width:0; overflow:hidden;}
-            .se-render-thumbnail {display:block; width:100%; height:100%; object-fit:contain; background:#e8f0f5;}
+            .se-render-thumbnail {display:block; width:100%; height:100%; object-fit:contain;}
             .se-thumbnail-fallback {display:flex; justify-content:center; align-items:center; width:100%; height:100%; padding:10px;}
             .se-thumbnail-fallback svg {min-width:0; height:100%; max-width:100%; flex:1;}
         ''')
@@ -56,7 +56,8 @@ class ThumbnailQueue(Element, component='thumbnail_renderer.js'):
         return library
 
     def image(self, key):
-        return bundled_thumbnail(key) or self.images.get(key)
+        image = self.images.get(key)
+        return bundled_thumbnail(key) or (image if transparent_thumbnail(image) else None)
 
     def markup(self, items, key=None, image=None):
         image = image or self.image(key)

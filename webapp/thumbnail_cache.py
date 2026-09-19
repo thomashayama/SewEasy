@@ -1,6 +1,7 @@
 """Thumbnails attached to garment/outfit IDs, on the default mannequin."""
 import base64
 from io import BytesIO
+from functools import lru_cache
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -39,10 +40,23 @@ def normalize_image(data_url):
             if image.size != SIZE or image.format != 'WEBP':
                 raise ValueError('Invalid thumbnail dimensions or format.')
             out = BytesIO()
-            image.convert('RGB').save(out, format='WEBP', quality=86)
+            image.convert('RGBA').save(out, format='WEBP', quality=86)
         return 'data:image/webp;base64,' + base64.b64encode(out.getvalue()).decode()
     except Exception as error:
         raise ValueError('Invalid thumbnail image.') from error
+
+
+@lru_cache(maxsize=128)
+def transparent_thumbnail(data_url):
+    """Old opaque renders are replaced lazily, without altering saved designs."""
+    from PIL import Image
+    if not isinstance(data_url, str) or not data_url.startswith('data:image/webp;base64,'):
+        return False
+    try:
+        with Image.open(BytesIO(base64.b64decode(data_url.split(',', 1)[1], validate=True))) as image:
+            return image.mode == 'RGBA' and image.getchannel('A').getextrema()[0] == 0
+    except (ValueError, OSError):
+        return False
 
 
 def bundled_thumbnail(key):
@@ -50,7 +64,7 @@ def bundled_thumbnail(key):
     standards = {thumbnail_key('garment', f'standard:{kind}'): kind for kind, *_ in STARTERS}
     kind = standards.get(key)
     if kind and (ROOT / 'assets/garment_thumbnails' / f'{kind}.webp').is_file():
-        return f'/garment-thumbnails/{kind}.webp'
+        return f'/garment-thumbnails/{kind}.webp?v=2'
     return None
 
 

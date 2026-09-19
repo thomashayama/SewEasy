@@ -25,7 +25,7 @@ export default {
         // Cached library cards only need images. Do not download or parse the
         // cloth solver, shaders and renderer unless a missing image needs work.
         const [{Cloth},{Renderer}]=await Promise.all([
-          import('/webgpu/physics.js?v=18'),import('/webgpu/render.js?v=22'),
+          import('/webgpu/physics.js?v=18'),import('/webgpu/render.js?v=23'),
         ]);
         if(e.disposed)return;
         if(!e.device){
@@ -41,7 +41,7 @@ export default {
         const scene=await response.json();
         if(e.disposed)return;
         cloth=await Cloth.create(e.device,scene);
-        renderer=new Renderer(e.device,this.$refs.canvas,cloth,navigator.gpu.getPreferredCanvasFormat());
+        renderer=new Renderer(e.device,this.$refs.canvas,cloth,navigator.gpu.getPreferredCanvasFormat(),{transparent:true});
         renderer.pixelRatio=1;
         renderer.controls.destroy();
         this.$refs.canvas.tabIndex=-1;

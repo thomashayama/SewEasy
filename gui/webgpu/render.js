@@ -61,13 +61,13 @@ fn turn(v:vec3<f32>)->vec3<f32>{let cs=view.angle.xy;return vec3<f32>(cs.x*v.x+c
  return vec4<f32>(pow(color*light+rim,vec3<f32>(1.0/2.2)),1);
 }`;
 export class Renderer {
- constructor(device,canvas,cloth,format,{systemTheme=false}={}){
+ constructor(device,canvas,cloth,format,{systemTheme=false,transparent=false}={}){
   this.device=device;this.canvas=canvas;this.cloth=cloth;this.format=format;this.dirty=true;
-  // Saved catalog images keep a consistent backdrop, independent of the OS.
-  this.background=lightBackground;
+  // Thumbnails keep their alpha so the page can supply a theme-aware backdrop.
+  this.background=transparent?{r:0,g:0,b:0,a:0}:lightBackground;
   if(systemTheme)this.stopTheme=watchSystemBackground(color=>{this.background=color;this.dirty=true;});
   this.resizeObserver=new ResizeObserver(()=>this.dirty=true);this.resizeObserver.observe(canvas);
-  this.context=canvas.getContext('webgpu');this.context.configure({device,format,alphaMode:'opaque',usage:GPUTextureUsage.RENDER_ATTACHMENT|GPUTextureUsage.COPY_SRC});
+  this.context=canvas.getContext('webgpu');this.context.configure({device,format,alphaMode:transparent?'premultiplied':'opaque',usage:GPUTextureUsage.RENDER_ATTACHMENT|GPUTextureUsage.COPY_SRC});
   this.camera={yaw:0,pitch:0,distance:2.3,target:[0,1.2,0],pan:[0,0]};this.buffers=[];this.showBody=true;
   this.clothColors=buffer(device,new Float32Array(cloth.n*4).fill(1),GPUBufferUsage.STORAGE);
   this.bodyColors=buffer(device,new Float32Array(cloth.scene.body_vertices.length*4).fill(1),GPUBufferUsage.STORAGE);
@@ -138,7 +138,7 @@ export class Renderer {
    const raw=new Uint8Array(readback.getMappedRange()),pixels=new Uint8ClampedArray(w*h*4),bgra=this.format.startsWith('bgra');
    for(let y=0;y<h;y++)for(let x=0;x<w;x++){
     const src=y*stride+x*4,dst=(y*w+x)*4;
-    pixels[dst]=raw[src+(bgra?2:0)];pixels[dst+1]=raw[src+1];pixels[dst+2]=raw[src+(bgra?0:2)];pixels[dst+3]=255;
+    pixels[dst]=raw[src+(bgra?2:0)];pixels[dst+1]=raw[src+1];pixels[dst+2]=raw[src+(bgra?0:2)];pixels[dst+3]=raw[src+3];
    }
    const canvas=document.createElement('canvas');canvas.width=w;canvas.height=h;
    canvas.getContext('2d').putImageData(new ImageData(pixels,w,h),0,0);

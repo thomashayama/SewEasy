@@ -1,5 +1,5 @@
 import {Cloth} from './physics.js?v=18';
-import {Renderer} from './render.js?v=22';
+import {Renderer} from './render.js?v=23';
 
 export async function captureThumbnail(scene,canvas,onProgress=()=>{}){
   const adapter=await navigator.gpu.requestAdapter({powerPreference:'low-power'});
@@ -8,7 +8,7 @@ export async function captureThumbnail(scene,canvas,onProgress=()=>{}){
   device.lost.then(()=>{lost=true;});
   try{
     cloth=await Cloth.create(device,scene);
-    renderer=new Renderer(device,canvas,cloth,navigator.gpu.getPreferredCanvasFormat());
+    renderer=new Renderer(device,canvas,cloth,navigator.gpu.getPreferredCanvasFormat(),{transparent:true});
     renderer.pixelRatio=1;renderer.outputSize=[384,448];renderer.controls.destroy();renderer.bodyView.color=[.72,.64,.57,0];
     for(let frame=0;frame<180;frame++){
       await new Promise(resolve=>requestAnimationFrame(resolve));
