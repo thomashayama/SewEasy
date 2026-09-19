@@ -49,7 +49,7 @@ fn bend_solve(index:u32,iteration:u32){
  p[h.ids.z]=vec4<f32>(c.xyz+c.w*lambda*g2,c.w);
  p[h.ids.w]=vec4<f32>(d.xyz+d.w*lambda*g3,d.w);
 }
-@compute @workgroup_size(128) fn main(@builtin(local_invocation_index) i:u32){
+@compute @workgroup_size(64) fn main(@builtin(local_invocation_index) i:u32){
  if(i<params.counts.x){p[i]=q[i];v[i]=velocity[i].xyz;}
  workgroupBarrier();
  let dt=params.motion.x;let ramp=clamp((params.motion.y-params.contact.w)/.3,0.0,1.0);

@@ -24,13 +24,17 @@ in the browser; the server only prepares geometry and material coefficients.
 - Bend mode uses gravity 9.81 m/s². Stretch mode applies 25 N/m to the free edge
   (1 N total). Shear mode applies 5 N/m sideways (0.2 N total). Both loaded
   tests disable gravity; trapezoidal edge quadrature distributes the force.
-- The solver uses 48 substeps per 1/60 s frame and 32 iterations, colored
-  constraints, and a fixed comparison camera. Refinement uses 64 substeps. It measures
+- Bending uses 12 substeps per 1/60 s frame and four iterations; refinement
+  uses 24 steps/eight iterations. Its clock follows display time with bounded
+  work, including 30 Hz displays. Loaded tests use 48 steps and 32 iterations
+  (refined: 64 steps) and a fixed simulation increment for repeatable readings.
+  They stay planar under in-plane forces, so zero-energy bending passes are
+  skipped. Cameras stay fixed for comparison. The solver measures
   real GPU vertex positions every 15 frames, and checks fixed pins and finite
   deformation. Six stable readings and low RMS speed establish numerical rest.
   Zero damping may keep a sample moving; that is not reported as equilibrium.
 
-The 50-vertex mesh fits in one 128-thread workgroup. The optimized and reference
+The 50-vertex mesh fits in one 64-thread workgroup. The optimized and reference
 GPU implementations must agree within 0.01 mm after one frame. Membrane kernel
 checks verify the SI energy equation, independent weft compliance, shear force,
 zero moduli, rotation invariance, and fixed pins. Garment material assignment
@@ -74,6 +78,9 @@ gave identical 13.472 mm displacements. Fixed pin error stayed below 0.00001 mm.
 All GPU kernel checks passed, including damping and optimized/reference parity.
 The comparison was also inspected at a 390 × 844 mobile viewport without
 horizontal overflow. These are diagnostics, not portable golden values.
+The interactive bend budget gave 71.118/66.145 mm tip drop, versus
+70.994/65.989 mm with refinement, below 0.16 mm difference on this fixture.
+Loaded tests prioritize numerical accuracy and can run slower than real time.
 
 ```powershell
 python -m unittest test_fabrics test_browser_preview test_button_closures test_dress_shirt_collar -q

@@ -1,4 +1,4 @@
-import {Cloth} from '/webgpu/physics.js?v=20';
+import {Cloth} from '/webgpu/physics.js?v=21';
 import {Renderer} from '/webgpu/render.js?v=24';
 
 // GPU objects live outside Vue's reactive graph. Each mounted stage owns one

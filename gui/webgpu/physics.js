@@ -4,7 +4,7 @@ import {strainShader, strainTopology, contactNeighbors, placePanels, waistbandTe
 import {hingeShader, interiorHingeShader, collarWeldShader} from './bending.js?v=4';
 import {MannequinMotion,bodyMotionWGSL} from './motion.js?v=2';
 import {buttonClosureShader,closureColors,closureRest} from './closures.js?v=2';
-import {swatchShader} from './swatch_solver.js?v=2';
+import {swatchShader} from './swatch_solver.js?v=3';
 import {membraneShader} from './membrane.js?v=1';
 const common = `
 struct Params { motion: vec4<f32>, material: vec4<f32>, counts: vec4<u32>, contact: vec4<f32>, limits:vec4<f32> }
@@ -292,6 +292,9 @@ export class Cloth {
     const placement=placePanels(scene);this.initialPositions=placement.positions;this.placement=placement.adjustments;this.supportTargets=placement.support;
     this.settings={substeps:12,width:1,wind:0,stretch:0.00001,bend:0.03,seam:0.0000001,thickness:0.004,gravity:9.81,damping:2,friction:0.4,sewDuration:1.6,selfCollision:true,bodyCollision:true,bodyMethod:'sdf',strainLimit:1.02,strainPasses:2,surfaceContact:true};
     this.settings.holdNeckline=this.supportTargets.length>0;
+    // These controlled load fixtures start planar and have only in-plane forces.
+    // Their dihedral energy stays zero; don't repeatedly solve zero bend forces.
+    this.planarSwatch=scene.garment==='fabric-swatch'&&['stretch','shear'].includes(scene.fabric_test?.mode);
     this.buttonStates=Uint32Array.from(scene.buttons||[],b=>b.closed!==false?1:0);
   }
   make(array,usage=GPUBufferUsage.STORAGE,label=''){const b=buffer(this.device,array,usage,label);this.owned.push(b);return b;}
@@ -450,9 +453,9 @@ export class Cloth {
     this.applySelf=await this.pipeline(applySelf,[...base,[2,this.scratch]],'Apply self contact');
     this.velocityPass=await this.pipeline(updateVelocity,[...base,[2,this.previous],[3,this.velocity]],'Velocity');
     this.normalPass=await this.pipeline(computeNormals,[...base,[2,this.faces],[3,this.incidentRanges],[4,this.incident],[5,this.normals],[6,this.uv]],'Normals and strain display');
-    if(s.garment==='fabric-swatch'&&this.n<=128&&s.interior_hinges.length<=256&&s.membranes?.length<=256){
-      const ranges=[...s.membrane_batches.map(([start,count])=>[start,count,2,0]),...s.interior_hinge_batches.map(([start,count])=>[start,count,1,0])];
-      if(ranges.some(r=>r[1]>128))throw Error('Swatch constraint batch exceeds workgroup capacity.');
+    if(s.garment==='fabric-swatch'&&this.n<=64&&s.interior_hinges.length<=256&&s.membranes?.length<=256){
+      const ranges=[...s.membrane_batches.map(([start,count])=>[start,count,2,0]),...(this.planarSwatch?[]:s.interior_hinge_batches.map(([start,count])=>[start,count,1,0]))];
+      if(ranges.some(r=>r[1]>64))throw Error('Swatch constraint batch exceeds workgroup capacity.');
       this.fastSwatch=await this.pipeline(swatchShader,[...base,[2,this.previous],[3,this.velocity],[4,this.edges],[5,this.make(new Uint32Array(ranges.flat()))],[6,this.interiorHinges],[7,this.membranes],[8,this.externalForces]],'Clamped swatch workgroup');
     }
     this.updateParams();
@@ -711,11 +714,11 @@ export class Cloth {
       }
       for(const batch of this.seamBatches)this.dispatchInPass(pass,this.seamSolve,batch.count,batch.bind);
       for(const batch of this.hingeBatches)this.dispatchInPass(pass,this.hingeSolve,batch.count,batch.bind);
-      for(const batch of this.interiorHingeBatches||[])this.dispatchInPass(pass,this.interiorHingeSolve,batch.count,batch.bind);
+      if(!this.planarSwatch)for(const batch of this.interiorHingeBatches||[])this.dispatchInPass(pass,this.interiorHingeSolve,batch.count,batch.bind);
       if(this.interiorHingeBatches?.length)for(let iteration=1;iteration<(this.settings.swatchIterations||1);iteration++){
         if(this.membranePass){for(const batch of this.membraneBatches)this.dispatchInPass(pass,this.membranePass,batch.count,batch.accumulatedBind);}
         else for(const batch of this.batches)this.dispatchInPass(pass,this.solve,batch.count,batch.bind);
-        for(const batch of this.interiorHingeBatches)this.dispatchInPass(pass,this.interiorHingeSolve,batch.count,batch.accumulatedBind);
+        if(!this.planarSwatch)for(const batch of this.interiorHingeBatches)this.dispatchInPass(pass,this.interiorHingeSolve,batch.count,batch.accumulatedBind);
       }
       // Button seats can share a triangle corner with a permanent seam.
       // Couple the solves so the button cannot pull that construction seam apart.

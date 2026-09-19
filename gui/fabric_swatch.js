@@ -1,6 +1,6 @@
-import {Cloth} from '/webgpu/physics.js?v=20';
+import {Cloth} from '/webgpu/physics.js?v=21';
 import {Renderer} from '/webgpu/render.js?v=24';
-import {swatchSettings,measureSwatch} from '/webgpu/swatch.js?v=2';
+import {settingsForSwatch,swatchSteps,measureSwatch} from '/webgpu/swatch.js?v=3';
 
 const engines=new WeakMap();
 const colors=['#c28a44','#74b7ec'];
@@ -65,7 +65,7 @@ export default {
       <p>Thickness and friction require contact and are not exercised by these tests. Nonlinear loading curves, hysteresis, and bend/twist coupling are preserved or left unknown, not reproduced by this approximation.</p>
       <p>The mesh and solver are approximate. Smaller time steps can change the readings. This prototype has not been calibrated against a physical swatch.</p>
       <p>Garment simulations still use their existing material settings. All simulation runs in this browser.</p>
-      <label><input type="checkbox" v-model="refined" :disabled="!ready || !!failure" @change="reset"> Refine time steps to check numerical sensitivity</label>
+      <label><input type="checkbox" v-model="refined" :disabled="!ready || !!failure" @change="reset"> Refine solver to check numerical sensitivity</label>
     </details>
   </div>`,
   props:{scene_url:String,fabric_name:String,weight_gsm:Number},
@@ -100,7 +100,7 @@ export default {
     },
     async build(){
         const e=engines.get(this),device=e.device;
-        this.ready=false;this.failure='';this.samples=[];this.time=0;this.settled=false;this.paused=false;e.stable=0;e.last=0;e.reloadPending=false;
+        this.ready=false;this.failure='';this.samples=[];this.time=0;this.settled=false;this.paused=false;e.stable=0;e.last=0;e.lastRead=0;e.remainder=0;e.reloadPending=false;
         for(const s of e.stages){s.renderer?.destroy();s.cloth?.destroy();}e.stages=[];
         e.abort=new AbortController();
         const responses=await Promise.all(['warp',this.equal?'warp':'weft'].map(direction=>fetch(this.scene_url+'?direction='+direction+'&mode='+this.mode,{signal:e.abort.signal})));
@@ -108,8 +108,7 @@ export default {
         const scenes=await Promise.all(responses.map(r=>r.json()));
         if(e.disposed)return;
         for(let i=0;i<2;i++){
-          const scene=scenes[i],cloth=await Cloth.create(device,scene,()=>{},{...swatchSettings,
-            substeps:Math.min(64,swatchSettings.substeps*(this.refined?2:1)),damping:scene.fabric_test.damping,gravity:scene.fabric_test.gravity});
+          const scene=scenes[i],cloth=await Cloth.create(device,scene,()=>{},settingsForSwatch(scene,this.refined));
           if(e.disposed){cloth.destroy();return;}
           const stage={cloth};e.stages.push(stage);
           stage.renderer=new Renderer(device,this.$el.querySelectorAll('canvas')[i],cloth,navigator.gpu.getPreferredCanvasFormat(),{systemTheme:true});
@@ -128,17 +127,24 @@ export default {
         if(e.reloadPending)await this.build();
         if(e.disposed)return;
         if(e.resetPending){
-          for(const s of e.stages){s.cloth.settings.substeps=Math.min(64,swatchSettings.substeps*(this.refined?2:1));s.cloth.reset();}
-          this.time=0;this.samples=[];this.settled=false;this.paused=false;e.stable=0;e.resetPending=false;e.last=0;e.started=performance.now();
+          for(const s of e.stages){Object.assign(s.cloth.settings,settingsForSwatch(s.cloth.scene,this.refined));s.cloth.reset();}
+          this.time=0;this.samples=[];this.settled=false;this.paused=false;e.stable=0;e.resetPending=false;e.last=0;e.lastRead=0;e.remainder=0;e.started=performance.now();
         }
         const advance=!this.failure&&!this.paused&&!this.settled&&!document.hidden&&now-(e.last||0)>=1000/60-.8;
         if(!this.failure&&(advance||e.stages.some(s=>s.renderer.dirty))){
-          const encoder=e.device.createCommandEncoder();
-          for(const s of e.stages){if(advance)s.cloth.encode(encoder,null,1/60);s.renderer.render(encoder);}
-          e.device.queue.submit([encoder.finish()]);await e.device.queue.onSubmittedWorkDone();if(e.disposed)return;
+          const budget=advance?swatchSteps(this.mode,e.last,now,e.remainder):{steps:0,remainder:e.remainder};
+          e.remainder=budget.remainder;
+          for(let step=0;step<Math.max(1,budget.steps);step++){
+            const encoder=e.device.createCommandEncoder();
+            for(const s of e.stages){if(step<budget.steps)s.cloth.encode(encoder,null,1/60);if(step===Math.max(1,budget.steps)-1)s.renderer.render(encoder);}
+            // Submit before updating uniforms for the next fixed increment.
+            e.device.queue.submit([encoder.finish()]);
+          }
+          await e.device.queue.onSubmittedWorkDone();if(e.disposed)return;
           if(advance){
             e.last=now;this.time=e.stages[0].cloth.time;this.wallSeconds=(performance.now()-e.started)/1000;
-            if(e.stages[0].cloth.frame%15===0){
+            if(e.stages[0].cloth.frame-e.lastRead>=15){
+              e.lastRead=e.stages[0].cloth.frame;
               const positions=await Promise.all(e.stages.map(s=>s.cloth.readPositions()));if(e.disposed)return;
               const samples=e.stages.map((s,i)=>measureSwatch(s.cloth.scene,positions[i]));
               const stable=this.samples.length&&samples.every((s,i)=>Math.abs(this.reading(s)-this.reading(this.samples[i]))<.015)

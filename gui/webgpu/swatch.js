@@ -2,6 +2,22 @@
 export const swatchSettings={substeps:48,swatchIterations:32,stretch:0,sewDuration:.001,damping:14,
   selfCollision:false,bodyCollision:false,surfaceContact:false,strainPasses:0};
 
+export function settingsForSwatch(scene,refined=false){
+  const test=scene.fabric_test;
+  const bending=test.mode==='bend';
+  return {...swatchSettings,substeps:bending?(refined?24:12):(refined?64:48),
+    swatchIterations:bending?(refined?8:4):32,damping:test.damping,gravity:test.gravity};
+}
+
+export function swatchSteps(mode,previous,now,remainder=0){
+  // Fixed integration increments avoid equilibrium jitter from varying dt.
+  // A 30 Hz display consumes two increments; long stalls have bounded work.
+  if(mode!=='bend')return {steps:1,remainder:0};
+  const elapsed=previous?Math.max(0,Math.min(1/30,(now-previous)/1000)):1/60;
+  const accumulated=remainder+elapsed,steps=Math.min(2,Math.floor(accumulated*60+1e-7));
+  return {steps,remainder:Math.max(0,accumulated-steps/60)};
+}
+
 export function measureSwatch(scene,positions){
   if(positions.some(p=>p.some(v=>!Number.isFinite(v))))throw Error('The swatch became unstable with these properties.');
   const spec=scene.swatch;

@@ -1,4 +1,4 @@
-import {Cloth} from './physics.js?v=20';
+import {Cloth} from './physics.js?v=21';
 import {Renderer} from './render.js?v=24';
 
 export async function captureThumbnail(scene,canvas,onProgress=()=>{}){
