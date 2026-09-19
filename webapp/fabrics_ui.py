@@ -77,7 +77,7 @@ async def fabric_library(email):
                 field('thickness', 'Thickness (mm)')
                 field('friction', 'Friction coefficient')
                 initial_color = (content.get('appearance') or {}).get('display_color', '')
-                with ui.column().classes('gap-1 min-w-0'):
+                with ui.column().classes('gap-1 min-w-0 col-span-2 sm:col-span-1'):   # a phone clips the hex
                     color = ui.color_input('Display color', value=initial_color, on_change=lambda: refresh()).props(
                         'outlined dense clearable').classes('w-full')
                     if standard:
