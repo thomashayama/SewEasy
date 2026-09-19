@@ -2,7 +2,8 @@
 from pathlib import Path
 
 from fastapi import Request
-from nicegui import app, ui
+from nicegui import app, run, ui
+from sqlalchemy.exc import SQLAlchemyError
 
 from gui import theme
 from webapp import auth, config
@@ -36,6 +37,7 @@ def home_page(request: Request):
     initial_tab = request.query_params.get('tab', 'garments')
     state = {'tab': initial_tab if initial_tab in ('garments', 'outfits', 'shared', 'favorites', 'explore') else 'garments',
              'query': '', 'create': 'garment', 'access': {}, 'favorite_keys': set(), 'explore_page': 0}
+    pending_favorites = set()
 
     def open_items(items, name='Untitled outfit', outfit_revision_id=None, editor_mode='garment', outfit_updated_at=None):
         storage['pending_design'] = studio_snapshot(items, name, storage.get('pending_design'),
@@ -61,17 +63,40 @@ def home_page(request: Request):
                 ui.menu_item('Save a copy', lambda: show_copy(kind, item))
 
     def favorite_button(kind, item_id, name):
-        selected = f'{kind}:{item_id}' in state['favorite_keys']
-        def toggle():
+        key = f'{kind}:{item_id}'
+
+        def update():
+            selected = key in state['favorite_keys']
+            button.props(f'icon={"favorite" if selected else "favorite_border"} aria-pressed={str(selected).lower()}')
+            button.classes(add='is-favorite' if selected else '', remove='' if selected else 'is-favorite')
+            button._props['aria-label'] = f'{"Remove" if selected else "Add"} {name} {"from" if selected else "to"} favorites'
+            button.update()
+
+        async def toggle():
+            if key in pending_favorites:
+                return
+            if not store.email:
+                ui.notify('Sign in to save favorites.', type='info')
+                return
+            selected = key in state['favorite_keys']
+            pending_favorites.add(key)
+            (state['favorite_keys'].discard if selected else state['favorite_keys'].add)(key)
+            update()
+            state['favorite_count'].set_text(str(len(state['favorite_keys'])))
             try:
-                favorites.set(kind, item_id, not selected)
-                library.refresh()
-            except ValueError as error:
-                ui.notify(str(error), type='info')
-        ui.button(icon='favorite' if selected else 'favorite_border', on_click=toggle).props('flat round dense') \
-            .classes('se-favorite' + (' is-favorite' if selected else ''))._props.update({
-                'aria-label': f'{"Remove" if selected else "Add"} {name} {"from" if selected else "to"} favorites',
-                'aria-pressed': str(selected).lower()})
+                await run.io_bound(favorites.set, kind, item_id, not selected)
+            except (ValueError, SQLAlchemyError) as error:
+                (state['favorite_keys'].add if selected else state['favorite_keys'].discard)(key)
+                ui.notify(str(error) if isinstance(error, ValueError) else 'Could not save favorite. Please try again.', type='warning')
+            finally:
+                pending_favorites.discard(key)
+                update()
+                state['favorite_count'].set_text(str(len(state['favorite_keys'])))
+                if state['tab'] == 'favorites':
+                    state['refresh_results']()
+
+        button = ui.button(on_click=toggle, color=None).props('flat round dense :ripple=false').classes('se-favorite')
+        update()
 
     def access_text(kind, item):
         access = state['access'].get(f'{kind}:{item["id"]}', {})
@@ -187,7 +212,6 @@ def home_page(request: Request):
         data = store.read()
         data['garments'] = latest_garments(data)
         data['shared'] = sharing.shared_with_me()
-        data['favorites'] = favorites.list()
         state['access'] = sharing.owner_access()
         state['favorite_keys'] = favorites.keys()
         with ui.element('div').classes('se-library-toolbar'):
@@ -203,7 +227,9 @@ def home_page(request: Request):
                     with ui.tab(key, label='').classes('se-library-tab'):
                         with ui.row(wrap=False).classes('items-center gap-0'):
                             ui.label(title)
-                            if key in data:
+                            if key == 'favorites':
+                                state['favorite_count'] = ui.label(str(len(state['favorite_keys']))).classes('se-library-count')
+                            elif key in data:
                                 ui.label(str(len(data[key]) + (len(standards) if key == 'garments' else 0))).classes('se-library-count')
             def search(event):
                 state['query'] = event.value
@@ -217,6 +243,8 @@ def home_page(request: Request):
         def results():
             kind = state['tab']
             more = False
+            if kind == 'favorites':
+                data['favorites'] = favorites.list()
             if kind == 'explore':
                 entries = sharing.discover(state['query'], offset=state['explore_page'] * 24, limit=25)
                 more, entries = len(entries) > 24, entries[:24]
@@ -275,6 +303,7 @@ def home_page(request: Request):
                         ui.button('Previous', on_click=lambda: page(-1)).props('flat no-caps').set_enabled(state['explore_page'] > 0)
                         ui.label(f'Page {state["explore_page"] + 1}').classes('se-home-muted')
                         ui.button('Next', on_click=lambda: page(1)).props('flat no-caps').set_enabled(more)
+        state['refresh_results'] = results.refresh
         results()
 
     with ui.element('main').classes('se-home'):
