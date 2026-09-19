@@ -1,0 +1,27 @@
+/* Account uses the wardrobe's header, typography, spacing and theme colors. */
+.se-account-layout {display:grid; grid-template-columns:200px minmax(0,1fr); gap:32px; align-items:start;}
+.se-account .se-account-nav {display:flex; flex-direction:column; gap:4px; background:transparent; border-right:1px solid var(--home-line); padding-right:18px;}
+.se-account .se-account-nav-item {justify-content:flex-start; width:100%; min-height:40px; padding:8px 10px; color:var(--home-muted);}
+.se-account .se-account-nav-item .q-btn__content {justify-content:flex-start; flex-wrap:nowrap; text-align:left;}
+.se-account .se-account-nav-item .q-icon {font-size:19px; margin-right:10px;}
+.se-account .se-account-nav-active {background:#edf4f8; color:#35558a; font-weight:600;}
+.se-account-content {width:100%; min-width:0; max-width:900px; gap:16px;}
+.se-account .se-stitch-card {border:1px solid var(--home-line); border-radius:6px; padding:20px; box-shadow:none;}
+.se-account .se-section-label {color:var(--home-ink);}
+.se-account .se-param-label {color:var(--home-muted);}
+@media(prefers-color-scheme:dark) {
+ .se-account .se-account-nav-active {background:var(--se-selected); color:var(--se-indigo);}
+}
+@media(max-width:900px) {
+ .se-account-layout {grid-template-columns:180px minmax(0,1fr); gap:20px;}
+ .se-account .se-account-nav {padding-right:12px;}
+}
+@media(max-width:620px) {
+ .se-account-layout {grid-template-columns:minmax(0,1fr); gap:20px;}
+ .se-account .se-account-nav {flex-direction:row; overflow-x:auto; padding:0 0 10px; border-right:0; border-bottom:1px solid var(--home-line);}
+ .se-account .se-account-nav-item {width:auto; flex-shrink:0;}
+ .se-account .se-stitch-card {padding:16px;}
+ .se-account .se-home-header .q-btn {font-size:12px;}
+ .se-account .se-home-header .q-icon {display:none;}
+ .se-account .se-home-subtitle {max-width:none;}
+}

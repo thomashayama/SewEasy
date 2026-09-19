@@ -2,11 +2,13 @@
 garments, and settings.
 
 Registered by webapp.setup(); requires a signed-in user (redirects home
-otherwise). Uses the same visual theme as the studio (gui/theme.py).
+otherwise). Shares the wardrobe home shell and the application's theme.
 Sections are rebuilt on every sidebar switch so they always reflect the
 current database state (e.g. a units change in Settings shows up in the
 Measurements editor immediately).
 """
+
+from pathlib import Path
 
 import numpy as np
 from fastapi import Request
@@ -67,7 +69,7 @@ def _default_measurements() -> dict:
     return profiles.measurements_from_body(BodyParameters(BODY_DEFAULT_FILE))
 
 
-@ui.page('/account')
+@ui.page('/account', title='SewEasy — Account')
 async def account_page(request: Request):
     user = auth.current_user(request)
     if user is None:
@@ -75,8 +77,10 @@ async def account_page(request: Request):
     email = user['email']
 
     ui.add_head_html(theme.HEAD_HTML)
+    ui.add_css(Path(__file__).with_name('home.css').read_text(encoding='utf-8'))
+    ui.add_css(Path(__file__).with_name('account.css').read_text(encoding='utf-8'))
     ui.colors(
-        primary=theme.colors.primary,
+        primary='#447cad',
         secondary=theme.colors.secondary,
         accent=theme.colors.accent,
         dark=theme.colors.dark,
@@ -86,31 +90,25 @@ async def account_page(request: Request):
         warning=theme.colors.warning,
     )
 
-    # --- Header ---
-    with ui.header(elevated=False, fixed=False).classes('flex-col p-0 m-0 gap-0'):
-        with ui.row(wrap=False).classes('w-full items-center justify-between py-2 px-5 m-0'):
-            with ui.row(wrap=False).classes('items-center gap-2.5 cursor-pointer') \
-                    .on('click', lambda: ui.navigate.to('/')):
-                ui.icon('content_cut').classes('text-2xl rotate-[-90deg] opacity-90')
-                with ui.column().classes('gap-0.5'):
-                    ui.label('SewEasy').classes('se-wordmark')
-                    ui.label('account').classes('se-eyebrow')
-            ui.button('Back to studio', on_click=lambda: ui.navigate.to('/studio')) \
-                .props('flat color=white no-caps icon=arrow_back')
-        ui.element('div').classes('se-selvedge w-full')
-
-    # --- Sidebar navigation ---
     nav_buttons = {}
-    with ui.left_drawer(value=True, bordered=True) \
-            .classes('se-account-nav px-2 py-3').props('width=220 breakpoint=640'):
-        for key, (icon, label) in SECTIONS.items():
-            nav_buttons[key] = ui.button(
-                label, icon=icon,
-                on_click=lambda _, k=key: show(k)
-            ).props('flat no-caps align=left color=grey-9') \
-                .classes('w-full justify-start rounded-lg')
-
-    content = ui.column().classes('w-full max-w-3xl mx-auto gap-4 p-4')
+    with ui.element('main').classes('se-home se-account'):
+        with ui.element('header').classes('se-home-header'):
+            ui.link('SewEasy', '/').classes('se-wordmark se-home-logo').props('aria-label="SewEasy home"')
+            ui.label('Account').classes('se-home-location')
+            ui.space()
+            ui.button('Your wardrobe', icon='checkroom', on_click=lambda: ui.navigate.to('/')).props('flat')
+            ui.button('Studio', icon='edit', on_click=lambda: ui.navigate.to('/studio')).props('flat')
+        with ui.element('div').classes('se-home-content'):
+            with ui.element('div').classes('se-home-heading'):
+                with ui.column().classes('gap-1'):
+                    ui.label('Your account').classes('se-home-title').props('role=heading aria-level=1')
+                    ui.label('Manage your measurements, materials, sharing and preferences.').classes('se-home-subtitle')
+            with ui.element('div').classes('se-account-layout'):
+                with ui.element('nav').classes('se-account-nav').props('aria-label="Account sections"'):
+                    for key, (icon, label) in SECTIONS.items():
+                        nav_buttons[key] = ui.button(label, icon=icon, color=None,
+                            on_click=lambda _, k=key: show(k)).props('flat no-caps align=left').classes('se-account-nav-item')
+                content = ui.column().classes('se-account-content')
 
     # Unsaved measurement edits: set by the editor, checked before anything
     # rebuilds a section (rebuilding re-reads the DB and discards edits)
@@ -134,9 +132,10 @@ async def account_page(request: Request):
             return
         unsaved['dirty'] = False
         for key, btn in nav_buttons.items():
-            btn.classes(replace='w-full justify-start rounded-lg'
-                        + (' se-account-nav-active font-medium'
+            btn.classes(replace='se-account-nav-item'
+                        + (' se-account-nav-active'
                            if key == section else ''))
+            btn.props('aria-current=page' if key == section else 'aria-current=false')
         content.clear()
         with content:
             await builders[section]()
