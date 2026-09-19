@@ -44,7 +44,10 @@
 .se-library-results {padding-top:16px;}
 .se-library-grid {display:grid; grid-template-columns:repeat(auto-fill,minmax(165px,1fr)); gap:16px; width:100%;}
 .se-library-card.q-btn {padding:0; text-align:left; align-self:start; border-radius:6px; color:#183452;}
-.se-library-entry {position:relative; min-width:0;}
+.se-library-entry {position:relative; min-width:0; border-radius:6px;}
+.se-library-entry::after {content:''; position:absolute; inset:0; border:2px solid transparent; border-radius:inherit; pointer-events:none; z-index:1; transition:border-color .15s ease;}
+.se-library-entry:hover::after, .se-library-entry:focus-within::after {border-color:#447cad;}
+.se-library-card.q-btn>.q-focus-helper {display:none;}
 .se-library-entry .se-library-card {width:100%;}
 .se-library-entry.is-owned .se-library-caption {padding-right:34px;}
 .se-library-actions.q-btn {position:absolute; top:153px; right:0; width:30px; height:30px; color:var(--home-muted);}
