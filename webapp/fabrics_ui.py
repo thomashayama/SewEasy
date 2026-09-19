@@ -5,12 +5,14 @@ from nicegui import run, ui
 
 from webapp import fabrics
 from webapp import fabric_formats as formats
+from webapp.fabric_catalog import evidence_label, metadata, standard_fabrics
 
 
 async def fabric_library(email):
     async def edit(identity):
         record = await run.io_bound(fabrics.get_fabric, email, identity)
         content = record['content']
+        standard = record['standard']
         inputs, initial = {}, {}
         with ui.context.client, ui.dialog().props('persistent') as dialog, ui.card().classes('se-stitch-card w-full max-w-xl gap-4'):
             with ui.row().classes('w-full items-center justify-between'):
@@ -18,6 +20,21 @@ async def fabric_library(email):
                 ui.button(icon='close', on_click=dialog.close).props('flat round dense aria-label="Close fabric editor"')
             name = ui.input('Fabric name', value=record['name']).props('outlined dense maxlength=120').classes('w-full')
             description = ui.textarea('Notes', value=content['description']).props('outlined dense rows=2 maxlength=4000').classes('w-full')
+            if standard:
+                name.props('readonly')
+                description.props('readonly')
+                ui.label('Standard fabric · Save a copy to make it your own.').classes('se-param-label text-sm')
+            catalog = metadata(content.get('catalog'))
+            if catalog:
+                ui.label(f'{catalog["composition"]} · {catalog["construction"]}').classes('text-sm')
+                with ui.expansion('Sources and assumptions', icon='info_outline').classes('w-full'):
+                    ui.label(catalog['notes']).classes('text-sm mb-3')
+                    for reference in catalog['references']:
+                        ui.link(reference['title'], reference['url'], new_tab=True).classes('text-sm')
+                        ui.label(reference['authors']).classes('se-param-label text-xs')
+                        ui.link(reference['license'], reference['license_url'], new_tab=True).classes('text-xs mb-3')
+                    if not catalog['references']:
+                        ui.label('SewEasy estimates · No published measurements used.').classes('se-param-label text-sm')
             for warning in content.get('physics_normalization', {}).get('warnings', []):
                 ui.label(warning['message']).classes('se-param-label text-sm').props('role=note')
 
@@ -27,9 +44,13 @@ async def fabric_library(email):
                 with ui.column().classes('gap-1 min-w-0'):
                     inputs[key] = ui.input(label, value=initial[key], placeholder='Unknown').props(
                         'outlined dense clearable inputmode=decimal').classes('w-full')
-                    origin = {'unknown': 'Not supplied', 'user': 'Your value', 'reported': 'Supplier value',
+                    if standard:
+                        inputs[key].props('readonly').props(remove='clearable')
+                    origin = {'unknown': 'Not supplied', 'user': 'Your value', 'reported': 'Reported value',
                               'measured': 'Measured', 'estimated': 'Estimate'}[prop['origin']]
-                    ui.label(origin).classes('se-param-label text-xs')
+                    with ui.label(origin).classes('se-param-label text-xs'):
+                        if prop.get('source'):
+                            ui.tooltip(prop['source']).classes('max-w-sm')
 
             with ui.grid(columns=2).classes('w-full gap-x-4 gap-y-3'):
                 field('weight', 'Weight (g/m²)')
@@ -48,7 +69,7 @@ async def fabric_library(email):
                         field(key, label)
             if content.get('source'):
                 source = content['source']
-                ui.label(f'Imported from {source.get("filename", source["format"])}').classes('se-param-label break-all')
+                ui.label(f'Source: {source.get("filename", source["format"])}').classes('se-param-label break-all')
                 if source.get('has_raw_measurements'):
                     ui.label('Original test curves are preserved. Editing these values does not change the source file.').classes('se-param-label')
             error = ui.label('').classes('text-negative text-sm').props('role=alert')
@@ -68,8 +89,14 @@ async def fabric_library(email):
                 finally:
                     save_button.enable()
             with ui.row().classes('w-full justify-end gap-2'):
-                ui.button('Cancel', on_click=dialog.close).props('flat no-caps')
-                save_button = ui.button('Save', on_click=save).props('unelevated no-caps')
+                ui.button('Close' if standard else 'Cancel', on_click=dialog.close).props('flat no-caps')
+                if standard:
+                    async def make_copy():
+                        dialog.close()
+                        await copy(identity)
+                    ui.button('Save a copy', icon='content_copy', on_click=make_copy).props('unelevated no-caps')
+                else:
+                    save_button = ui.button('Save', on_click=save).props('unelevated no-caps')
         dialog.open()
         await dialog
         dialog.delete()
@@ -169,16 +196,34 @@ async def fabric_library(email):
         with ui.row().classes('gap-2'):
             ui.button('New fabric', on_click=new_fabric).props('flat no-caps')
             ui.button('Import U3M', icon='file_upload', on_click=import_dialog).props('unelevated no-caps')
-    ui.label('Fabric library preview · Test a swatch from a fabric’s menu. '
-             'Full material calibration and garment assignments are next.').classes('se-param-label')
+    ui.label('Try a swatch, inspect its sources, or save a copy to edit. '
+             'Swatch previews use these properties; garment assignment is coming next.').classes('se-param-label')
+    with ui.row().classes('w-full items-center justify-between gap-3'):
+        collection = ui.toggle({'common': 'Common fabrics', 'saved': 'My fabrics'}, value='common',
+                               on_change=lambda: listing.refresh()).props('no-caps unelevated')
+        search = ui.input('Search fabrics', placeholder='Name, fiber, or weave',
+                          on_change=lambda: listing.refresh()).props('outlined dense clearable debounce=250').classes('w-full sm:w-64')
+
+    listing_generation = 0
 
     @ui.refreshable
     async def listing():
-        records = await run.io_bound(fabrics.list_fabrics, email)
+        nonlocal listing_generation
+        listing_generation += 1
+        generation = listing_generation
+        query = (search.value or '').strip().casefold()
+        records = standard_fabrics() if collection.value == 'common' else await run.io_bound(fabrics.list_fabrics, email)
+        # A filter/tab change can finish before an older database read. Only
+        # the latest render may populate the refreshable container.
+        if generation != listing_generation:
+            return
+        records = [record for record in records if query in ' '.join((
+            record['name'], record['content']['description'],
+            record['content'].get('catalog', {}).get('composition', ''),
+            record['content'].get('catalog', {}).get('construction', ''))).casefold()]
         if not records:
-            with ui.card().classes('se-stitch-card w-full p-6 gap-2'):
-                ui.label('Start with a fabric you know.').classes('text-lg font-medium')
-                ui.label('Import its material file, try the measured cupro sample, or enter your own values.').classes('se-param-label')
+            ui.label('No fabrics match your search.' if query else
+                     'Save a copy from Common fabrics, import a material, or create your own.').classes('se-param-label py-4')
         for record in records:
             values = record['content']['properties']
             summary = []
@@ -186,17 +231,25 @@ async def fabric_library(email):
                 if values[key]['value'] is not None:
                     summary.append(f'{values[key]["value"]:.4g} {unit}')
             with ui.card().classes('se-stitch-card w-full p-3 gap-1'):
-                with ui.row(wrap=False).classes('w-full items-center justify-between gap-3'):
+                with ui.row().classes('w-full items-center justify-between gap-3'):
                     with ui.column().classes('gap-0 min-w-0'):
                         ui.button(record['name'], on_click=lambda _, i=record['id']: edit(i)).props('flat no-caps align=left').classes('font-medium -ml-3')
+                        catalog = record['content'].get('catalog')
+                        if catalog:
+                            ui.label(f'{catalog["composition"]} · {catalog["construction"]}').classes('se-param-label text-sm')
                         ui.label(' · '.join(summary) or 'Physical properties not supplied').classes('se-param-label')
-                    with ui.button(icon='more_horiz').props('flat round aria-label="Fabric actions"'):
-                        with ui.menu():
-                            ui.menu_item('Edit', on_click=lambda _, i=record['id']: edit(i))
-                            ui.menu_item('Save a copy', on_click=lambda _, i=record['id']: copy(i))
-                            if values['weight']['value'] is not None:
-                                ui.menu_item('Test fabric swatch', on_click=lambda _, i=record['id']: compare(i))
-                            ui.menu_item('Export U3MA', on_click=lambda _, r=record: download(r))
-                            if record['has_source']:
-                                ui.menu_item('Download original', on_click=lambda _, r=record: download(r, True))
+                        ui.label(evidence_label(record['content'])).classes('se-param-label text-xs mt-1')
+                    with ui.row(wrap=False).classes('se-fabric-actions items-center gap-1'):
+                        if values['weight']['value'] is not None:
+                            ui.button('Test swatch', icon='science', on_click=lambda _, i=record['id']: compare(i)).props('flat no-caps')
+                        if record['standard']:
+                            ui.button('Save a copy', icon='content_copy', on_click=lambda _, i=record['id']: copy(i)).props('flat no-caps')
+                        with ui.button(icon='more_horiz').props('flat round aria-label="Fabric actions"'):
+                            with ui.menu():
+                                ui.menu_item('View properties' if record['standard'] else 'Edit', on_click=lambda _, i=record['id']: edit(i))
+                                if not record['standard']:
+                                    ui.menu_item('Save a copy', on_click=lambda _, i=record['id']: copy(i))
+                                ui.menu_item('Export U3MA', on_click=lambda _, r=record: download(r))
+                                if record['has_source']:
+                                    ui.menu_item('Download original', on_click=lambda _, r=record: download(r, True))
     await listing()

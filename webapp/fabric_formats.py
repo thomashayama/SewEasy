@@ -212,7 +212,9 @@ def import_fabric(raw, filename):
         key = warning['property']
         if is_loop_estimate(values[key]):
             values[key] = normalized[key]
-    return dict(
+    from webapp.fabric_catalog import metadata
+    catalog = metadata(extension.get('catalog')) if isinstance(extension, dict) else None
+    result = dict(
         schema=1, name=material['name'], description=material['description'], properties=values,
         appearance={side: deepcopy(material[side]) for side in ('front', 'back', 'side')},
         source=dict(format='U3M 1.1', filename=Path(filename).name, sha256=sha256(raw).hexdigest(),
@@ -223,6 +225,9 @@ def import_fabric(raw, filename):
         solver_tuning=deepcopy(extension.get('solver_tuning', {}))
         if isinstance(extension, dict) and isinstance(extension.get('solver_tuning'), dict) else {},
     )
+    if catalog is not None:
+        result['catalog'] = catalog
+    return result
 
 
 class _U3mZipInfo(ZipInfo):
@@ -276,6 +281,25 @@ def export_fabric(record, source_bytes=None, source_name=None):
     previous = document['custom'].get('seweasy')
     document['custom']['seweasy'] = dict(previous if isinstance(previous, dict) else {},
         schema=1, properties=content['properties'], solver_tuning=content['solver_tuning'])
+    from webapp.fabric_catalog import metadata
+    catalog = metadata(content.get('catalog'))
+    if catalog is not None:
+        document['custom']['seweasy']['catalog'] = catalog
+        # Attribution is readable without software that understands our extension.
+        credits = [catalog['composition'], catalog['construction'], catalog['notes']]
+        for ref in catalog['references']:
+            credits.append(f'{ref["title"]}\n{ref["authors"]}\n{ref["url"]}\n'
+                           f'{ref["license"]} {ref["license_url"]}')
+        credits.append('SewEasy estimates and conversions are identified per property in material.u3m. '
+                       'These are not measurements of every fabric with the same fiber composition.')
+        credit_bytes = '\n\n'.join(credits).encode('utf-8')
+        credit_path, suffix = 'seweasy-fabric-sources.txt', 2
+        folded_paths = {p.casefold(): p for p in files}
+        while credit_path.casefold() in folded_paths and files[folded_paths[credit_path.casefold()]] != credit_bytes:
+            credit_path = f'seweasy-fabric-sources-{suffix}.txt'
+            suffix += 1
+        credit_path = folded_paths.get(credit_path.casefold(), credit_path)
+        files[credit_path] = credit_bytes
     _validate(document, 'u3m_schema.json')
     files[manifest] = _encode(document)
     return pack(files)

@@ -4,6 +4,52 @@ Checked 2026-09-18. A fiber name is not a constitutive model: use a specific
 construction, weight, finish and supplier article. These are candidates and
 format checks, not a newly published standard-fabric catalog.
 
+## Shipped common collection (2026-09-19)
+
+Account → Fabrics → Common fabrics contains 12 offline templates. Nine are
+explicit SewEasy estimates: lightweight cotton poplin, polyester plain weave,
+silk satin, polyester chiffon, wool suiting, cotton denim, cotton canvas,
+cotton jersey and cotton/elastane stretch jersey. Their numbers are starting
+points, not measured representative averages for a fiber class.
+
+Three include openly published measurements, licensed CC BY 4.0:
+
+| Template | Published properties | Source |
+| --- | --- | --- |
+| Cotton twill, 3/1 Z | Reported 184 g/m²; thickness 0.59 mm; warp/weft bending 23.33/4.3 μN·m | [Akter et al. 2024](https://doi.org/10.1002/pls2.10141), abstract and sections 3.3/3.7; [license record](https://research.aalto.fi/en/publications/effect-of-cotton-polyester-composite-yarn-on-the-physico-mechanic/) |
+| Linen plain weave, FLAX PLAIN | 199.7 g/m² (SD 1.7); 0.51 mm (SD 0.01) | [Vasile et al. 2024](https://doi.org/10.3390/ma17071650), Tables 1–2 |
+| Cotton/polyester/elastane stretch twill, M1 | 226.58 g/m²; 0.52 mm; KES bending 0.356/0.093 cN·cm | [Mahnić Naglić et al. 2025](https://doi.org/10.3390/polym17152013), Tables 1–2 |
+
+These are transcribed data, not supplier U3M packages. Cotton's abstract and
+section 3.1 disagree on weight (184 versus 208 g/m²); the collection retains
+184 as **reported** with this discrepancy disclosed. The M1 paper's CLO
+bending column differs tenfold from direct SI conversion of its KES column;
+we use KES cN·cm × 1e-4 = N·m and disclose the discrepancy. No CLO solver
+coefficients, breaking strength or Schlenker bending force are treated as
+normalized membrane/bending stiffness. Linen bending, every template's stretch
+and shear, and the nine unmeasured presets are explicitly estimated. Friction
+and damping stay unknown; the preview labels its damping fallback.
+
+`webapp/fabric_catalog.json` records sample identity, composition, construction,
+authors, source links, licenses, conversions and per-property provenance.
+Templates have stable IDs and no database seed writes. Saving a copy freezes
+all content into the user's own record. Refreshing the collection cannot alter
+copies or snapshots. U3MA preserves attribution in `custom.seweasy.catalog`,
+property sources, and a readable `seweasy-fabric-sources.txt` companion. Source
+companions are never replaced on re-export. No third-party textures or paper
+images are bundled. The legacy studio presets retain their existing behavior.
+
+Validate with `python -m unittest test_fabric_catalog test_fabrics -q`.
+Catalog inputs exercise the browser swatches only; physical calibration,
+favorites and garment assignment remain separate work.
+
+Browser checks: chiffon tip drop 78.24/78.97 mm, canvas 50.18/56.19 mm,
+and the published cotton twill 68.60/77.94 mm (warp/weft). All 22 GPU checks
+passed per canvas; fixed-pin error stayed below 0.00001 mm. These compare
+implemented inputs, not real specimens. Named copy/edit/reopen and rapid
+search/tab switching were exercised; the latter revealed and fixed stale
+async list renders. The collection was checked at a 390 px viewport.
+
 ## Common-fabric candidates
 
 | Fabric | Weight | Source and availability | What was verified |

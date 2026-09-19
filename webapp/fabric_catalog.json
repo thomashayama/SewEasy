@@ -1,0 +1,290 @@
+{
+  "revision": 1,
+  "references": {
+    "akter2024": {
+      "title": "Cotton-polyester woven fabrics (2024)",
+      "authors": "Nasrin Akter, Md. Reazuddin Repon, Arnob Dhar Pranta, Shaima Islam, Azmat Ali Khan and Abdul Malik",
+      "url": "https://doi.org/10.1002/pls2.10141",
+      "license": "CC BY 4.0",
+      "license_url": "https://creativecommons.org/licenses/by/4.0/"
+    },
+    "vasile2024": {
+      "title": "Hemp-linen fabric measurements (2024)",
+      "authors": "Simona Vasile, Sofie Vermeire, Katrien Vandepitte, Veronique Troch and Alexandra De Raeve",
+      "url": "https://doi.org/10.3390/ma17071650",
+      "license": "CC BY 4.0",
+      "license_url": "https://creativecommons.org/licenses/by/4.0/"
+    },
+    "naglic2025": {
+      "title": "Woven fabric mechanics for digital clothing (2025)",
+      "authors": "Maja Mahnic Naglic, Slavenka Petrak and Antoneta Tomljenovic",
+      "url": "https://doi.org/10.3390/polym17152013",
+      "license": "CC BY 4.0",
+      "license_url": "https://creativecommons.org/licenses/by/4.0/"
+    }
+  },
+  "fabrics": [
+    {
+      "id": "light-cotton-poplin",
+      "name": "Lightweight cotton poplin",
+      "composition": "100% cotton",
+      "construction": "Plain weave",
+      "description": "A light shirting starting point for shirts and summer dresses.",
+      "estimates": {
+        "weight": 100,
+        "thickness": 0.2,
+        "bend_warp": 8e-06,
+        "bend_weft": 5e-06,
+        "stretch_warp": 1600,
+        "stretch_weft": 1200,
+        "shear": 80
+      },
+      "notes": "All values are SewEasy starting estimates, not laboratory measurements or a supplier product match. Real fabric varies with yarn, construction and finish."
+    },
+    {
+      "id": "cotton-twill",
+      "name": "Cotton twill",
+      "composition": "100% cotton",
+      "construction": "3/1 Z twill",
+      "description": "Cotton twill study sample with published directional bending.",
+      "estimates": {
+        "stretch_warp": 2200,
+        "stretch_weft": 1400,
+        "shear": 100
+      },
+      "notes": "Published values transcribed and bending converted from micro-N m to N m. Weight follows the abstract (184 g/m²); section 3.1 reports 208 g/m². The measurement stage is not consistently specified, so weight is labeled reported. Stretch and shear are independent SewEasy estimates; breaking strength was not converted into stretch stiffness. No raw test curves supplied.",
+      "sample": "Akter et al. cotton sample",
+      "references": [
+        "akter2024"
+      ],
+      "measurements": {
+        "weight": {
+          "value": 184,
+          "origin": "reported",
+          "source": "Akter et al. (2024), doi:10.1002/pls2.10141; CC BY 4.0; abstract, 184 g/m²; section 3.1 lists 208 g/m². Measurement stage is unclear."
+        },
+        "thickness": {
+          "value": 0.59,
+          "origin": "measured",
+          "source": "Akter et al. (2024), doi:10.1002/pls2.10141; CC BY 4.0; section 3.3, cotton sample, mm."
+        },
+        "bend_warp": {
+          "value": 2.333e-05,
+          "origin": "measured",
+          "source": "Akter et al. (2024), doi:10.1002/pls2.10141; CC BY 4.0; section 3.7, 23.33 micro-N m × 1e-6; warp."
+        },
+        "bend_weft": {
+          "value": 4.3e-06,
+          "origin": "measured",
+          "source": "Akter et al. (2024), doi:10.1002/pls2.10141; CC BY 4.0; section 3.7, 4.3 micro-N m × 1e-6; weft."
+        }
+      }
+    },
+    {
+      "id": "linen-plain",
+      "name": "Linen plain weave",
+      "composition": "100% linen (flax)",
+      "construction": "Plain weave",
+      "description": "Midweight linen with published weight and thickness.",
+      "estimates": {
+        "bend_warp": 3e-05,
+        "bend_weft": 2e-05,
+        "stretch_warp": 2500,
+        "stretch_weft": 2000,
+        "shear": 120
+      },
+      "notes": "Table 2 means retained. Weight SD: 1.7 g/m²; thickness SD: 0.01 mm. Bending, stretch and shear are independent SewEasy estimates, not derived from this paper. Its bending-force test and breaking elongation do not directly supply the simulator stiffnesses.",
+      "sample": "FLAX PLAIN",
+      "references": [
+        "vasile2024"
+      ],
+      "measurements": {
+        "weight": {
+          "value": 199.7,
+          "origin": "measured",
+          "source": "Vasile et al. (2024), doi:10.3390/ma17071650; CC BY 4.0; Table 2, FLAX PLAIN; mean 199.7 g/m²; SD 1.7 g/m²."
+        },
+        "thickness": {
+          "value": 0.51,
+          "origin": "measured",
+          "source": "Vasile et al. (2024), doi:10.3390/ma17071650; CC BY 4.0; Table 2, FLAX PLAIN; mean 0.51 mm; SD 0.01 mm."
+        }
+      }
+    },
+    {
+      "id": "polyester-plain",
+      "name": "Polyester plain weave",
+      "composition": "100% polyester",
+      "construction": "Plain weave",
+      "description": "A lightweight woven starting point for linings and blouses.",
+      "estimates": {
+        "weight": 120,
+        "thickness": 0.18,
+        "bend_warp": 6e-06,
+        "bend_weft": 4e-06,
+        "stretch_warp": 1800,
+        "stretch_weft": 1200,
+        "shear": 60
+      },
+      "notes": "All values are SewEasy starting estimates, not laboratory measurements or a supplier product match. Real fabric varies with yarn, construction and finish."
+    },
+    {
+      "id": "silk-satin",
+      "name": "Silk satin",
+      "composition": "100% silk",
+      "construction": "Satin weave",
+      "description": "A soft, light starting point for dresses and blouses.",
+      "estimates": {
+        "weight": 85,
+        "thickness": 0.15,
+        "bend_warp": 3e-06,
+        "bend_weft": 2e-06,
+        "stretch_warp": 1200,
+        "stretch_weft": 700,
+        "shear": 35
+      },
+      "notes": "All values are SewEasy starting estimates, not laboratory measurements or a supplier product match. Real fabric varies with yarn, construction and finish."
+    },
+    {
+      "id": "polyester-chiffon",
+      "name": "Polyester chiffon",
+      "composition": "100% polyester",
+      "construction": "Plain weave",
+      "description": "A very light, flexible starting point for layers and scarves.",
+      "estimates": {
+        "weight": 60,
+        "thickness": 0.12,
+        "bend_warp": 1.2e-06,
+        "bend_weft": 8e-07,
+        "stretch_warp": 650,
+        "stretch_weft": 500,
+        "shear": 20
+      },
+      "notes": "All values are SewEasy starting estimates, not laboratory measurements or a supplier product match. Real fabric varies with yarn, construction and finish."
+    },
+    {
+      "id": "wool-suiting",
+      "name": "Wool suiting",
+      "composition": "100% wool",
+      "construction": "Twill weave",
+      "description": "A midweight tailoring starting point for jackets and trousers.",
+      "estimates": {
+        "weight": 220,
+        "thickness": 0.45,
+        "bend_warp": 3.5e-05,
+        "bend_weft": 2.5e-05,
+        "stretch_warp": 1800,
+        "stretch_weft": 1300,
+        "shear": 90
+      },
+      "notes": "All values are SewEasy starting estimates, not laboratory measurements or a supplier product match. Real fabric varies with yarn, construction and finish."
+    },
+    {
+      "id": "cotton-denim",
+      "name": "Cotton denim",
+      "composition": "100% cotton",
+      "construction": "3/1 twill",
+      "description": "A structured denim starting point for jeans and jackets.",
+      "estimates": {
+        "weight": 340,
+        "thickness": 0.75,
+        "bend_warp": 8e-05,
+        "bend_weft": 4e-05,
+        "stretch_warp": 4500,
+        "stretch_weft": 3000,
+        "shear": 250
+      },
+      "notes": "All values are SewEasy starting estimates, not laboratory measurements or a supplier product match. Real fabric varies with yarn, construction and finish."
+    },
+    {
+      "id": "cotton-canvas",
+      "name": "Cotton canvas",
+      "composition": "100% cotton",
+      "construction": "Plain weave",
+      "description": "A firm woven starting point for bags and workwear.",
+      "estimates": {
+        "weight": 350,
+        "thickness": 0.7,
+        "bend_warp": 0.00012,
+        "bend_weft": 9e-05,
+        "stretch_warp": 5000,
+        "stretch_weft": 4000,
+        "shear": 350
+      },
+      "notes": "All values are SewEasy starting estimates, not laboratory measurements or a supplier product match. Real fabric varies with yarn, construction and finish."
+    },
+    {
+      "id": "cotton-jersey",
+      "name": "Cotton jersey",
+      "composition": "100% cotton",
+      "construction": "Single jersey knit",
+      "description": "A soft T-shirt knit starting point; more stretch across the courses.",
+      "estimates": {
+        "weight": 160,
+        "thickness": 0.5,
+        "bend_warp": 4e-06,
+        "bend_weft": 2e-06,
+        "stretch_warp": 250,
+        "stretch_weft": 80,
+        "shear": 25
+      },
+      "notes": "All values are SewEasy starting estimates, not laboratory measurements or a supplier product match. Real fabric varies with yarn, construction and finish. Knit warp/weft means wale/course here. No nonlinear stretch or recovery is modeled."
+    },
+    {
+      "id": "stretch-jersey",
+      "name": "Stretch jersey",
+      "composition": "95% cotton / 5% elastane",
+      "construction": "Single jersey knit",
+      "description": "A stretchy knit starting point for fitted tops and leggings.",
+      "estimates": {
+        "weight": 180,
+        "thickness": 0.55,
+        "bend_warp": 3e-06,
+        "bend_weft": 1.5e-06,
+        "stretch_warp": 120,
+        "stretch_weft": 45,
+        "shear": 15
+      },
+      "notes": "All values are SewEasy starting estimates, not laboratory measurements or a supplier product match. Real fabric varies with yarn, construction and finish. Knit warp/weft means wale/course here. No nonlinear stretch or recovery is modeled."
+    },
+    {
+      "id": "stretch-twill",
+      "name": "Cotton blend stretch twill",
+      "composition": "65% cotton / 33% polyester / 2% elastane",
+      "construction": "Twill weave",
+      "description": "A study sample with published weight, thickness and KES bending.",
+      "estimates": {
+        "stretch_warp": 2500,
+        "stretch_weft": 450,
+        "shear": 100
+      },
+      "notes": "Tables 1–2 transcribed; direct KES bending units cN cm converted to N m (× 1e-4). The paper’s CLO bending column differs by a factor of ten after SI conversion; it is not used. Stretch and shear are independent SewEasy estimates, not conversions of proprietary CLO coefficients or single-load elongation. No raw curves supplied.",
+      "sample": "M1",
+      "references": [
+        "naglic2025"
+      ],
+      "measurements": {
+        "weight": {
+          "value": 226.58,
+          "origin": "measured",
+          "source": "Mahnic Naglic et al. (2025), doi:10.3390/polym17152013; CC BY 4.0; Table 1, M1, g/m²."
+        },
+        "thickness": {
+          "value": 0.52,
+          "origin": "measured",
+          "source": "Mahnic Naglic et al. (2025), doi:10.3390/polym17152013; CC BY 4.0; Table 1, M1, mm."
+        },
+        "bend_warp": {
+          "value": 3.56e-05,
+          "origin": "measured",
+          "source": "Mahnic Naglic et al. (2025), doi:10.3390/polym17152013; CC BY 4.0; Table 2, KES B-1: 0.356 cN cm × 1e-4 (not CLO column)."
+        },
+        "bend_weft": {
+          "value": 9.3e-06,
+          "origin": "measured",
+          "source": "Mahnic Naglic et al. (2025), doi:10.3390/polym17152013; CC BY 4.0; Table 2, KES B-2: 0.093 cN cm × 1e-4 (not CLO column)."
+        }
+      }
+    }
+  ]
+}

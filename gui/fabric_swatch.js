@@ -75,7 +75,7 @@ export default {
   computed:{
     activeFits(){return Object.fromEntries(Object.entries(this.material?.normalization?.bending_fits||{}).filter(([key])=>this.material.applied[key]?.origin==='estimated'));},
     difference(){return this.samples.length?Math.abs(this.reading(this.samples[0])-this.reading(this.samples[1])):0;},
-    assumptionText(){const p=this.material.applied,assumed=Object.keys(p).filter(k=>p[k].origin==='assumed').map(k=>`${this.labels[k].toLowerCase()} ${this.format(p[k].value)} ${p[k].unit}`);return (assumed.length?'Assumed: '+assumed.join(', ')+'. ':'')+(Object.values(p).some(v=>v.origin==='estimated')?'Estimated bending is not yet physically calibrated.':'');},
+    assumptionText(){const p=this.material.applied,assumed=Object.keys(p).filter(k=>p[k].origin==='assumed').map(k=>`${this.labels[k].toLowerCase()} ${this.format(p[k].value)} ${p[k].unit}`),estimated=Object.keys(p).filter(k=>p[k].origin==='estimated').map(k=>this.labels[k].toLowerCase());return (assumed.length?'Assumed: '+assumed.join(', ')+'. ':'')+(estimated.length?'Estimated: '+estimated.join(', ')+'. Estimates are not calibrated measurements.':'');},
     pinError(){return this.samples.length?Math.max(...this.samples.map(s=>s.pin_error_mm)):0;},
     strain(){return this.samples.length?Math.max(...this.samples.map(s=>s.max_strain)):1;},
     status(){return this.failure?'Test unavailable':!this.ready?'Preparing swatches in your browser…':

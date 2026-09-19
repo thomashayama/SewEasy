@@ -64,7 +64,7 @@ def _empty():
 
 
 def standard_fabrics():
-    """Existing artistic presets, explicitly separate from physical measurements."""
+    """Legacy artistic IDs remain resolvable alongside the physical collection."""
     result = []
     for preset in FABRIC_PRESETS:
         content = _empty()
@@ -73,7 +73,8 @@ def standard_fabrics():
         content['source'] = dict(format='SewEasy preset', preset_id=preset['id'])
         result.append(dict(id='standard:' + preset['id'], name=preset['label'], content=content,
                            standard=True, has_source=False, edit_token=None))
-    return result
+    from webapp.fabric_catalog import standard_fabrics as catalog_fabrics
+    return result + catalog_fabrics()
 
 
 def list_fabrics(email):

@@ -24,4 +24,6 @@
  .se-account .se-home-header .q-btn {font-size:12px;}
  .se-account .se-home-header .q-icon {display:none;}
  .se-account .se-home-subtitle {max-width:none;}
+ .se-account .se-fabric-actions .q-btn {font-size:12px; padding:6px 8px; min-height:36px;}
+ .se-account .se-fabric-actions .q-icon {font-size:18px;}
 }

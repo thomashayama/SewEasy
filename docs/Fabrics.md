@@ -4,6 +4,13 @@ Open **Account → Fabrics**. Import a U3M 1.1 material, edit its properties,
 save a named copy, or export a U3MA package. The import dialog includes a
 published cupro measurement sample; its minimal material wrapper is ours.
 
+**Common fabrics** offers 12 read-only templates, searchable by name, fiber or
+weave. Open a name to inspect properties and sources, choose **Test swatch**,
+or **Save a copy** to edit. Three templates include CC BY published measurements;
+nine are entirely estimated. Every supplied property identifies its provenance,
+and missing properties remain blank. See [sources and caveats](FabricSources.md).
+**My fabrics** contains only the user's saved records and imports.
+
 The fabric menu's **Test fabric swatch** compares warp and weft strips with the
 same weight. Browser WebGPU applies directional stretch and bending, shear,
 and damping. Choose gravity bending, longitudinal stretch, or transverse shear;
@@ -26,6 +33,11 @@ Content separates `properties`, `appearance`, `source`, `curves`, and
 alongside their filename; listing the library does not retrieve the BLOB.
 Existing artistic presets remain read-only and have unknown physical values.
 Their bending multipliers live only in `solver_tuning` and can be copied.
+The separate common collection contains normalized physical properties and
+`catalog` metadata, with stable `standard:catalog:*` IDs. It is loaded locally
+without network requests or database writes. Copies store detached content;
+catalog revisions do not rewrite them. Attribution, licenses and property
+sources survive editing, copying and U3MA export/reimport.
 
 `fabrics.snapshot()` produces a detached assignment value with a
 `source_fabric_id`. Consumers must embed that snapshot instead of re-reading
