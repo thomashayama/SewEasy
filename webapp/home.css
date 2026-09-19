@@ -76,6 +76,8 @@
  .se-shared-design {grid-template-columns:1fr; gap:24px;} .se-shared-preview {height:280px;}
  .se-home-header {padding:0 14px; gap:6px;} .se-home-location {display:none;}
  .se-home-header .se-home-measurements .q-icon {display:none;} .se-home-header .q-btn {padding:4px 8px; font-size:12px;}
+ /* A phone header has no room beside a long account name; Account → Fabrics still reaches it. */
+ .se-home-header .se-home-fabrics {display:none;}
  .se-home-content {padding:20px 16px 16px;} .se-home-heading {gap:12px; align-items:flex-start; margin-bottom:16px;}
  .se-home-title {font-size:27px;} .se-home-subtitle {font-size:12px; max-width:215px; line-height:1.5;}
  .se-home .se-home-create {padding:8px 12px; font-size:12px;} .se-home-create .q-icon.on-left {margin-right:7px; font-size:18px;}

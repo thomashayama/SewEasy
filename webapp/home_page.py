@@ -326,6 +326,9 @@ def home_page(request: Request):
             ui.button('Measurements', icon='straighten', on_click=lambda: ui.navigate.to(
                 '/account?section=measurements' if user else '/studio?measurements=1')).props('flat').classes('se-home-measurements')
             if user:
+                # The library lives in the account; Home is where a project starts.
+                ui.button('Fabrics', icon='texture', on_click=lambda: ui.navigate.to('/account?section=fabrics')).props(
+                    'flat aria-label="Fabric library"').classes('se-home-fabrics')
                 incoming = len(Friends(store.email).list()['incoming'])
                 with ui.button('Friends', icon='people_outline', on_click=lambda: ui.navigate.to('/account?section=friends')).props('flat'):
                     if incoming:
