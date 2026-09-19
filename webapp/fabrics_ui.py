@@ -72,6 +72,27 @@ async def fabric_library(email):
                 ui.label(f'Source: {source.get("filename", source["format"])}').classes('se-param-label break-all')
                 if source.get('has_raw_measurements'):
                     ui.label('Original test curves are preserved. Editing these values does not change the source file.').classes('se-param-label')
+            textures = content.get('textures') or []
+            if textures:
+                warnings = [t for t in textures if t['warning']]
+                with ui.expansion(f'{len(textures)} texture references', value=bool(warnings)).classes('w-full'):
+                    for texture in textures:
+                        size = ' · '.join(filter(None, [
+                            '×'.join(str(p) for p in texture['pixels']) + ' px',
+                            '×'.join(f'{mm:.4g}' for mm in texture['size_mm']) + ' mm'
+                            if all(isinstance(mm, (int, float)) for mm in texture['size_mm']) else '']))
+                        ui.label(f'{texture["role"]} · {texture["format"]} · {size}').classes('text-sm break-all')
+                        # The stored message names its role; the heading above already does.
+                        ui.label(texture['warning'].replace(texture['role'], 'This file', 1)
+                                 if texture['warning'] else texture['path']).classes(
+                            'se-param-label text-xs mb-2' + (' text-warning' if texture['warning'] else ''))
+                    ui.label('Texture files are stored exactly as uploaded. The swatch preview does not '
+                             'render them yet, so these sizes are not applied to a garment.').classes('se-param-label text-xs')
+                if warnings:
+                    ui.label('One texture reference declares a size that does not match its image.'
+                             if len(warnings) == 1 else
+                             f'{len(warnings)} texture references declare sizes that do not match their images.'
+                             ).classes('se-param-label text-sm').props('role=note')
             error = ui.label('').classes('text-negative text-sm').props('role=alert')
 
             async def save():
@@ -104,7 +125,8 @@ async def fabric_library(email):
     async def import_dialog():
         with ui.context.client, ui.dialog().props('persistent') as dialog, ui.card().classes('se-stitch-card w-full max-w-lg gap-3'):
             ui.label('Import a fabric').classes('se-section-label text-lg')
-            ui.label('U3M 1.1 · up to 20 MB. Include companion textures and measurement files in a U3MA or ZIP package.').classes('se-param-label')
+            ui.label('U3M 1.1 · up to 20 MB. Include companion textures and measurement files in a U3MA or ZIP '
+                     'package. U3M 1.0 files must be re-exported as 1.1.').classes('se-param-label')
             status = ui.label('').classes('text-negative text-sm').props('role=alert')
 
             async def import_bytes(raw, filename):

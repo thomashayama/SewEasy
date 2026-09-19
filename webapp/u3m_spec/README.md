@@ -16,6 +16,13 @@ cotton knit with string-valued mass and low-force warnings on both bending
 axes. Tests wrap the unchanged JSON in a SewEasy material manifest. This is
 a published QA dataset, not a verified supplier product or calibrated cotton preset.
 
+`vendor_example_1.0.u3m` is Vizoo's unmodified `u3m1.0/Example_1.0.u3m`: a real
+vendor-exported, appearance-only material whose textures are not published with
+it. It is kept as the fixture for the refused 1.0 path. Its schema shows why
+1.0 is out of scope: no `physics`, a bare `dpi` number, and image `width`/
+`height` with no stated unit (1.1 defines them as millimetres). The 1.1
+`changes.txt` also dates the U3MA archive and the physics section to 1.1.
+
 Specifications checked: `spec/u3m_schema.json`, `physics/physics_schema.json`,
 `spec/u3m_additional_spec_u3ma.txt`, and the two raw-physics PDFs in `physics/`.
 Imported source bytes remain unchanged; edits are exported in standard

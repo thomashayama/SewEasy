@@ -93,6 +93,16 @@ loading blobs. See [external fixture validation and catalog candidates](FabricSo
 
 - Supports schema 1.1 only. Validates the material and referenced FAB JSON
   against the bundled upstream schemas, without remote schema resolution.
+- U3M 1.0 is deliberately not supported. It has no `physics` section, states no
+  unit for image width and height, carries one `dpi` number instead of x and y,
+  and predates the U3MA archive, so neither measurements nor texture scale can
+  be read from it. A 1.0 upload is refused by version, before schema errors,
+  and asks for a 1.1 re-export. Vizoo's published `Example_1.0.u3m` is the
+  fixture for that path.
+- Every import records the reader that produced it in `source.importer`
+  (`seweasy-u3m/2`). Opening a record written by an older reader re-reads the
+  stored original and refreshes its textures and source; if the current reader
+  rejects that file, the saved record is still returned unchanged.
 - Accepts standalone `.u3m` when it has no missing companions, and complete
   `.u3ma`/`.zip` packages with exactly one material manifest. Uploads are capped
   at 20 MB, 128 entries and 64 MB expanded; individual JSON files at 4 MB.
@@ -107,6 +117,14 @@ loading blobs. See [external fixture validation and catalog candidates](FabricSo
   original returns the exact uploaded bytes, including its original values.
 - Texture files are preserved, but the current renderer does not interpret
   their PBR maps. No CLO/Browzwear application round-trip is claimed yet.
+- Referenced textures, normal maps and preview images must be real PNG, JPEG,
+  TIFF or WebP files of at most 16384 px per side and 80 megapixels. Only
+  headers are read: pixels are never decoded, rescaled or re-encoded, so a
+  truncated file is a renderer problem, not an import error.
+- `textures` lists each reference with its role, format, pixel size, declared
+  millimetres and dpi. Where 1.1 declares a physical size, it is checked
+  against the pixels at that dpi (2% tolerance) and a mismatch is reported per
+  texture and shown in the editor. The declared size is never rewritten.
 
 Reference schemas and sample attribution: [webapp/u3m_spec](../webapp/u3m_spec).
 
@@ -116,6 +134,9 @@ Run `python -m unittest test_fabrics -v` in the GUI environment. Tests cover
 the published sample, schema and U3MA headers, preservation, edits and copies,
 account isolation, stale writes, deferred BLOBs, private preview access, and
 actual swatch mass = pattern area × imported areal density, including its
-clamped portion. Browser checks also
+clamped portion. An appearance-only package with real PNG and JPEG textures
+covers texture roles, byte-exact round trips, declared-scale mismatches,
+unreadable, unsupported and oversized images, and the refused vendor 1.0
+material. Browser checks also
 cover sample import, save, export, reimport, blank/invalid values, and the live
 WebGPU comparison.

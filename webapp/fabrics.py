@@ -46,8 +46,14 @@ def _normalized_content(row):
     content = deepcopy(row.content)
     from webapp.fabric_measurements import VERSION, is_loop_estimate
     previous = content.get('physics_normalization') or {}
-    if previous.get('version', 0) < VERSION and row.source_name and row.source_bytes:
-        imported = formats.import_fabric(row.source_bytes, row.source_name)
+    stale = (previous.get('version', 0) < VERSION
+             or (content.get('source') or {}).get('importer') != formats.IMPORTER)
+    if stale and row.source_name and row.source_bytes:
+        try:
+            imported = formats.import_fabric(row.source_bytes, row.source_name)
+        except ValueError:
+            # A stricter reader must not lock an owner out of a stored fabric.
+            return content
         for key, item in imported['properties'].items():
             existing = content['properties'][key]
             if (is_loop_estimate(existing) or (not previous and existing['value'] is None
@@ -55,12 +61,15 @@ def _normalized_content(row):
                 content['properties'][key] = item
         content['curves'] = imported['curves']
         content['physics_normalization'] = imported['physics_normalization']
+        # Both describe the file itself, so they follow the reader that read it.
+        content['textures'] = imported['textures']
+        content['source'] = imported['source']
     return content
 
 
 def _empty():
     return dict(schema=1, description='', properties=formats.properties(), appearance={},
-                source=None, curves=[], solver_tuning={})
+                source=None, textures=[], curves=[], solver_tuning={})
 
 
 def standard_fabrics():

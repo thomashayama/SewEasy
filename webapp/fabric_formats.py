@@ -13,12 +13,21 @@ from zipfile import BadZipFile, ZipFile, ZipInfo, ZIP_DEFLATED, ZIP_STORED
 from zlib import error as ZlibError
 
 from jsonschema import Draft7Validator, FormatChecker
+from PIL import Image
 
 SPEC = Path(__file__).with_name('u3m_spec')
 MAX_UPLOAD = 20 * 1024 * 1024
 MAX_EXPANDED = 64 * 1024 * 1024
 MAX_JSON = 4 * 1024 * 1024
 MAX_FILES = 128
+# Recorded on every import so a record states which reader produced it.
+# 1: prototype; textures were resolved but never read. 2: header-checked textures.
+IMPORTER = 'seweasy-u3m/2'
+TEXTURE_FORMATS = ('PNG', 'JPEG', 'TIFF', 'WEBP')
+MAX_TEXTURE_SIDE = 16384
+MAX_TEXTURE_PIXELS = 80_000_000
+MM_PER_INCH = 25.4
+SCALE_TOLERANCE = .02
 
 # These describe normalized physical quantities, not XPBD constraint compliance.
 PROPERTY_UNITS = {
@@ -110,6 +119,69 @@ def _path(name):
     return name
 
 
+def _referenced(node, role=''):
+    """Yield (role, node) for every file reference: textures, maps and previews."""
+    if isinstance(node, dict):
+        if isinstance(node.get('path'), str):
+            yield role, node
+            return
+        for key, child in node.items():
+            yield from _referenced(child, f'{role}.{key}' if role else key)
+    elif isinstance(node, list):
+        for index, child in enumerate(node):
+            yield from _referenced(child, f'{role}[{index}]')
+
+
+def _scale_warning(role, node, pixels):
+    """U3M 1.1 states image width/height in mm; pixels must match them at dpi."""
+    dpi = node['dpi'] if isinstance(node.get('dpi'), dict) else {}
+    expected = []
+    for size, axis in ((node.get('width'), 'x'), (node.get('height'), 'y')):
+        resolution = dpi.get(axis)
+        if not all(isinstance(v, (int, float)) and not isinstance(v, bool) and v > 0
+                   for v in (size, resolution)):
+            return f'{role} does not declare a usable physical size, so its texture scale is unknown.'
+        expected.append(size / MM_PER_INCH * resolution)
+    if any(abs(want - have) > max(1, SCALE_TOLERANCE * have) for want, have in zip(expected, pixels)):
+        return (f'{role} is {pixels[0]}×{pixels[1]} px but declares {node["width"]:.4g}×{node["height"]:.4g} mm '
+                f'at {dpi["x"]:g}×{dpi["y"]:g} dpi, which is {expected[0]:.0f}×{expected[1]:.0f} px. '
+                'The declared physical size is kept unchanged.')
+    return None
+
+
+def inspect_textures(files, manifest, document):
+    """Headers only: real images of bounded size, with their declared scale checked.
+
+    Pixels are never decoded, so a truncated file is reported by the renderer,
+    not here. Nothing is rescaled, re-encoded, or dropped.
+    """
+    parent = PurePosixPath(manifest).parent
+    material, result, seen = document['material'], [], {}
+    for side in ('front', 'back', 'side'):
+        for role, node in _referenced(material[side], side):
+            data = files[str(parent / node['path'])]
+            if node['path'] not in seen:
+                try:
+                    with Image.open(BytesIO(data)) as image:
+                        seen[node['path']] = (image.format, list(image.size))
+                except Exception:
+                    raise ValueError(f'{role} file {node["path"]} is not a readable image. '
+                                     'Upload the original PNG, JPEG, TIFF or WebP texture.') from None
+            kind, pixels = seen[node['path']]
+            if kind not in TEXTURE_FORMATS:
+                raise ValueError(f'{role} file {node["path"]} is {kind or "an unrecognized format"}. '
+                                 'Convert it to PNG, JPEG, TIFF or WebP and export the package again.')
+            if max(pixels) > MAX_TEXTURE_SIDE or pixels[0] * pixels[1] > MAX_TEXTURE_PIXELS:
+                raise ValueError(f'{role} file {node["path"]} is {pixels[0]}×{pixels[1]} px. The limit is '
+                                 f'{MAX_TEXTURE_SIDE} px per side and {MAX_TEXTURE_PIXELS // 10**6} megapixels.')
+            dpi = node['dpi'] if isinstance(node.get('dpi'), dict) else {}
+            result.append(dict(role=role, path=node['path'], format=kind, pixels=pixels, bytes=len(data),
+                               size_mm=[node.get('width'), node.get('height')],
+                               dpi=[dpi.get('x'), dpi.get('y')],
+                               warning=_scale_warning(role, node, pixels)))
+    return result
+
+
 def read_package(raw, filename):
     """Legacy ZIP wrappers are readable; references must be local and complete."""
     if not raw or len(raw) > MAX_UPLOAD:
@@ -148,6 +220,12 @@ def read_package(raw, filename):
         raise ValueError('A package must contain exactly one .u3m material.')
     manifest = manifests[0]
     document = _json(files[manifest])
+    if isinstance(document, dict) and document.get('schema') == '1.0':
+        # 1.0 has no physics section, no unit for image width/height, a single
+        # dpi number, and no U3MA archive spec, so neither measurements nor
+        # texture scale can be read from it. See webapp/u3m_spec/README.md.
+        raise ValueError('This is a U3M 1.0 material. SewEasy reads U3M 1.1, which adds the physics '
+                         'section and texture units. Re-export the material as 1.1 and upload it again.')
     _validate(document, 'u3m_schema.json')
     parent = PurePosixPath(manifest).parent
 
@@ -158,20 +236,10 @@ def read_package(raw, filename):
             raise ValueError(f'Missing companion file: {path}. Upload the complete package.')
         return full
 
-    def images(value):
-        if isinstance(value, dict):
-            for key, child in value.items():
-                if key == 'path' and isinstance(child, str):
-                    resolve(child)
-                else:
-                    images(child)
-        elif isinstance(value, list):
-            for child in value:
-                images(child)
-
     material = document['material']
     for side in ('front', 'back', 'side'):
-        images(material[side])
+        for _, node in _referenced(material[side], side):
+            resolve(node['path'])
     physics = material['physics'] or {}
     fab_path = (physics.get('devices') or {}).get('fab')
     fab = None
@@ -182,7 +250,8 @@ def read_package(raw, filename):
 
 
 def import_fabric(raw, filename):
-    _, _, document, fab = read_package(raw, filename)
+    files, manifest, document, fab = read_package(raw, filename)
+    textures = inspect_textures(files, manifest, document)
     material = document['material']
     values = properties()
     physics = material['physics'] or {}
@@ -217,11 +286,11 @@ def import_fabric(raw, filename):
     result = dict(
         schema=1, name=material['name'], description=material['description'], properties=values,
         appearance={side: deepcopy(material[side]) for side in ('front', 'back', 'side')},
-        source=dict(format='U3M 1.1', filename=Path(filename).name, sha256=sha256(raw).hexdigest(),
-                    material_id=material['id'], has_raw_measurements=bool(raw_data),
-                    vendor='Browzwear' if vendor else None),
+        source=dict(format='U3M 1.1', importer=IMPORTER, filename=Path(filename).name,
+                    sha256=sha256(raw).hexdigest(), material_id=material['id'],
+                    has_raw_measurements=bool(raw_data), vendor='Browzwear' if vendor else None),
         # Full original curves, vendor fields and textures remain in source_bytes.
-        curves=curves, physics_normalization=normalization,
+        textures=textures, curves=curves, physics_normalization=normalization,
         solver_tuning=deepcopy(extension.get('solver_tuning', {}))
         if isinstance(extension, dict) and isinstance(extension.get('solver_tuning'), dict) else {},
     )

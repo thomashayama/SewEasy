@@ -14,6 +14,8 @@ from zipfile import ZipFile, ZipInfo, ZIP_STORED
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from PIL import Image
+
 from sqlalchemy import create_engine, event
 from sqlalchemy.orm import sessionmaker
 
@@ -28,6 +30,48 @@ def shirley_package():
     doc['material']['physics']['devices']['fab'] = 'physics.json'
     return fmt.pack({'material.u3m': json.dumps(doc).encode(),
                      'physics.json': (fmt.SPEC/'shirley_physics.json').read_bytes()})
+
+
+def image_bytes(pixels, kind='PNG'):
+    buffer = BytesIO()
+    Image.new('RGB', pixels, (190, 170, 150)).save(buffer, format=kind)
+    return buffer.getvalue()
+
+
+def image_node(path, pixels=(256, 256), dpi=300, scale=1.):
+    """A U3M 1.1 image: physical millimetres, dpi per axis, and a repeat mode."""
+    return dict(path=path, dpi=dict(x=dpi, y=dpi), repeat=dict(rotation=0, mode='normal'),
+                width=pixels[0]/dpi*25.4*scale, height=pixels[1]/dpi*25.4*scale)
+
+
+def side(basecolor=None, normal=None, preview=None):
+    """Every required 1.1 visualisation slot, with textures only where given."""
+    values = dict(alpha=1, anisotropy_value=0, anisotropy_rotation=0, clearcoat_value=0,
+                  clearcoat_roughness=0, ior=1.4, metalness=0, displacement=0, roughness=.7,
+                  sheen_value=0, sheen_tint=0, specular_value=.5, specular_tint=0,
+                  subsurface_radius=0, subsurface_value=0, transmission=0)
+    result = {key: dict(constant=value, texture=None) for key, value in values.items()}
+    result.update(shader='principled', preview=preview,
+                  basecolor=dict(constant=dict(r=.5, g=.5, b=.5), texture=None if basecolor is None else
+                                 dict(mode='multiply', factor=dict(r=1, g=1, b=1), image=basecolor)),
+                  subsurface_color=dict(constant=dict(r=0, g=0, b=0), texture=None),
+                  clearcoat_normal=dict(constant=dict(x=0, y=0, z=1), texture=None),
+                  normal=dict(constant=dict(x=0, y=0, z=1), texture=None if normal is None else
+                              dict(scale=1., image=normal)))
+    return result
+
+
+def appearance_package(scale=1., files=None):
+    """An appearance-only material: real textures, no measurements at all."""
+    doc = fmt.empty_document('Printed cotton lawn')
+    doc['material']['front'] = side(basecolor=image_node('textures/base.png', scale=scale),
+                                    normal=image_node('textures/normal.png', (128, 128)),
+                                    preview=dict(path='preview.jpg', dpi=dict(x=300, y=300),
+                                                 width=64/300*25.4, height=64/300*25.4))
+    return fmt.pack(dict({'material.u3m': json.dumps(doc).encode(),
+                          'textures/base.png': image_bytes((256, 256)),
+                          'textures/normal.png': image_bytes((128, 128)),
+                          'preview.jpg': image_bytes((64, 64), 'JPEG')}, **(files or {})))
 
 
 class FormatTest(unittest.TestCase):
@@ -175,6 +219,68 @@ class FormatTest(unittest.TestCase):
         files['physics.json'] = json.dumps(fab).encode()
         content = fmt.import_fabric(fmt.pack(files), 'empty.u3ma')
         self.assertTrue(all(p['value'] is None for p in content['properties'].values()))
+
+
+class TextureImportTest(unittest.TestCase):
+    """Appearance-only materials: resolved, measured against their declared scale, never altered."""
+
+    def test_appearance_only_material_records_textures_and_importer(self):
+        raw = appearance_package()
+        content = fmt.import_fabric(raw, 'lawn.u3ma')
+        self.assertTrue(all(p['value'] is None for p in content['properties'].values()))
+        self.assertEqual(content['source']['importer'], fmt.IMPORTER)
+        self.assertEqual(content['source']['filename'], 'lawn.u3ma')
+        self.assertFalse(content['source']['has_raw_measurements'])
+        textures = {t['role']: t for t in content['textures']}
+        self.assertEqual(set(textures), {'front.basecolor.texture.image',
+                                         'front.normal.texture.image', 'front.preview'})
+        base = textures['front.basecolor.texture.image']
+        self.assertEqual((base['format'], base['pixels'], base['dpi']), ('PNG', [256, 256], [300, 300]))
+        self.assertAlmostEqual(base['size_mm'][0], 256/300*25.4)
+        self.assertEqual(textures['front.normal.texture.image']['pixels'], [128, 128])
+        self.assertEqual(textures['front.preview']['format'], 'JPEG')
+        self.assertTrue(all(t['warning'] is None for t in content['textures']))
+        # Round trips keep the texture bytes byte-for-byte, not re-encoded.
+        exported = fmt.export_fabric(dict(id=str(uuid4()), name='Lawn', content=content), raw, 'lawn.u3ma')
+        self.assertEqual(fmt.read_package(exported, 'lawn.u3ma')[0]['textures/base.png'],
+                         fmt.read_package(raw, 'lawn.u3ma')[0]['textures/base.png'])
+        self.assertEqual(fmt.import_fabric(exported, 'lawn.u3ma')['textures'], content['textures'])
+
+    def test_mismatched_and_missing_texture_scale_is_reported_not_corrected(self):
+        content = fmt.import_fabric(appearance_package(scale=2.), 'lawn.u3ma')
+        base = next(t for t in content['textures'] if t['role'].startswith('front.basecolor'))
+        self.assertIn('256×256 px', base['warning'])
+        self.assertIn('512×512 px', base['warning'])
+        # The declared size stays as the vendor wrote it; only the reader complains.
+        self.assertAlmostEqual(base['size_mm'][0], 2*256/300*25.4)
+        self.assertIsNone(next(t for t in content['textures'] if t['role'] == 'front.preview')['warning'])
+        files, manifest, doc, _ = fmt.read_package(appearance_package(), 'lawn.u3ma')
+        doc['material']['front']['basecolor']['texture']['image']['dpi'] = dict(x=0, y=300)
+        files[manifest] = json.dumps(doc).encode()
+        content = fmt.import_fabric(fmt.pack(files), 'lawn.u3ma')
+        self.assertIn('physical size', next(t for t in content['textures']
+                                            if t['role'].startswith('front.basecolor'))['warning'])
+
+    def test_rejects_unreadable_unsupported_oversized_and_missing_textures(self):
+        cases = {'not a readable image': b'<svg xmlns="http://www.w3.org/2000/svg"/>',
+                 'Convert it to PNG': image_bytes((32, 32), 'GIF')}
+        for message, data in cases.items():
+            with self.subTest(message=message), self.assertRaisesRegex(ValueError, message):
+                fmt.import_fabric(appearance_package(files={'textures/base.png': data}), 'lawn.u3ma')
+        with patch.object(fmt, 'MAX_TEXTURE_SIDE', 64), self.assertRaisesRegex(ValueError, '256×256 px'):
+            fmt.import_fabric(appearance_package(), 'lawn.u3ma')
+        files, _, _, _ = fmt.read_package(appearance_package(), 'lawn.u3ma')
+        del files['textures/normal.png']
+        with self.assertRaisesRegex(ValueError, 'Missing companion file: textures/normal.png'):
+            fmt.import_fabric(fmt.pack(files), 'lawn.u3ma')
+
+    def test_published_vendor_1_0_material_is_refused_with_an_upgrade_message(self):
+        raw = (fmt.SPEC/'vendor_example_1.0.u3m').read_bytes()
+        self.assertEqual(json.loads(raw)['schema'], '1.0')
+        for name, package in (('example.u3m', raw), ('example.u3ma', fmt.pack({'example.u3m': raw}))):
+            with self.subTest(name=name), self.assertRaisesRegex(ValueError, 'U3M 1.0 material') as caught:
+                fmt.import_fabric(package, name)
+            self.assertIn('Re-export the material as 1.1', str(caught.exception))
 
 
 class FabricStorageTest(unittest.TestCase):
@@ -351,6 +457,26 @@ class FabricStorageTest(unittest.TestCase):
                     self.assertEqual(db.get(Fabric, record['id']).content['physics_normalization']['version'], 1)
                 saved = self.save(derived)
                 self.assertEqual(saved['content'], fabrics.get_fabric(self.alice, record['id'])['content'])
+
+
+    def test_records_read_by_an_older_importer_gain_texture_details_without_lockout(self):
+        from webapp.models import Fabric
+        record = fabrics.import_fabric(self.alice, appearance_package(), 'lawn.u3ma')
+        with fabrics.SessionLocal() as db:
+            row = db.get(Fabric, record['id'])
+            content = deepcopy(row.content)
+            content.pop('textures')
+            content['source']['importer'] = 'seweasy-u3m/1'
+            row.content = content
+            db.commit()
+        derived = fabrics.get_fabric(self.alice, record['id'])
+        self.assertEqual(derived['content']['source']['importer'], fmt.IMPORTER)
+        self.assertEqual(len(derived['content']['textures']), 3)
+        # A reader that grew stricter must not hide a fabric its owner already saved.
+        with patch.object(fmt, 'MAX_TEXTURE_SIDE', 64):
+            stored = fabrics.get_fabric(self.alice, record['id'])
+        self.assertEqual(stored['content']['source']['importer'], 'seweasy-u3m/1')
+        self.assertNotIn('textures', stored['content'])
 
 
 class MeasurementFitTest(unittest.TestCase):
