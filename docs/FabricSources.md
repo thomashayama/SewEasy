@@ -130,9 +130,12 @@ The cotton gravity test settled at 70.13/77.85 mm tip drop; stretch at 25 N/m
 gave 1.401/7.409% (linear strip predictions 1.493/7.396%). These are numerical
 diagnostics, not measurements of a sewn garment. Polyester settled at
 57.37/63.85 mm drop and 0.526/0.740% extension, versus linear strip predictions
-0.380/0.702%. The 0.146 percentage-point warp error is significant relative to
-that small extension; passing GPU kernel tests does not establish solver
-convergence for stiff materials. Track this in the calibration follow-up.
+0.380/0.702%. The 0.146 percentage-point warp error was significant relative to
+that small extension; passing GPU kernel tests did not establish solver
+convergence for stiff materials. It was under-converged XPBD at a fixed step,
+not rounding or the mesh, and sizing the step from the fabric's stiffness
+brings both directions within 0.2% of the prediction. See
+[Numerical range](FabricSwatch.md#numerical-range).
 All 22 GPU checks per canvas
 passed and pin error was below 0.00001 mm. Physical specimen calibration,
 mesh convergence, nonlinear curves and assignment to garment pieces remain

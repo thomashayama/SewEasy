@@ -90,6 +90,32 @@ def swatch_scene():
 DEFAULTS = dict(stretch_warp=1000., stretch_weft=1000., shear=100.,
                 bend_warp=.00001, bend_weft=.00001, damping=14.)
 
+# Step sizing for the loaded tests (docs/FabricSwatch.md, "Numerical range").
+# XPBD converges in a substep only while a constraint's stiffness ratio
+# sum(w |grad C|^2) dt^2 / compliance stays near one. A fixed 48 substeps put a
+# stiff polyester near 400 and over-read its extension by 38%; holding the
+# worst ratio at 2 keeps every measured sample within 0.2% of the exact strip.
+FRAME = 1/60
+STIFFNESS_RATIO = 2.
+SUBSTEPS = (96, 1024)
+LOADED_ITERATIONS = 4
+
+
+def loaded_numerics(scene):
+    """Substeps per frame that hold the stiffest membrane constraint at STIFFNESS_RATIO."""
+    weights, worst = np.asarray(scene['inverse_mass'], float), 0.
+    for membrane in scene['membranes']:
+        u, v = np.asarray(membrane['u']), np.asarray(membrane['v'])
+        w = weights[membrane['ids']]
+        # |grad C|^2 per corner at rest: stretch along u, along v, and shear.
+        for gradient, compliance in zip((u*u, v*v, u*u + v*v), membrane['compliance']):
+            if compliance > 0:
+                worst = max(worst, FRAME**2 * float(w @ gradient) / compliance)
+    needed = int(np.ceil(np.sqrt(worst / STIFFNESS_RATIO))) if worst else SUBSTEPS[0]
+    substeps = min(max(needed, SUBSTEPS[0]), SUBSTEPS[1])
+    return dict(substeps=substeps, iterations=LOADED_ITERATIONS, stiffness_ratio=worst / substeps**2,
+                validated=needed <= SUBSTEPS[1])
+
 
 def apply_material(scene, properties, direction='warp', mode='bend'):
     """Compile SI surface properties into XPBD energy compliances (1/J)."""
@@ -138,4 +164,6 @@ def apply_material(scene, properties, direction='warp', mode='bend'):
         applied=applied, traction_n_m=traction, damping=applied['damping']['value'],
         gravity=9.81 if mode == 'bend' else 0.,
         expected_extension_percent=traction/eu*100 if eu and mode == 'stretch' else None)
+    if mode != 'bend':
+        result['fabric_test']['numerics'] = loaded_numerics(result)
     return result

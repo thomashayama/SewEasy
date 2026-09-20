@@ -736,6 +736,40 @@ class FabricSceneTest(unittest.TestCase):
             ids=[i for m in warp['membranes'][start:start+count] for i in m['ids']]
             self.assertEqual(len(ids),len(set(ids)))
 
+    def test_loaded_tests_size_their_step_from_the_fabrics_stiffness(self):
+        from webapp.fabric_preview import default_scene
+        from webapp.fabric_swatch import apply_material, STIFFNESS_RATIO, SUBSTEPS
+
+        def numerics(weight, stretch, mode='stretch'):
+            p = fmt.properties()
+            for key, value in dict(weight=weight, stretch_warp=stretch, stretch_weft=stretch/2).items():
+                p[key].update(value=value, origin='user')
+            return apply_material(default_scene(), p, 'warp', mode)['fabric_test'].get('numerics')
+        cupro = numerics(105.6, 1035.2515)
+        self.assertEqual((cupro['substeps'], cupro['iterations'], cupro['validated']), (234, 4, True))
+        self.assertLessEqual(cupro['stiffness_ratio'], STIFFNESS_RATIO)
+        # Stiffer, or lighter, cloth needs smaller steps: the ratio is stiffness over mass.
+        self.assertGreater(numerics(105.6, 6571.)['substeps'], cupro['substeps'])
+        self.assertGreater(numerics(40., 1035.2515)['substeps'], cupro['substeps'])
+        self.assertEqual(numerics(105.6, 1035.2515, 'shear'), cupro)
+        # Soft cloth keeps a floor; cloth past the ceiling is stepped as finely as allowed and says so.
+        self.assertEqual(numerics(400., 50.)['substeps'], SUBSTEPS[0])
+        beyond = numerics(40., 100000.)
+        self.assertEqual((beyond['substeps'], beyond['validated']), (SUBSTEPS[1], False))
+        self.assertGreater(beyond['stiffness_ratio'], STIFFNESS_RATIO)
+        self.assertIsNone(numerics(105.6, 1035.2515, 'bend'))       # bending keeps its interactive step
+
+    def test_committed_reference_fixtures_are_the_applications_own_scenes(self):
+        # benchmarks/swatch_reference.mjs studies these; they must not drift from what the app builds.
+        import importlib.util
+        path = Path(__file__).with_name('benchmarks') / 'export_swatch_fixtures.py'
+        spec = importlib.util.spec_from_file_location('export_swatch_fixtures', path)
+        exporter = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(exporter)
+        committed = json.loads(path.with_name('swatch_fixtures.json').read_text(encoding='utf-8'))
+        self.assertEqual(json.loads(json.dumps(exporter.fixtures())), committed)
+        self.assertEqual(len(committed), 18)
+
     def test_swatch_mass_matches_area_times_imported_gsm_including_clamp(self):
         import numpy as np
         from webapp.fabric_preview import default_scene, with_weight

@@ -5,8 +5,12 @@ export const swatchSettings={substeps:48,swatchIterations:32,stretch:0,sewDurati
 export function settingsForSwatch(scene,refined=false){
   const test=scene.fabric_test;
   const bending=test.mode==='bend';
-  return {...swatchSettings,substeps:bending?(refined?24:12):(refined?64:48),
-    swatchIterations:bending?(refined?8:4):32,damping:test.damping,gravity:test.gravity};
+  // Loaded tests take the step the server sized from this fabric's stiffness:
+  // many small substeps converge a stiff cloth where more iterations do not.
+  // Bending is insensitive to the step and loses float32 precision at tiny ones.
+  const sized=test.numerics||{substeps:48,iterations:32};
+  return {...swatchSettings,substeps:bending?(refined?24:12):Math.min(2048,sized.substeps*(refined?2:1)),
+    swatchIterations:bending?(refined?8:4):sized.iterations,damping:test.damping,gravity:test.gravity};
 }
 
 export function swatchSteps(mode,previous,now,remainder=0){

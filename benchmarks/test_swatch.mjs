@@ -20,9 +20,23 @@ test('fixture accuracy settings preserve material values, including zero damping
     const settings=settingsForSwatch(fixture),refined=settingsForSwatch(fixture,true);
     assert.equal(settings.damping,0);assert.equal(settings.gravity,fixture.fabric_test.gravity);
     assert.equal(settings.bodyCollision,false);assert.equal(settings.strainPasses,0);
-    assert.ok(refined.substeps>settings.substeps&&refined.substeps<=64);
+    assert.ok(refined.substeps>settings.substeps);
     assert.ok(refined.swatchIterations>=settings.swatchIterations);
   }
+});
+test('loaded tests take the step sized for the fabric; bending keeps its interactive step',()=>{
+  const sized={substeps:679,iterations:4,stiffness_ratio:2,validated:true};
+  for(const mode of ['stretch','shear']){
+    const scene={fabric_test:{mode,damping:14,gravity:0,numerics:sized}};
+    assert.deepEqual([settingsForSwatch(scene).substeps,settingsForSwatch(scene).swatchIterations],[679,4]);
+    assert.equal(settingsForSwatch(scene,true).substeps,1358);          // refining halves the step
+    assert.equal(settingsForSwatch({fabric_test:{...scene.fabric_test,numerics:{...sized,substeps:1500}}},true).substeps,2048);
+  }
+  // Float32 starts to blur gravity's tiny per-step increments, and bending never needed the smaller step.
+  const bend={fabric_test:{mode:'bend',damping:14,gravity:9.81,numerics:sized}};
+  assert.deepEqual([settingsForSwatch(bend).substeps,settingsForSwatch(bend,true).substeps],[12,24]);
+  // A scene built before the step was sized still runs, at the old setting.
+  assert.equal(settingsForSwatch({fabric_test:{mode:'stretch',damping:14,gravity:0}}).substeps,48);
 });
 test('swatch measurements convert metres to mm and average the whole free edge',()=>{
   const result=measureSwatch(scene,[[0,.12,0],[.075,.11,0],[.075,.10,.04]]);

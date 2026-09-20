@@ -662,10 +662,13 @@ export class Cloth {
       this.reset();
     }
     if(this.fastSwatch){
-      const optimized=this.fastSwatch;
+      const optimized=this.fastSwatch,chosen=this.settings.substeps;
+      // Parity is about the kernels, not the step size: the reference path issues
+      // one dispatch per colour, which a stiff fabric's step count would multiply.
+      this.settings.substeps=Math.min(chosen,48);
       const step=async()=>{this.time=1;const e=d.createCommandEncoder();this.encode(e);d.queue.submit([e.finish()]);return this.readPositions();};
       const fast=await step();this.reset();this.fastSwatch=null;
-      const reference=await step();this.fastSwatch=optimized;
+      const reference=await step();this.fastSwatch=optimized;this.settings.substeps=chosen;
       this.kernelChecks.swatch_workgroup_matches_reference=fast.every((p,i)=>Math.hypot(...p.map((v,a)=>v-reference[i][a]))<1e-5);
       this.reset();await d.queue.onSubmittedWorkDone();
     }
@@ -677,15 +680,22 @@ export class Cloth {
     u.set([this.n,count,+s.selfCollision,this.hashSize],8);
     f.set([s.gravity,s.damping,s.friction,s.sewDuration],12);f.set([s.strainLimit,s.swatchIterations||1,0,0],16);this.device.queue.writeBuffer(this.params,0,raw);
   }
+  // A swatch is fifty vertices solved in one dispatch with no moving collider, so
+  // its loaded tests may take the many small steps a stiff fabric needs. A garment
+  // may not: each of its substeps is a set of dispatches and a collider pose.
+  get substepLimit(){return this.scene?.garment==='fabric-swatch'?2048:64;}
   writeMotion(advance){
-    const count=this.frameSubsteps||this.settings.substeps;
-    if(!Number.isInteger(count)||count<1||count>64)throw Error('Substeps must be between 1 and 64.');
-    for(let step=0;step<count;step++){
+    const count=this.frameSubsteps||this.settings.substeps,most=this.substepLimit;
+    if(!Number.isInteger(count)||count<1||count>most)throw Error(`Substeps must be between 1 and ${most}.`);
+    // The pose buffer holds 64; only a swatch exceeds it, and it never reads a pose.
+    const poses=Math.min(count,64);
+    for(let step=0;step<poses;step++){
       const previous=this.motion.yaw;
       if(advance)this.motion.advance(this.frameDt/count);
       this.motionRaw.set(this.motion.uniform(previous),step*this.motionStride/4);
     }
-    this.device.queue.writeBuffer(this.motionBuffer,0,this.motionRaw,0,count*this.motionStride/4);
+    if(advance&&count>poses)this.motion.advance(this.frameDt*(count-poses)/count);
+    this.device.queue.writeBuffer(this.motionBuffer,0,this.motionRaw,0,poses*this.motionStride/4);
   }
   dispatch(encoder,stage,count=this.n,extra=null,timestamps=null){
     const pass=encoder.beginComputePass({label:stage.label,...(timestamps?{timestampWrites:timestamps}:{})});
@@ -701,7 +711,7 @@ export class Cloth {
     this.frameDt=Number.isFinite(elapsed)?Math.max(1/240,Math.min(1/30,elapsed)):1/60;
     // Preserve the small solver step at lower refresh rates: larger steps let
     // fitted waistbands stretch over the hips. Bound the total work per frame.
-    this.frameSubsteps=Math.min(64,Math.max(1,Math.ceil(this.settings.substeps*this.frameDt*60-1e-6)));
+    this.frameSubsteps=Math.min(this.substepLimit,Math.max(1,Math.ceil(this.settings.substeps*this.frameDt*60-1e-6)));
     this.time+=this.frameDt;
     this.frame++;this.updateParams();this.writeMotion(this.time>this.settings.sewDuration);
     // Dispatches remain ordered in one pass, avoiding thousands of separate

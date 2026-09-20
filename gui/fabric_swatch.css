@@ -29,6 +29,8 @@ body.body--dark .se-swatch { --swatch-amber:#e3ab60; --swatch-blue:#8dcbfb; }
 .se-swatch-profile p { font-size:13px; line-height:1.5; max-width:44ch; margin:8px 0; }
 .se-swatch-profile p.se-swatch-difference { font-size:22px; font-variant-numeric:tabular-nums; margin:18px 0; }
 .se-swatch-difference span { display:block; font-size:12px; }
+.se-swatch-profile p.se-swatch-warning { color:#9a5b00; }
+@media (prefers-color-scheme:dark) { .se-swatch-profile p.se-swatch-warning { color:#edce7a; } }
 .se-swatch-profile svg { width:100%; height:230px; overflow:visible; }
 .se-swatch-grid line { stroke:currentColor; stroke-opacity:.13; stroke-width:.2; }
 .se-swatch-grid text,.se-swatch-axis { fill:currentColor; font-size:3.8px; }

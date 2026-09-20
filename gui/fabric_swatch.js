@@ -1,6 +1,6 @@
 import {Cloth} from '/webgpu/physics.js?v=21';
 import {Renderer} from '/webgpu/render.js?v=25';
-import {settingsForSwatch,swatchSteps,measureSwatch} from '/webgpu/swatch.js?v=3';
+import {settingsForSwatch,swatchSteps,measureSwatch} from '/webgpu/swatch.js?v=4';
 
 const engines=new WeakMap();
 const colors=['#c28a44','#74b7ec'];
@@ -39,6 +39,8 @@ export default {
         <p v-if="equal">Both use warp properties. Their results should coincide.</p>
         <p v-else>Weight is identical. Differences come from the fabric’s directional properties.</p>
         <p v-if="mode==='stretch' && material?.expected_extension_percent!=null">Linear strip prediction, warp: {{material.expected_extension_percent.toFixed(2)}}% extension. The clamped mesh approximates this response.</p>
+        <p v-if="material?.numerics && material.numerics.validated">Solver step sized for this fabric: {{material.numerics.substeps}} substeps per frame. Within this range the reading is within 0.3% of the exact strip.</p>
+        <p v-if="material?.numerics && !material.numerics.validated" class="se-swatch-warning" role="note">This fabric is stiffer for its weight than the solver’s validated range (stiffness ratio {{material.numerics.stiffness_ratio.toFixed(1)}}, validated to 2). Its reading may be wrong by more than 1%.</p>
       </div>
       <svg v-if="mode==='bend'" viewBox="-17 -12 115 105" role="img" aria-label="Swatch side profiles on an equal millimetre scale">
         <g class="se-swatch-grid">

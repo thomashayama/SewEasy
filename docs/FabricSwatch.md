@@ -26,8 +26,9 @@ in the browser; the server only prepares geometry and material coefficients.
   tests disable gravity; trapezoidal edge quadrature distributes the force.
 - Bending uses 12 substeps per 1/60 s frame and four iterations; refinement
   uses 24 steps/eight iterations. Its clock follows display time with bounded
-  work, including 30 Hz displays. Loaded tests use 48 steps and 32 iterations
-  (refined: 64 steps) and a fixed simulation increment for repeatable readings.
+  work, including 30 Hz displays. Loaded tests use four iterations and a
+  substep count sized from the fabric's own stiffness (see Numerical range;
+  refined: twice as many) with a fixed simulation increment for repeatable readings.
   They stay planar under in-plane forces, so zero-energy bending passes are
   skipped. Cameras stay fixed for comparison. The solver measures
   real GPU vertex positions every 15 frames, and checks fixed pins and finite
@@ -68,11 +69,71 @@ and weft D≈1.602e-5, range 1.238e-5–2.329e-5. Its reported stretch values ar
 physical swatch validation remains necessary. The old weight-only fixture’s
 shared, much stiffer coefficient is no longer used in material comparisons.
 
+## Numerical range
+
+The loaded tests have an exact answer. The energy has no Poisson coupling, a
+uniform strain is representable by linear triangles, and trapezoidal edge loads
+are consistent with them, so a converged strip extends by exactly
+traction ÷ stiffness on any mesh. Any other reading is solver error, which
+makes it measurable. `benchmarks/swatch_reference.mjs` repeats the GPU solver
+on the CPU step for step; on the application's own scenes it reproduces the
+browser's readings to four figures (polyester warp 0.5259% against the GPU's
+0.526%), so its findings are the GPU's.
+
+What it found, on the stiff polyester's warp (6571 N/m, exact 0.3804%):
+
+| Substeps × iterations per frame | Reading | Error |
+| --- | --- | --- |
+| 12 × 32 | 3.767% | +890% |
+| 48 × 32, the old setting | 0.526% | +38% |
+| 48 × 128 | 0.357% | −6% |
+| 48 × 512 | 0.380% | −0.04% |
+| 192 × 8, the old cost | 0.409% | +7.5% |
+| 384 × 4, the old cost | 0.386% | +1.5% |
+| 768 × 4 | 0.380% | −0.06% |
+
+- **Step size, not iterations.** At equal cost, smaller substeps beat more
+  iterations by an order of magnitude, and adding iterations alone converges
+  slowly and not monotonically. An under-converged solve also drifted a pure
+  pull sideways by up to 0.16 mm; at the sized step it does not.
+- **Not floating point.** Float32 and float64 agree to four figures at every
+  stretch and shear setting, up to 768 substeps. Bending is the exception:
+  below about 1/190 of a frame, gravity's per-step increment nears float32
+  resolution and the drop wanders by 0.3%, so bending keeps its larger step.
+- **Not the mesh, for stretch.** The exact answer is mesh-independent, and
+  the reading matches it. Shear and bending are discretised, so their readings
+  carry the 10 mm mesh's own error, which this study does not remove.
+- **Bending is insensitive.** Its drop moves under 0.3% from 12 × 4 to 192 × 4.
+
+The governing number is XPBD's stiffness ratio for a constraint, Σw|∇C|²·dt² ÷
+compliance: stiffness over mass, times the step squared. The old setting put
+the polyester near 400. `loaded_numerics` sizes the step so the worst
+constraint sits at 2, between 96 and 1024 substeps, with four iterations:
+
+| Fabric | Substeps | Warp / weft error, old | Now |
+| --- | --- | --- | --- |
+| Polyester dobby, 6571 / 3560 N/m | 679 | +38% / +5.4% | −0.13% / −0.02% |
+| Cotton voile, 1675 / 338 N/m | 319 | −6.1% / +0.2% | −0.20% / 0.00% |
+| Cupro, 588 / 1035 N/m | 234 | +0.35% / −1.9% | −0.03% / −0.24% |
+
+Shear moved the same way: the polyester over-read by 23% and is now within
+0.5% of a far finer solve. **Error budget:** inside the range, every measured
+and synthetic case from 50 to 10 000 N/m read within 0.3% of exact. Past 1024
+substeps the step can shrink no further; the scene says so and the dialog warns.
+There the error grows with the ratio: about 1% at 5, 67% at 26, reached by
+100 000 N/m at 40 g/m². Soft cloth costs less than before, stiff cloth up to
+2.7 times more, which these tests accept.
+
+This settles numerical convergence only. It says nothing about whether a real
+fabric follows a linear law, and no physical specimen has been compared.
+
 ## Validation
 
-Desktop browser checks on the published Cupro sample: 25 N/m extension was
-4.270% warp and 2.369% weft at 48 steps; 64 steps gave 4.256% and 2.421%.
-Linear predictions are 4.255% and 2.415%. This verifies the implemented linear
+Desktop browser checks on the published Cupro sample, at the old fixed step:
+25 N/m extension was 4.270% warp and 2.369% weft at 48 steps; 64 steps gave
+4.256% and 2.421%. Linear predictions are 4.255% and 2.415%. With the sized
+step a fabric with the stiff polyester's values reads 0.38% and 0.70% on the
+GPU, its exact 0.380% and 0.702%. This verifies the implemented linear
 model, not that the real fabric follows a linear law. Same-grain shear control
 gave identical 13.472 mm displacements. Fixed pin error stayed below 0.00001 mm.
 All GPU kernel checks passed, including damping and optimized/reference parity.
@@ -85,7 +146,13 @@ Loaded tests prioritize numerical accuracy and can run slower than real time.
 ```powershell
 python -m unittest test_fabrics test_browser_preview test_button_closures test_dress_shirt_collar -q
 node --test benchmarks/test_swatch.mjs benchmarks/test_simulation_clock.mjs benchmarks/test_browser_drape.mjs benchmarks/test_collar_placement.mjs benchmarks/test_button_closures.mjs
+node --test benchmarks/test_swatch_convergence.mjs    # about a minute: loaded tests against their exact answers
+node benchmarks/swatch_reference.mjs --substeps=48 --iterations=32    # reproduce any row above
 ```
+
+`benchmarks/swatch_fixtures.json` holds the solver inputs of the application's
+own scenes; `test_fabrics` fails if they drift from what the application builds,
+and `python benchmarks/export_swatch_fixtures.py` regenerates them.
 
 Tests cover synthetic elastica recovery with force tare, unit conversion and
 provenance, unknown/zero handling, legacy normalization and intentional clears,
