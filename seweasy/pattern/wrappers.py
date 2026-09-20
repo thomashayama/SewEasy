@@ -204,6 +204,7 @@ class VisPattern(core.ParametrizedPattern):
             panel_colors=None,
             fabric=None,
             panel_fabrics=None,
+            fabric_textures=None,
             margin=2) -> sw.Drawing:
         """Convert pattern to writable svg representation"""
 
@@ -219,9 +220,18 @@ class VisPattern(core.ParametrizedPattern):
             fabric_fill = (fabric['bg'] if fabric.get('fg') == fabric.get('bg')
                            else f'url(#{_FABRIC_PATTERN_ID})')
         panel_fabrics = panel_fabrics or self.pattern.get('panel_fabrics') or {}
+        # An imported base-colour map, drawn at its physical repeat. A piece whose
+        # map is missing falls back to its plain colour.
+        fabric_textures = fabric_textures or self.pattern.get('fabric_textures') or {}
+        texture_ids = {key: f'{_FABRIC_PATTERN_ID}_map_{i}' for i, key in enumerate(fabric_textures)
+                       if (fabric_textures[key] or {}).get('front')}
+        textured = {panel: texture_ids[spec['texture']] for panel, spec in panel_fabrics.items()
+                    if spec.get('kind') == 'texture' and spec.get('texture') in texture_ids}
+        panel_fabrics = {panel: spec for panel, spec in panel_fabrics.items() if spec.get('kind') != 'texture'}
         fabric_ids = {panel: f'{_FABRIC_PATTERN_ID}_{i}' for i, panel in enumerate(panel_fabrics)
                       if panel_fabrics[panel].get('kind', 'plain') != 'plain'
                       and panel_fabrics[panel].get('fg') != panel_fabrics[panel].get('bg')}
+        fabric_ids.update(textured)
         solid_prints = {p: spec['bg'] for p, spec in panel_fabrics.items()
                         if spec.get('kind', 'plain') != 'plain' and spec.get('fg') == spec.get('bg')}
         
@@ -324,7 +334,13 @@ class VisPattern(core.ParametrizedPattern):
         # text annotations
         if fabric_ids:
             from seweasy.pattern import fabrics
+            for key, pattern_id in texture_ids.items():
+                if pattern_id in textured.values():
+                    dwg.defs.add(fabrics.texture_svg_pattern(
+                        dwg, fabric_textures[key]['front'], self.px_per_unit, pattern_id))
             for panel, pattern_id in fabric_ids.items():
+                if panel in textured:
+                    continue
                 spec = panel_fabrics[panel]
                 pat, _ = fabrics.fabric_svg_pattern(dwg, spec['kind'], spec['fg'], spec['bg'],
                     float(spec.get('scale') or fabrics.default_scale(spec['kind'])) * self.px_per_unit, pattern_id)

@@ -22,12 +22,18 @@ MAX_JSON = 4 * 1024 * 1024
 MAX_FILES = 128
 # Recorded on every import so a record states which reader produced it.
 # 1: prototype; textures were resolved but never read. 2: header-checked textures.
-IMPORTER = 'seweasy-u3m/2'
+# 3: render-ready base-colour maps for the front and back.
+IMPORTER = 'seweasy-u3m/3'
 TEXTURE_FORMATS = ('PNG', 'JPEG', 'TIFF', 'WEBP')
 MAX_TEXTURE_SIDE = 16384
 MAX_TEXTURE_PIXELS = 80_000_000
 MM_PER_INCH = 25.4
 SCALE_TOLERANCE = .02
+# A garment carries its own copy of the map, so it is small: a repeat tile is
+# drawn a few centimetres wide, where 512 px already exceeds the screen.
+TEXTURE_MAP_PX = 512
+TEXTURE_MAP_BYTES = 200_000
+TEXTURE_MAP_DECODE_PIXELS = 36_000_000
 
 # These describe normalized physical quantities, not XPBD constraint compliance.
 PROPERTY_UNITS = {
@@ -182,6 +188,46 @@ def inspect_textures(files, manifest, document):
     return result
 
 
+def texture_maps(files, manifest, document):
+    """Render-ready base colour for each side that supplies one, at its declared size.
+
+    Only the base-colour map is drawn. Normal, roughness and the other PBR maps,
+    mirrored repeats and repeat rotation are stored with the package but not
+    rendered. The original files are untouched; this is a separate small copy.
+    """
+    from base64 import b64encode
+    parent, material, result = PurePosixPath(manifest).parent, document['material'], {}
+    for side in ('front', 'back'):
+        texture = ((material[side] or {}).get('basecolor') or {}).get('texture') or {}
+        node = texture.get('image')
+        if not isinstance(node, dict) or not all(
+                isinstance(node.get(k), (int, float)) and node[k] > 0 for k in ('width', 'height')):
+            continue                    # No map, or no physical size to draw it at.
+        try:
+            with Image.open(BytesIO(files[str(parent / node['path'])])) as image:
+                if image.size[0] * image.size[1] > TEXTURE_MAP_DECODE_PIXELS:
+                    continue            # Stored, but too large to decode on a request.
+                image.draft('RGB', (TEXTURE_MAP_PX, TEXTURE_MAP_PX))
+                pixels = image.convert('RGB')
+        except Exception:
+            continue                    # Headers passed; a truncated body is simply not drawn.
+        pixels.thumbnail((TEXTURE_MAP_PX, TEXTURE_MAP_PX), Image.LANCZOS)
+        factor = texture.get('factor') or {}
+        if texture.get('mode', 'multiply') == 'multiply' and any(factor.get(c, 1) != 1 for c in 'rgb'):
+            pixels = Image.merge('RGB', [band.point(lambda v, k=max(0., min(1., float(factor.get(c, 1)))): int(v * k))
+                                         for band, c in zip(pixels.split(), 'rgb')])
+        for quality in (85, 70, 50):
+            encoded = BytesIO()
+            pixels.save(encoded, format='WEBP', quality=quality)
+            if encoded.tell() <= TEXTURE_MAP_BYTES:
+                break
+        else:
+            continue
+        result[side] = dict(image='data:image/webp;base64,' + b64encode(encoded.getvalue()).decode('ascii'),
+                            size_mm=[float(node['width']), float(node['height'])], pixels=list(pixels.size))
+    return result
+
+
 def read_package(raw, filename):
     """Legacy ZIP wrappers are readable; references must be local and complete."""
     if not raw or len(raw) > MAX_UPLOAD:
@@ -290,7 +336,8 @@ def import_fabric(raw, filename):
                     sha256=sha256(raw).hexdigest(), material_id=material['id'],
                     has_raw_measurements=bool(raw_data), vendor='Browzwear' if vendor else None),
         # Full original curves, vendor fields and textures remain in source_bytes.
-        textures=textures, curves=curves, physics_normalization=normalization,
+        textures=textures, texture_maps=texture_maps(files, manifest, document),
+        curves=curves, physics_normalization=normalization,
         solver_tuning=deepcopy(extension.get('solver_tuning', {}))
         if isinstance(extension, dict) and isinstance(extension.get('solver_tuning'), dict) else {},
     )

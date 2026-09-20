@@ -64,6 +64,7 @@ def _normalized_content(row):
         content['physics_normalization'] = imported['physics_normalization']
         # Both describe the file itself, so they follow the reader that read it.
         content['textures'] = imported['textures']
+        content['texture_maps'] = imported['texture_maps']
         content['source'] = imported['source']
     return content
 
@@ -225,7 +226,7 @@ def update_fabric(email, identity, edit_token, *, name, description, values, res
         return _record(_owned(db, email, identity))
 
 
-APPLIED_KEYS = ('description', 'properties', 'solver_tuning', 'catalog')
+APPLIED_KEYS = ('description', 'properties', 'solver_tuning', 'catalog', 'texture_maps')
 
 
 def _applied(record):
@@ -241,9 +242,10 @@ def _applied(record):
 def snapshot(email, identity):
     """Embed this value in an assignment; never dereference it to apply later edits.
 
-    Curves, textures and original bytes stay in the library. A garment needs the
-    properties and their provenance, and a full record copied into every saved
-    outfit that uses the fabric would carry megabytes of measurement branches.
+    Curves, full-size textures and original bytes stay in the library. A garment
+    needs the properties, their provenance and the small base-colour maps it
+    draws; a full record copied into every saved outfit that uses the fabric
+    would carry megabytes of measurement branches.
     """
     return _applied(get_fabric(email, identity))
 

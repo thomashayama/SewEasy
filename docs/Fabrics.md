@@ -25,7 +25,11 @@ below; a garment drape applies fewer properties than a swatch does.
 
 The library has three views. **Common fabrics** is the read-only collection,
 **My fabrics** the account's imports and copies, and **Favorites** whatever has
-been hearted from either. The search box matches name, notes, fiber and weave;
+been hearted from either. Each row opens with a preview tile showing the same
+3 cm of cloth: the fabric's own map at scale, else its display colour, else an
+empty hatch, so weaves compare by eye. A fabric imported before maps were read
+gains its tile when it is next saved, because lists never re-read a stored
+package. The search box matches name, notes, fiber and weave;
 **Weight** filters by the usual apparel classes: light under 135 g/m², medium to
 270 g/m², heavy above (4 and 8 oz/yd²). A fabric with no weight matches no class.
 
@@ -88,8 +92,9 @@ sources survive editing, copying and U3MA export/reimport.
 `fabrics.snapshot()` produces a detached assignment value with a
 `source_fabric_id`. Consumers embed that snapshot instead of re-reading the
 library during simulation, so later library edits never alter a saved garment.
-It carries the properties, provenance and solver tuning; curves, textures and
-original bytes stay in the library.
+It carries the properties, provenance, solver tuning and the small render-ready
+base-colour maps; curves, the full-size textures and original bytes stay in the
+library.
 
 ## Assigning a fabric to a garment
 
@@ -112,12 +117,25 @@ What the garment solver does with each measured property:
 | Friction | Per garment | The same rest-area mean, used as the positional body-friction factor. It is not a Coulomb coefficient. |
 | Thickness | Per garment | Raises the solver's 4 mm numerical contact margin when a fabric is thicker. It never lowers the margin, and the measurement is never overwritten by it. |
 | Warp/weft stretch, shear | Stored only | Garment panels use scalar distance constraints and a strain limiter, not N/m membrane stiffness. The orthotropic model exists only in the swatch. |
-| Textures | Stored only | The garment renderer draws procedural prints; imported U3M maps are preserved but not decoded. |
+| Base-colour map | Per piece | Drawn in the 2D pattern and the 3D drape, repeating at the size the file declares, with the file's multiply factor. The wrong side uses the back's map when the material has one, otherwise the front's. |
+| Other maps | Stored only | Normal, roughness, displacement and the remaining PBR maps, mirrored repeats and repeat rotation are kept in the package and not rendered. |
 
 Grain direction is not a garment setting: with an isotropic solver it would
-change nothing, and print rotation remains a separate appearance choice.
-Assigning a fabric applies its display colour when it has one; prints and vendor
-texture maps are not imported.
+change nothing, and print rotation remains a separate appearance choice. Maps
+follow each piece's rest pattern, upright as the piece is drawn in 2D.
+
+A piece cut from a fabric with a base-colour map shows that map, and assigning
+the fabric clears the piece's earlier colour or print so it is visible. Giving
+the piece a colour or print afterwards replaces the map without changing what
+the piece is cut from; choose the fabric again to bring the map back. A fabric
+without a map applies its display colour when it has one.
+
+The garment carries its own copy of each map: at import the base colour is
+reduced to at most 512 px and 200 KB as a WebP, keeping the declared physical
+size, so shares, forks, thumbnails and agent renders need no access to the
+owner's library. Maps above 36 megapixels, or with no declared size, are stored
+but not drawn. A garment never fetches an image; only that embedded copy is
+accepted.
 
 ## Quantities and provenance
 
@@ -175,7 +193,7 @@ loading blobs. See [external fixture validation and catalog candidates](FabricSo
   and asks for a 1.1 re-export. Vizoo's published `Example_1.0.u3m` is the
   fixture for that path.
 - Every import records the reader that produced it in `source.importer`
-  (`seweasy-u3m/2`). Opening a record written by an older reader re-reads the
+  (`seweasy-u3m/3`). Opening a record written by an older reader re-reads the
   stored original and refreshes its textures and source; if the current reader
   rejects that file, the saved record is still returned unchanged.
 - Accepts standalone `.u3m` when it has no missing companions, and complete
@@ -190,12 +208,13 @@ loading blobs. See [external fixture validation and catalog candidates](FabricSo
   into `custom.seweasy`. Other software may ignore the SewEasy extension.
 - Keeps companion files and unknown vendor extensions unchanged. Download
   original returns the exact uploaded bytes, including its original values.
-- Texture files are preserved, but the current renderer does not interpret
-  their PBR maps. No CLO/Browzwear application round-trip is claimed yet.
+- Texture files are preserved. Of their PBR maps the renderer draws only the
+  base colour. No CLO/Browzwear application round-trip is claimed yet.
 - Referenced textures, normal maps and preview images must be real PNG, JPEG,
-  TIFF or WebP files of at most 16384 px per side and 80 megapixels. Only
-  headers are read: pixels are never decoded, rescaled or re-encoded, so a
-  truncated file is a renderer problem, not an import error.
+  TIFF or WebP files of at most 16384 px per side and 80 megapixels. Validation
+  reads headers only and the stored files are never rescaled or re-encoded.
+  The base-colour maps alone are also decoded, into the small separate copy a
+  garment draws; one that fails to decode is simply not drawn.
 - `textures` lists each reference with its role, format, pixel size, declared
   millimetres and dpi. Where 1.1 declares a physical size, it is checked
   against the pixels at that dpi (2% tolerance) and a mismatch is reported per

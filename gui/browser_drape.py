@@ -35,6 +35,7 @@ class SceneDraft:
     garment: str
     garment_types: dict
     materials: dict = None
+    textures: dict = None
 
 
 def snapshot_scene(pattern_state):
@@ -52,7 +53,7 @@ def snapshot_scene(pattern_state):
     garment = 'outfit' if items else 'element-top' if upper == 'ElementTubeTop' else 'current-design'
     return SceneDraft(pattern, deepcopy(pattern_state.body_params.params), deepcopy(colors), deepcopy(fabrics),
                       garment, {f'g{i}__': item['params']['meta']['upper']['v'] for i, item in enumerate(items)},
-                      pattern_state.display_panel_materials())
+                      pattern_state.display_panel_materials(), pattern_state.display_fabric_textures(fabrics))
 
 
 def prepare_scene(pattern_state, target, resolution=1.5):
@@ -96,5 +97,7 @@ def prepare_scene(pattern_state, target, resolution=1.5):
         scene['panel_colors'] = draft.colors
         scene['garment_types'] = draft.garment_types
         scene['panel_fabrics'] = draft.fabrics
+        # Each set of maps once; the pieces name theirs by key in panel_fabrics.
+        scene['fabric_textures'] = draft.textures or {}
         target.write_text(json.dumps(scene, separators=(',', ':'), allow_nan=False), encoding='utf-8')
     return target

@@ -103,7 +103,7 @@ def appearance(value):
     for identity, material in saved.items():
         if not isinstance(material, dict) or set(material) - {
                 'source_fabric_id', 'name', 'standard', 'description', 'properties',
-                'solver_tuning', 'catalog', 'display_color'}:
+                'solver_tuning', 'catalog', 'display_color', 'texture_maps'}:
             raise ValueError('A saved material carries its id, name, properties and provenance.')
         if 'display_color' in material and not (isinstance(material['display_color'], str) and re.fullmatch(
                 r'#[0-9a-fA-F]{6}', material['display_color'])):
@@ -112,6 +112,18 @@ def appearance(value):
             raise ValueError('A saved material must be keyed by its own fabric id.')
         label(material.get('name', ''))
         validate_properties(material.get('properties'))
+        maps = material.get('texture_maps', {})
+        if not isinstance(maps, dict) or set(maps) - {'front', 'back'}:
+            raise ValueError('Texture maps are given for the front and back only.')
+        for side in maps.values():
+            # The garment's own small copy (webapp/fabric_formats.texture_maps), never a URL to fetch.
+            if (not isinstance(side, dict) or set(side) - {'image', 'size_mm', 'pixels'}
+                    or not isinstance(side.get('image'), str) or len(side['image']) > 300_000
+                    or not re.fullmatch(r'data:image/webp;base64,[A-Za-z0-9+/=]+', side['image'])
+                    or not isinstance(side.get('size_mm'), list) or len(side['size_mm']) != 2
+                    or any(isinstance(v, bool) or not isinstance(v, (int, float)) or not 0 < v <= 100_000
+                           for v in side['size_mm'])):
+                raise ValueError('A texture map is a small WebP data image with its size in millimetres.')
         if not isinstance(material.get('solver_tuning', {}), dict):
             raise ValueError('Solver tuning must be an object.')
         if material.get('catalog') is not None:

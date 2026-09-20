@@ -1,5 +1,7 @@
 /* Shared by Account → Fabrics and the studio's fabric chooser. */
-.se-fabric-chip {width:16px; height:16px; flex:none; border-radius:50%; border:1px solid var(--home-line,#c5ccd8);}
+/* Every tile is the same 3 cm of cloth (webapp/fabrics_ui.PREVIEW_MM). */
+.se-fabric-tile {display:block; width:44px; height:44px; flex:none; border-radius:6px; border:1px solid var(--home-line,#c5ccd8); background-color:#e9eef4; background-repeat:repeat; background-position:center;}
+.se-fabric-tile.is-empty {background-image:repeating-linear-gradient(45deg,transparent 0 5px,#5a627026 5px 6px);}
 /* The wardrobe's heart, inline in a row instead of pinned to a card corner. */
 .se-fabric-heart.q-btn {width:36px; height:36px; min-height:36px; padding:0; background:transparent!important; color:var(--home-muted,#61768b); box-shadow:none;}
 .se-fabric-heart.q-btn:before {box-shadow:none;}

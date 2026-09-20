@@ -19,7 +19,9 @@ their weight and bending from its measurements; see
 whole garment. A fabric assigned in a garment someone shared keeps its name even
 when it is not in your library. **Browse fabrics…** opens the full library as a
 picker, with search, weight classes and hearts; choosing a fabric there keeps the
-current selection.
+current selection. A fabric that brings its own base-colour map is drawn on the
+piece in both views, and **Pattern** reads **Fabric’s own texture** until the
+piece is given a colour or print of its own.
 
 Closing the panel clears the selection outlines and keeps the fabric edits.
 Reopen it with **Fabric** above the workspace.

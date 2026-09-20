@@ -153,6 +153,14 @@ def fabric_svg_pattern(dwg, kind, fg, bg, tile, pattern_id):
     return pat, f'url(#{pattern_id})'
 
 
+def texture_svg_pattern(dwg, texture, px_per_cm, pattern_id):
+    """An image map tiled at its physical size: `size_mm` is one repeat of the cloth."""
+    width, height = (float(mm) / 10 * px_per_cm for mm in texture['size_mm'])
+    pat = dwg.pattern(id=pattern_id, insert=(0, 0), size=(width, height), patternUnits='userSpaceOnUse')
+    pat.add(dwg.image(href=texture['image'], insert=(0, 0), size=(width, height), preserveAspectRatio='none'))
+    return pat
+
+
 def _blend_hex(a, b):
     ra, rb = _rgb(a), _rgb(b)
     m = tuple((x + y) // 2 for x, y in zip(ra, rb))

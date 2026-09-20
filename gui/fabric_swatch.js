@@ -1,5 +1,5 @@
 import {Cloth} from '/webgpu/physics.js?v=21';
-import {Renderer} from '/webgpu/render.js?v=24';
+import {Renderer} from '/webgpu/render.js?v=25';
 import {settingsForSwatch,swatchSteps,measureSwatch} from '/webgpu/swatch.js?v=3';
 
 const engines=new WeakMap();

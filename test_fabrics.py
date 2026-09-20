@@ -32,9 +32,9 @@ def shirley_package():
                      'physics.json': (fmt.SPEC/'shirley_physics.json').read_bytes()})
 
 
-def image_bytes(pixels, kind='PNG'):
+def image_bytes(pixels, kind='PNG', color=(190, 170, 150)):
     buffer = BytesIO()
-    Image.new('RGB', pixels, (190, 170, 150)).save(buffer, format=kind)
+    Image.new('RGB', pixels, color).save(buffer, format=kind)
     return buffer.getvalue()
 
 
@@ -61,17 +61,28 @@ def side(basecolor=None, normal=None, preview=None):
     return result
 
 
-def appearance_package(scale=1., files=None):
+def appearance_package(scale=1., files=None, back=False, edit=None):
     """An appearance-only material: real textures, no measurements at all."""
     doc = fmt.empty_document('Printed cotton lawn')
     doc['material']['front'] = side(basecolor=image_node('textures/base.png', scale=scale),
                                     normal=image_node('textures/normal.png', (128, 128)),
                                     preview=dict(path='preview.jpg', dpi=dict(x=300, y=300),
                                                  width=64/300*25.4, height=64/300*25.4))
+    extra = {}
+    if back:                            # A wrong side with its own, differently sized, map.
+        doc['material']['back'] = side(basecolor=image_node('textures/back.png', (64, 32)))
+        extra['textures/back.png'] = image_bytes((64, 32), color=(20, 120, 60))
+    if edit:
+        edit(doc)
     return fmt.pack(dict({'material.u3m': json.dumps(doc).encode(),
                           'textures/base.png': image_bytes((256, 256)),
                           'textures/normal.png': image_bytes((128, 128)),
-                          'preview.jpg': image_bytes((64, 64), 'JPEG')}, **(files or {})))
+                          'preview.jpg': image_bytes((64, 64), 'JPEG')}, **extra, **(files or {})))
+
+
+def decoded(data_url):
+    from base64 import b64decode
+    return Image.open(BytesIO(b64decode(data_url.split(',', 1)[1]))).convert('RGB')
 
 
 class FormatTest(unittest.TestCase):
@@ -273,6 +284,41 @@ class TextureImportTest(unittest.TestCase):
         del files['textures/normal.png']
         with self.assertRaisesRegex(ValueError, 'Missing companion file: textures/normal.png'):
             fmt.import_fabric(fmt.pack(files), 'lawn.u3ma')
+
+    def test_base_colour_maps_are_render_ready_at_their_declared_size(self):
+        content = fmt.import_fabric(appearance_package(back=True), 'lawn.u3ma')
+        maps = content['texture_maps']
+        self.assertEqual(set(maps), {'front', 'back'})                  # never the normal map or the preview
+        self.assertAlmostEqual(maps['front']['size_mm'][0], 256/300*25.4)
+        self.assertEqual(maps['back']['pixels'], [64, 32])
+        self.assertAlmostEqual(maps['back']['size_mm'][1], 32/300*25.4)
+        for side_map in maps.values():
+            self.assertTrue(side_map['image'].startswith('data:image/webp;base64,'))
+            self.assertLessEqual(len(side_map['image']), fmt.TEXTURE_MAP_BYTES * 4 // 3 + 64)
+            self.assertLessEqual(max(decoded(side_map['image']).size), fmt.TEXTURE_MAP_PX)
+        red, green, blue = decoded(maps['back']['image']).getpixel((5, 5))
+        self.assertTrue(abs(red - 20) < 12 and abs(green - 120) < 12 and abs(blue - 60) < 12)
+        # A large scan is reduced for the garment's copy; the stored original is not.
+        big = fmt.import_fabric(appearance_package(files={'textures/base.png': image_bytes((1400, 700))},
+                                                   edit=lambda d: d['material']['front']['basecolor']['texture']['image']
+                                                   .update(width=1400/300*25.4, height=700/300*25.4)), 'big.u3ma')
+        self.assertEqual(big['texture_maps']['front']['pixels'], [512, 256])
+        self.assertAlmostEqual(big['texture_maps']['front']['size_mm'][0], 1400/300*25.4)
+        # The U3M multiply factor tints the map.
+        tinted = fmt.import_fabric(appearance_package(edit=lambda d: d['material']['front']['basecolor']['texture']
+                                                      .update(factor=dict(r=1, g=.5, b=0))), 'tint.u3ma')
+        red, green, blue = decoded(tinted['texture_maps']['front']['image']).getpixel((9, 9))
+        self.assertTrue(abs(red - 190) < 12 and abs(green - 85) < 12 and blue < 12)
+
+    def test_a_map_that_cannot_be_drawn_is_still_imported_and_stored(self):
+        unsized = fmt.import_fabric(appearance_package(edit=lambda d: d['material']['front']['basecolor']['texture']['image']
+                                                       .update(width=0)), 'unsized.u3ma')
+        self.assertEqual(unsized['texture_maps'], {})                   # no physical size to draw it at
+        self.assertEqual(len(unsized['textures']), 3)
+        with patch.object(fmt, 'TEXTURE_MAP_DECODE_PIXELS', 1000):
+            huge = fmt.import_fabric(appearance_package(), 'huge.u3ma')
+        self.assertEqual(huge['texture_maps'], {})
+        self.assertEqual(fmt.import_fabric(fmt.sample_package(), 'cupro.u3ma')['texture_maps'], {})
 
     def test_published_vendor_1_0_material_is_refused_with_an_upgrade_message(self):
         raw = (fmt.SPEC/'vendor_example_1.0.u3m').read_bytes()

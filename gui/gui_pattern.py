@@ -323,11 +323,49 @@ class GUIPattern:
             return {}
         if self.outfit_items:
             self.sync_outfit_garment()
-            return self.sew_pattern.assembly().pattern.get('panel_fabrics', {})
-        spec = self._fabric_spec()
-        result = {panel: spec for panel in self.sew_pattern.assembly().pattern['panels']
-                  if panel not in self.panel_colors} if spec else {}
-        result.update(deepcopy(self.panel_fabrics))
+            result = dict(self.sew_pattern.assembly().pattern.get('panel_fabrics', {}))
+        else:
+            spec = self._fabric_spec()
+            result = {panel: spec for panel in self.sew_pattern.assembly().pattern['panels']
+                      if panel not in self.panel_colors} if spec else {}
+            result.update(deepcopy(self.panel_fabrics))
+        # A piece cut from a fabric that has its own base-colour map shows that
+        # map, until the piece is given a colour or print of its own.
+        colors = self.display_panel_colors()
+        for panel, material in self.display_panel_materials().items():
+            key = self.texture_key(material)
+            if key and not self._has_own_look(panel):
+                result[panel] = dict(kind='texture', texture=key, fg='#ffffff',
+                                     bg=colors.get(panel, self.fabric_color), scale=1.)
+        return result
+
+    @staticmethod
+    def texture_key(material):
+        """Identifies a material's maps by content, so two garments may hold different versions."""
+        maps = (material or {}).get('texture_maps') or {}
+        if not maps.get('front') and not maps.get('back'):
+            return None
+        from hashlib import sha1
+        return sha1(''.join((maps.get(side) or {}).get('image', '') for side in ('front', 'back')).encode()).hexdigest()[:12]
+
+    def _has_own_look(self, panel):
+        return any(local in overrides for overrides, local in (
+            self._panel_appearance_map(panel, 'panel_fabrics'), self._panel_appearance_map(panel, 'panel_colors')))
+
+    def display_fabric_textures(self, specs=None):
+        """Each distinct set of maps once, however many pieces are cut from it."""
+        specs = self.display_panel_fabrics() if specs is None else specs
+        used = {spec['texture'] for spec in specs.values() if spec.get('kind') == 'texture'}
+        if not used:
+            return {}
+        result = {}
+        for material in self.display_panel_materials().values():
+            key = self.texture_key(material)
+            if key in used and key not in result:
+                maps = material['texture_maps']
+                # U3M: a missing back uses the front, and a missing front uses the back.
+                result[key] = dict(front=deepcopy(maps.get('front') or maps.get('back')),
+                                   back=deepcopy(maps.get('back') or maps.get('front')))
         return result
 
     def panel_fabric_settings(self, panels):
@@ -435,19 +473,27 @@ class GUIPattern:
                         overrides.pop(local, None)
                     else:
                         overrides[local] = stiffness
-                    if material.get('display_color'):
+                    colors, _ = self._panel_appearance_map(panel, 'panel_colors')
+                    prints, _ = self._panel_appearance_map(panel, 'panel_fabrics')
+                    if self.texture_key(material):
+                        # The fabric's own map is its look; an earlier colour or
+                        # print on this piece would hide it.
+                        colors.pop(local, None)
+                        prints.pop(local, None)
+                    elif material.get('display_color'):
                         # The owner gave this fabric a colour; a piece cut from it
                         # starts that colour and stays freely recolourable.
-                        colors, _ = self._panel_appearance_map(panel, 'panel_colors')
                         colors[local] = material['display_color']
-                        prints, _ = self._panel_appearance_map(panel, 'panel_fabrics')
                         if local in prints:
                             prints[local]['bg'] = material['display_color']
                 else:
                     overrides[local] = FABRICS_BY_ID[value]['stiffness']
                     materials[local] = value
             else:
-                spec = {k: v for k, v in settings[panel].items() if k not in ('stiffness', 'material')}
+                # Only a print's own fields are stored; a texture is derived, never saved as a print.
+                spec = {k: v for k, v in settings[panel].items() if k in ('kind', 'fg', 'bg', 'scale')}
+                if spec['kind'] == 'texture':
+                    spec['kind'] = 'plain'
                 spec[field] = value
                 overrides, local = self._panel_appearance_map(panel, 'panel_fabrics')
                 overrides[local] = spec
@@ -460,7 +506,7 @@ class GUIPattern:
                 for stale in [k for k in pool if k not in set(assigned.values())]:
                     pool.pop(stale)
         self.sync_outfit_garment()
-        recolored = field == 'material' and bool((material or {}).get('display_color'))
+        recolored = field == 'material' and bool((material or {}).get('display_color') or self.texture_key(material))
         if self.sew_pattern is not None and (field not in ('stiffness', 'material') or recolored):
             self._view_serialize()
 
@@ -549,12 +595,13 @@ class GUIPattern:
         self.clear_previous_svg()
         try:
             self.svg_filename = f'pattern_{time.time()}.svg'
+            specs = self.display_panel_fabrics()
             dwg, paths, labels, size = studio_svg(
                 pattern, self.tmp_path / self.svg_filename,
                 panel_fill_color=self.fabric_color,
                 panel_colors=self.display_panel_colors(),
                 fabric=None if self.outfit_items else self._fabric_spec(),
-                panel_fabrics=self.display_panel_fabrics())
+                panel_fabrics=specs, fabric_textures=self.display_fabric_textures(specs))
             dwg.save()
 
             self.svg_bbox_size = size
@@ -882,6 +929,7 @@ class GUIPattern:
 
         if save_pattern is self.sew_pattern:
             pattern.pattern['panel_fabrics'] = self.display_panel_fabrics()
+            pattern.pattern['fabric_textures'] = self.display_fabric_textures(pattern.pattern['panel_fabrics'])
 
         # Merge the user's per-panel stiffness overrides on top of any garment
         # default, so the 3D drape uses them

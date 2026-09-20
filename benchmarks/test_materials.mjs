@@ -40,3 +40,31 @@ test('explicit settings still win, so swatch fixtures are unaffected',()=>{
   Object.assign(cloth.settings,{damping:0});      // what Cloth.create applies afterwards
   assert.equal(cloth.settings.damping,0);
 });
+
+// Imported base-colour maps: which layer and physical size each vertex samples.
+import {fabricRecords,FABRIC_STRIDE} from '../gui/webgpu/render.js';
+
+const specs={sleeve:{kind:'texture',texture:'twill',fg:'#ffffff',bg:'#336699',scale:1},
+  cuff:{kind:'stripe',fg:'#ffffff',bg:'#000000',scale:2},collar:{kind:'texture',texture:'lost',fg:'#ffffff',bg:'#112233',scale:1}};
+const textures={twill:{front:{image:'F',size_mm:[40,20]},back:{image:'B',size_mm:[12,8]}},
+  plain:{front:{image:'P',size_mm:[30,30]},back:{image:'P',size_mm:[30,30]}},lost:{front:{image:'X',size_mm:[5,5]},back:{image:'X',size_mm:[5,5]}}};
+const near=(actual,expected)=>expected.forEach((value,i)=>assert.ok(Math.abs(actual[i]-value)<1e-6,`${i}: ${actual[i]} != ${value}`));
+
+test('a textured piece samples its own front and back layers at their physical sizes',()=>{
+  const data=fabricRecords(['sleeve','cuff'],specs,textures,new Map([['F',0],['B',1],['P',2]]));
+  assert.equal(data.length,2*FABRIC_STRIDE);
+  near(data.slice(0,4),[6,.01,0,1]);                        // texture kind, front layer 0, back layer 1
+  near(data.slice(12,16),[.04,.02,.012,.008]);              // metres: front 40×20 mm, back 12×8 mm
+  near(data.slice(FABRIC_STRIDE,FABRIC_STRIDE+4),[2,.02,0,0]);   // a procedural print is untouched
+});
+
+test('one map serves both faces, and a map that never loaded falls back to the plain colour',()=>{
+  const both=fabricRecords(['sleeve'],{sleeve:{...specs.sleeve,texture:'plain'}},textures,new Map([['P',2]]));
+  near(both.slice(0,4),[6,.01,2,2]);near(both.slice(12,16),[.03,.03,.03,.03]);
+  const onlyFront=fabricRecords(['sleeve'],specs,textures,new Map([['F',0]]));
+  near(onlyFront.slice(0,4),[6,.01,0,0]);near(onlyFront.slice(12,16),[.04,.02,.04,.02]);   // the back reuses the front
+  const missing=fabricRecords(['collar','hem'],specs,textures,new Map([['F',0]]));
+  assert.equal(missing[0],0);                               // plain, not a texture with no layer
+  near(missing.slice(8,11),[0x11,0x22,0x33].map(v=>(v/255)**2.2));
+  assert.ok(missing.slice(FABRIC_STRIDE).every(v=>v===0));  // a piece with no spec at all
+});

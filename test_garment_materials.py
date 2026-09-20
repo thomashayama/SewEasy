@@ -144,6 +144,77 @@ class AssignmentTest(unittest.TestCase):
         p.edit_panel_fabrics([panel], 'bg', '#ffffff')                # and stays recolourable
         self.assertEqual(p.panel_materials[panel], DENIM)
 
+    def textured(self, back=False):
+        """A library snapshot of an imported fabric that brings its own base-colour map."""
+        from test_fabrics import appearance_package
+        from webapp import fabric_formats as fmt
+        content = fmt.import_fabric(appearance_package(back=back), 'lawn.u3ma')
+        return dict(source_fabric_id='fabric-lawn', name='Printed cotton lawn', standard=False,
+                    properties=content['properties'], solver_tuning={}, texture_maps=content['texture_maps'])
+
+    def test_a_piece_shows_its_fabrics_own_map_until_it_is_given_a_look_of_its_own(self):
+        p = self.pattern
+        panel, other = self.panels
+        p.edit_panel_fabrics([panel], 'bg', '#aa5500')          # an earlier colour would hide the map
+        lawn = self.textured()
+        p.edit_panel_fabrics([panel], 'material', 'fabric-lawn', lawn)
+        self.assertNotIn(panel, p.panel_colors)
+        self.assertNotIn(panel, p.panel_fabrics)                # the map is derived, never stored as a print
+        specs = p.display_panel_fabrics()
+        self.assertEqual(specs[panel]['kind'], 'texture')
+        self.assertNotIn(other, specs)
+        textures = p.display_fabric_textures(specs)
+        self.assertEqual(list(textures), [specs[panel]['texture']])
+        maps = textures[specs[panel]['texture']]
+        self.assertEqual(maps['back'], maps['front'])            # U3M: no back of its own uses the front
+        self.assertEqual(maps['front']['size_mm'], lawn['texture_maps']['front']['size_mm'])
+        self.assertEqual(p.panel_fabric_settings([panel])[panel]['kind'], 'texture')
+        # Two pieces cut from it still carry one copy of the map.
+        p.edit_panel_fabrics([other], 'material', 'fabric-lawn', lawn)
+        self.assertEqual(len(p.display_fabric_textures()), 1)
+        # The 2D pattern tiles the map at its physical size: 256 px at 300 dpi is 2.1673 cm.
+        svg = p.svg_path().read_text(encoding='utf-8')
+        self.assertEqual(svg.count('data:image/webp;base64,'), 1)
+        import re
+        from seweasy.pattern.wrappers import VisPattern
+        tile = re.search(r'<pattern height="([\d.]+)" id="seweasy_fabric_map_0"[^>]* width="([\d.]+)"', svg)
+        for drawn in tile.groups():
+            self.assertAlmostEqual(float(drawn), 256 / 300 * 2.54 * VisPattern().px_per_unit, places=6)
+        self.assertEqual(svg.count('fill="url(#seweasy_fabric_map_0)"'), 2)
+        # Recolouring the piece replaces the map but not what the piece is cut from.
+        p.edit_panel_fabrics([panel], 'bg', '#123456')
+        self.assertEqual(p.display_panel_fabrics()[panel]['kind'], 'plain')
+        self.assertEqual(set(p.panel_fabrics[panel]), {'kind', 'fg', 'bg', 'scale'})
+        self.assertEqual(p.panel_materials[panel], 'fabric-lawn')
+        self.assertEqual(p.display_panel_fabrics()[other]['kind'], 'texture')
+
+    def test_a_wrong_side_map_and_validation_travel_with_the_garment(self):
+        p = self.pattern
+        panel = self.panels[0]
+        lawn = self.textured(back=True)
+        p.edit_panel_fabrics([panel], 'material', 'fabric-lawn', lawn)
+        maps = next(iter(p.display_fabric_textures().values()))
+        self.assertNotEqual(maps['back']['image'], maps['front']['image'])
+        self.assertEqual(maps['back']['pixels'], [64, 32])
+        look = appearance(p.garment_appearance())
+        self.assertEqual(set(look['materials']['fabric-lawn']['texture_maps']), {'front', 'back'})
+        store = Wardrobe(storage={})
+        saved = store.save_garment('Lawn shirt', p.design_params, look)
+        p.load_outfit([saved])
+        p.reload_garment()
+        shown = p.display_panel_fabrics()
+        self.assertEqual(shown['g0__' + panel]['kind'], 'texture')
+        # A garment never fetches an image: only its own embedded copy is accepted.
+        for image in ('https://example.test/cloth.webp', 'data:image/svg+xml;base64,PHN2Zy8+', 'data:image/webp;base64,' + 'A' * 300_000):
+            remote = deepcopy(look)
+            remote['materials']['fabric-lawn']['texture_maps']['front']['image'] = image
+            with self.subTest(image=image[:30]), self.assertRaises(ValueError):
+                appearance(remote)
+        unsized = deepcopy(look)
+        unsized['materials']['fabric-lawn']['texture_maps']['front']['size_mm'] = [0, 10]
+        with self.assertRaises(ValueError):
+            appearance(unsized)
+
     def test_a_library_edit_reaches_a_garment_only_when_reapplied(self):
         p = self.pattern
         panel = self.panels[0]

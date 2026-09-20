@@ -41,6 +41,7 @@ export default {
         <label class="se-fabric-field">Pattern
           <select aria-label="Fabric pattern" :value="shared('kind')??''" @change="edit('kind',$event.target.value)">
             <option v-if="shared('kind')===null" value="" disabled>Mixed patterns</option>
+            <option v-if="shared('kind')==='texture'" value="texture" disabled>Fabric’s own texture</option>
             <option value="plain">Solid</option><option value="pinstripe">Pinstripe</option><option value="stripe">Stripe</option>
             <option value="polka_dot">Polka dot</option><option value="gingham">Gingham</option><option value="windowpane">Windowpane</option>
           </select>
@@ -59,7 +60,7 @@ export default {
             <input type="text" :aria-label="field.label" :value="shared(field.key)||''" :placeholder="shared(field.key)===null?'Mixed':'#000000'" spellcheck="false" maxlength="7" pattern="#[0-9a-fA-F]{6}" @input="color(field.key,$event)" @blur="restoreInvalid(field.key,$event)">
           </span>
         </label>
-        <label v-if="shared('kind')!=='plain'" class="se-fabric-field">Pattern spacing <span class="se-fabric-unit">cm</span>
+        <label v-if="!['plain','texture'].includes(shared('kind'))" class="se-fabric-field">Pattern spacing <span class="se-fabric-unit">cm</span>
           <input type="number" aria-label="Pattern spacing" min="0.2" max="4" step="0.1" :placeholder="shared('scale')===null?'Mixed':''" :value="shared('scale')??''" @input="number('scale',$event)" @blur="restoreInvalid('scale',$event)">
         </label>
         </details>
@@ -82,7 +83,8 @@ export default {
       const noun=['cuff','sleeve','collar'].find(word=>this.selection.every(p=>p.label.toLowerCase().includes(word)))||'piece';
       return this.selection.length+' '+noun+(this.selection.length===1?'':'s')+' selected';
     },
-    colorFields() {return this.shared('kind')==='plain' ? [{key:'bg',label:'Fabric color'}] : [{key:'bg',label:'Base color'},{key:'fg',label:'Print color'}];},
+    // A colour chosen for a textured piece replaces the texture, like any other look of its own.
+    colorFields() {return ['plain','texture'].includes(this.shared('kind')) ? [{key:'bg',label:'Fabric color'}] : [{key:'bg',label:'Base color'},{key:'fg',label:'Print color'}];},
     materialDescription() {
       const id=this.shared('material');
       if(id===null)return 'Choose a fabric for all selected sections.';

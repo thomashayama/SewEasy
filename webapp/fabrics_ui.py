@@ -10,6 +10,34 @@ from webapp import fabric_formats as formats
 from webapp.fabric_catalog import evidence_label, metadata, standard_fabrics
 from webapp.garment_materials import SUPPORT
 
+# Every preview shows the same width of cloth, so weaves and prints compare by eye.
+PREVIEW_MM = 30
+
+
+def preview_tile(record):
+    """One consistent swatch per fabric: its own map at scale, else its colour, else honestly empty."""
+    content = record['content']
+    maps = content.get('texture_maps') or {}
+    front = maps.get('front') or maps.get('back')
+    shade = (content.get('appearance') or {}).get('display_color')
+    tile = ui.element('span').classes('se-fabric-tile').props('role=img')
+    if front:
+        width, height = (mm / PREVIEW_MM * 100 for mm in front['size_mm'])
+        # Set directly: .style() splits on ';' and ':', both of which a data URL contains.
+        tile._style['background-image'] = f'url({front["image"]})'
+        tile._style['background-size'] = f'{width:.5g}% {height:.5g}%'
+        tile._props['aria-label'] = f'{PREVIEW_MM // 10} cm of {record["name"]}'
+    elif shade:
+        tile.style(f'background-color:{shade}')
+        tile._props['aria-label'] = f'Display color {shade}'
+    else:
+        tile.classes('is-empty')
+        # Lists never re-read a stored package, so an older import gains its map when next saved.
+        tile._props['aria-label'] = ('Its preview appears after this fabric is next saved'
+                                     if content.get('textures') else 'No appearance supplied')
+    return tile
+
+
 # What a garment drape does with a property; the swatch uses all of them.
 DRAPE_SCOPE = {'piece': 'drapes each piece', 'garment': 'drapes the whole garment', 'stored': 'swatch tests only'}
 
@@ -377,21 +405,18 @@ async def fabric_library(email, choose=None):
                     summary.append(f'{values[key]["value"]:.4g} {unit}')
             with ui.card().classes('se-stitch-card w-full p-3 gap-1'):
                 with ui.row().classes('w-full items-center justify-between gap-3'):
-                    with ui.column().classes('gap-0 min-w-0'):
-                        with ui.row(wrap=False).classes('items-center gap-2'):
-                            shade = (record['content'].get('appearance') or {}).get('display_color')
-                            if shade:
-                                ui.element('span').classes('se-fabric-chip').style(f'background:{shade}').props(
-                                    f'role=img aria-label="Display color {shade}"')
+                    with ui.row(wrap=False).classes('items-center gap-3 min-w-0'):
+                        preview_tile(record)
+                        with ui.column().classes('gap-0 min-w-0'):
                             if choose and not email:
                                 ui.label(record['name']).classes('font-medium')     # Properties need an account.
                             else:
-                                ui.button(record['name'], on_click=lambda _, i=record['id']: edit(i)).props('flat no-caps align=left').classes('font-medium' + ('' if shade else ' -ml-3'))
-                        catalog = record['content'].get('catalog')
-                        if catalog:
-                            ui.label(f'{catalog["composition"]} · {catalog["construction"]}').classes('se-param-label text-sm')
-                        ui.label(' · '.join(summary) or 'Physical properties not supplied').classes('se-param-label')
-                        ui.label(evidence_label(record['content'])).classes('se-param-label text-xs mt-1')
+                                ui.button(record['name'], on_click=lambda _, i=record['id']: edit(i)).props('flat no-caps align=left').classes('font-medium -ml-3')
+                            catalog = record['content'].get('catalog')
+                            if catalog:
+                                ui.label(f'{catalog["composition"]} · {catalog["construction"]}').classes('se-param-label text-sm')
+                            ui.label(' · '.join(summary) or 'Physical properties not supplied').classes('se-param-label')
+                            ui.label(evidence_label(record['content'])).classes('se-param-label text-xs mt-1')
                     with ui.row(wrap=False).classes('se-fabric-actions items-center gap-1'):
                         heart_button(record)
                         if choose:

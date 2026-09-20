@@ -19,7 +19,7 @@ export function cameraMatrix(eye,target,aspect,pan=[0,0]){
 }
 const shader=`
 struct View { mvp: mat4x4<f32>, eye: vec4<f32>, color: vec4<f32>, angle:vec4<f32>, center:vec4<f32> }
-struct Out { @builtin(position) clip: vec4<f32>, @location(0) world: vec3<f32>, @location(1) normal: vec3<f32>, @location(2) strain:f32, @location(3) color:vec3<f32>, @location(4) uv:vec2<f32>, @location(5) motif:vec2<f32>, @location(6) fg:vec3<f32>, @location(7) bg:vec3<f32>, @location(8) @interpolate(flat) panel:u32 }
+struct Out { @builtin(position) clip: vec4<f32>, @location(0) world: vec3<f32>, @location(1) normal: vec3<f32>, @location(2) strain:f32, @location(3) color:vec3<f32>, @location(4) uv:vec2<f32>, @location(5) motif:vec2<f32>, @location(6) fg:vec3<f32>, @location(7) bg:vec3<f32>, @location(8) @interpolate(flat) panel:u32, @location(9) @interpolate(flat) layers:vec2<f32>, @location(10) @interpolate(flat) mapsize:vec4<f32> }
 struct Hole { seat:vec4<f32>, shape:vec4<f32> }
 @group(0) @binding(0) var<uniform> view: View;
 @group(0) @binding(1) var<storage, read> positions: array<vec4<f32>>;
@@ -29,12 +29,19 @@ struct Hole { seat:vec4<f32>, shape:vec4<f32> }
 @group(0) @binding(5) var<storage, read> fabrics: array<vec4<f32>>;
 @group(0) @binding(6) var<storage, read> panels: array<u32>;
 @group(0) @binding(7) var<storage, read> holes: array<Hole>;
+@group(0) @binding(8) var maps: texture_2d_array<f32>;
+@group(0) @binding(9) var mapSampler: sampler;
 fn turn(v:vec3<f32>)->vec3<f32>{let cs=view.angle.xy;return vec3<f32>(cs.x*v.x+cs.y*v.z,v.y,-cs.y*v.x+cs.x*v.z);}
 @vertex fn vertex(@builtin(vertex_index) id: u32) -> Out {
  var o:Out;o.world=view.center.xyz+turn(positions[id].xyz-view.center.xyz);o.clip=view.mvp*vec4<f32>(o.world,1);o.normal=turn(normals[id].xyz);o.strain=normals[id].w;o.color=colors[id].rgb;
- let fi=min(id,arrayLength(&fabrics)/3u-1u)*3u;o.motif=fabrics[fi].xy;o.fg=fabrics[fi+1u].rgb;o.bg=fabrics[fi+2u].rgb;o.uv=uv[min(id,arrayLength(&uv)-1u)];o.panel=panels[min(id,arrayLength(&panels)-1u)];return o;
+ let fi=min(id,arrayLength(&fabrics)/4u-1u)*4u;o.motif=fabrics[fi].xy;o.layers=fabrics[fi].zw;o.fg=fabrics[fi+1u].rgb;o.bg=fabrics[fi+2u].rgb;o.mapsize=fabrics[fi+3u];o.uv=uv[min(id,arrayLength(&uv)-1u)];o.panel=panels[min(id,arrayLength(&panels)-1u)];return o;
 }
 @fragment fn fragment(o:Out,@builtin(front_facing) front:bool)->@location(0) vec4<f32>{
+ // An imported base-colour map repeats at its physical size in rest-pattern
+ // metres; the wrong side of the cloth may carry its own map. Image rows run
+ // down the cloth while rest v runs up it. Sampled before any discard.
+ let mapSize=max(select(o.mapsize.zw,o.mapsize.xy,front),vec2<f32>(.0001));
+ let texel=textureSample(maps,mapSampler,vec2<f32>(o.uv.x,-o.uv.y)/mapSize,i32(select(o.layers.y,o.layers.x,front)+.5)).rgb;
  var stitching=0.0;
  for(var i=0u;i<arrayLength(&holes);i++){
   let h=holes[i];if(o.panel==0u||o.panel!=u32(h.shape.z)){continue;}
@@ -56,10 +63,25 @@ fn turn(v:vec3<f32>)->vec3<f32>{let cs=view.angle.xy;return vec3<f32>(cs.x*v.x+c
  if(kind==3u){let shift=vec2<f32>(f32(u32(abs(floor(p.y)))%2u)*.5,0);let d=length(fract(p+shift+.5)-.5);ink=1.0-smoothstep(.28-length(aa),.28+length(aa),d);}
  if(kind==4u){ink=(1.0-smoothstep(.5-aa.x,.5+aa.x,f.x)+1.0-smoothstep(.5-aa.y,.5+aa.y,f.y))*.5;}
  if(kind==5u){let lines=vec2<f32>(1)-smoothstep(vec2<f32>(.045)-aa,vec2<f32>(.045)+aa,f);ink=max(lines.x,lines.y);}
- let printed=select(view.color.rgb*o.color,mix(o.bg,o.fg,ink),kind>0u);
+ let printed=select(select(view.color.rgb*o.color,mix(o.bg,o.fg,ink),kind>0u&&kind<6u),texel,kind==6u);
  let color=select(printed*(1.0-.45*stitching),heat,view.color.a>.5);
  return vec4<f32>(pow(color*light+rim,vec3<f32>(1.0/2.2)),1);
 }`;
+export const FABRIC_STRIDE=16,FABRIC_KINDS=['plain','pinstripe','stripe','polka_dot','gingham','windowpane','texture'];
+// Per vertex: [kind, print spacing m, front layer, back layer], fg, bg, [front w,h, back w,h] in metres.
+export function fabricRecords(vertexPanels,specs,textures={},layers=new Map()){
+ const data=new Float32Array(vertexPanels.length*FABRIC_STRIDE),linear=hex=>[1,3,5].map(j=>(parseInt(hex.slice(j,j+2),16)/255)**2.2);
+ const metres=map=>(map?.size_mm||[10,10]).map(v=>Math.max(.0001,Number(v)*.001));
+ for(let i=0;i<vertexPanels.length;i++){
+  const spec=specs?.[vertexPanels[i]];if(!spec)continue;
+  const maps=spec.kind==='texture'?textures?.[spec.texture]:null,front=layers.get(maps?.front?.image),back=layers.get(maps?.back?.image);
+  // A map that has not loaded, or never will, leaves the piece its plain colour.
+  const kind=spec.kind==='texture'?(front===undefined?0:6):Math.max(0,FABRIC_KINDS.indexOf(spec.kind));
+  data.set([kind,Math.max(.01,Number(spec.scale)||1)*.01,front??0,back??front??0,...linear(spec.fg),0,...linear(spec.bg),0,
+   ...metres(maps?.front),...metres(back===undefined?maps?.front:maps?.back)],i*FABRIC_STRIDE);
+ }
+ return data;
+}
 export class Renderer {
  constructor(device,canvas,cloth,format,{systemTheme=false,transparent=false}={}){
   this.device=device;this.canvas=canvas;this.cloth=cloth;this.format=format;this.dirty=true;
@@ -72,8 +94,8 @@ export class Renderer {
   this.clothColors=buffer(device,new Float32Array(cloth.n*4).fill(1),GPUBufferUsage.STORAGE);
   this.bodyColors=buffer(device,new Float32Array(cloth.scene.body_vertices.length*4).fill(1),GPUBufferUsage.STORAGE);
   this.buffers.push(this.clothColors,this.bodyColors);
-  this.fabricData=buffer(device,new Float32Array(cloth.n*12),GPUBufferUsage.STORAGE);
-  this.emptyFabric=buffer(device,new Float32Array(12),GPUBufferUsage.STORAGE);
+  this.fabricData=buffer(device,new Float32Array(cloth.n*FABRIC_STRIDE),GPUBufferUsage.STORAGE);
+  this.emptyFabric=buffer(device,new Float32Array(FABRIC_STRIDE),GPUBufferUsage.STORAGE);
   this.emptyUV=buffer(device,new Float32Array(4),GPUBufferUsage.STORAGE);
   this.buffers.push(this.fabricData,this.emptyFabric,this.emptyUV);
   const panelNames=[...new Set(cloth.scene.vertex_panels)],panelIds=new Map(panelNames.map((p,i)=>[p,i+1]));
@@ -87,12 +109,40 @@ export class Renderer {
   this.buttons=new Buttons(device,cloth,this.clothView.buffer,format);
   const module=device.createShaderModule({code:shader});
   this.pipeline=device.createRenderPipeline({layout:'auto',vertex:{module,entryPoint:'vertex'},fragment:{module,entryPoint:'fragment',targets:[{format}]},primitive:{topology:'triangle-list',cullMode:'none'},depthStencil:{format:'depth24plus',depthWriteEnabled:true,depthCompare:'less'}});
-  const bind=(uniform,q,n,color,uv,fabric,panels)=>device.createBindGroup({layout:this.pipeline.getBindGroupLayout(0),entries:[{binding:0,resource:{buffer:uniform}},{binding:1,resource:{buffer:q}},{binding:2,resource:{buffer:n}},{binding:3,resource:{buffer:color}},{binding:4,resource:{buffer:uv}},{binding:5,resource:{buffer:fabric}},{binding:6,resource:{buffer:panels}},{binding:7,resource:{buffer:this.holes}}]});
-  this.clothBind=bind(this.clothView.buffer,cloth.q,cloth.normals,this.clothColors,cloth.uv,this.fabricData,this.panelIds);this.bodyBind=bind(this.bodyView.buffer,cloth.body,cloth.bodyNormals,this.bodyColors,this.emptyUV,this.emptyFabric,this.emptyPanels);
+  this.mapSampler=device.createSampler({addressModeU:'repeat',addressModeV:'repeat',magFilter:'linear',minFilter:'linear',mipmapFilter:'linear',maxAnisotropy:4});
+  this.maps=this.mapTexture(1,1,1);this.mapLayers=new Map();this.textures={};
+  this.rebind();
   canvas.tabIndex=0;
   this.controls=cameraControls(this.camera,canvas,()=>this.dirty=true,cloth.motion);
   this.setFabricPrints();
   if(cloth.scene.panel_colors)this.setFabricColors('#b7cde5',cloth.scene.panel_colors);
+  // Pieces keep their plain colour until their maps arrive; capture() waits.
+  this.texturesReady=this.loadTextures().catch(()=>{});
+ }
+ mapTexture(size,layers,levels){return this.device.createTexture({size:[size,size,layers],format:'rgba8unorm-srgb',mipLevelCount:levels,usage:GPUTextureUsage.TEXTURE_BINDING|GPUTextureUsage.COPY_DST|GPUTextureUsage.RENDER_ATTACHMENT});}
+ rebind(){
+  const cloth=this.cloth,maps=this.maps.createView({dimension:'2d-array'});
+  const bind=(uniform,q,n,color,uv,fabric,panels)=>this.device.createBindGroup({layout:this.pipeline.getBindGroupLayout(0),entries:[{binding:0,resource:{buffer:uniform}},{binding:1,resource:{buffer:q}},{binding:2,resource:{buffer:n}},{binding:3,resource:{buffer:color}},{binding:4,resource:{buffer:uv}},{binding:5,resource:{buffer:fabric}},{binding:6,resource:{buffer:panels}},{binding:7,resource:{buffer:this.holes}},{binding:8,resource:maps},{binding:9,resource:this.mapSampler}]});
+  this.clothBind=bind(this.clothView.buffer,cloth.q,cloth.normals,this.clothColors,cloth.uv,this.fabricData,this.panelIds);this.bodyBind=bind(this.bodyView.buffer,cloth.body,cloth.bodyNormals,this.bodyColors,this.emptyUV,this.emptyFabric,this.emptyPanels);
+ }
+ async loadTextures(textures=this.cloth.scene.fabric_textures){
+  const images=[...new Set(Object.values(textures||{}).flatMap(m=>[m?.front?.image,m?.back?.image]).filter(Boolean))];
+  if(!images.length)return;
+  // One square layer per map; the physical size, not the pixel aspect, sets its scale.
+  // Every mip level is resampled from the source, so fine weaves do not shimmer.
+  const size=512,levels=Math.log2(size)+1,texture=this.mapTexture(size,images.length,levels),layers=new Map();
+  for(const [layer,url] of images.entries()){
+   try{
+    const blob=await (await fetch(url)).blob();
+    for(let level=0;level<levels;level++){
+     const s=size>>level,bitmap=await createImageBitmap(blob,{resizeWidth:s,resizeHeight:s,resizeQuality:'high'});
+     this.device.queue.copyExternalImageToTexture({source:bitmap},{texture,mipLevel:level,origin:[0,0,layer]},[s,s]);bitmap.close();
+    }
+    layers.set(url,layer);
+   }catch{/* An unreadable map leaves its pieces their plain colour. */}
+  }
+  if(this.destroyed){texture.destroy();return;}
+  this.maps.destroy();this.maps=texture;this.mapLayers=layers;this.textures=textures;this.rebind();this.setFabricPrints(this.printSpecs);
  }
  render(encoder,querySet=null){
   this.dirty=false;
@@ -118,15 +168,11 @@ export class Renderer {
   this.device.queue.writeBuffer(this.clothColors,0,values);this.clothView.color=[1,1,1,this.clothView.color[3]];this.dirty=true;
  }
  setFabricPrints(specs=this.cloth.scene.panel_fabrics){
-  const data=new Float32Array(this.cloth.n*12),kinds=['plain','pinstripe','stripe','polka_dot','gingham','windowpane'];
-  const linear=hex=>[1,3,5].map(j=>(parseInt(hex.slice(j,j+2),16)/255)**2.2);
-  for(let i=0;i<this.cloth.n;i++){
-   const spec=specs?.[this.cloth.scene.vertex_panels[i]];if(!spec)continue;
-   data.set([Math.max(0,kinds.indexOf(spec.kind)),Math.max(.01,Number(spec.scale)||1)*.01,0,0,...linear(spec.fg),0,...linear(spec.bg),0],i*12);
-  }
-  this.device.queue.writeBuffer(this.fabricData,0,data);this.dirty=true;
+  this.printSpecs=specs;
+  this.device.queue.writeBuffer(this.fabricData,0,fabricRecords(this.cloth.scene.vertex_panels,specs,this.textures,this.mapLayers));this.dirty=true;
  }
  async capture(){
+  await this.texturesReady;
   // Copy the rendered texture before presentation clears a WebGPU canvas.
   // Reading back the framebuffer avoids blank images from toDataURL races.
   const encoder=this.device.createCommandEncoder();this.render(encoder);
@@ -145,5 +191,5 @@ export class Renderer {
    return canvas.toDataURL('image/webp',.88);
   }finally{readback.unmap();readback.destroy();}
  }
- destroy(){this.stopTheme?.();this.controls.destroy();this.resizeObserver.disconnect();this.depth?.destroy();this.buttons.destroy();for(const b of this.buffers)b.destroy();}
+ destroy(){this.destroyed=true;this.maps.destroy();this.stopTheme?.();this.controls.destroy();this.resizeObserver.disconnect();this.depth?.destroy();this.buttons.destroy();for(const b of this.buffers)b.destroy();}
 }
