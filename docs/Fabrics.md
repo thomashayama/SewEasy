@@ -9,6 +9,9 @@ weave. Open a name to inspect properties and sources, choose **Test swatch**,
 or **Save a copy** to edit. Three templates include CC BY published measurements;
 nine are entirely estimated. Every supplied property identifies its provenance,
 and missing properties remain blank. See [sources and caveats](FabricSources.md).
+Each template also has a representative display colour, the undyed or most
+familiar shade of that cloth, so the twelve can be told apart at a glance and a
+piece cut from one starts that colour. It is presentation, not a measurement.
 **My fabrics** contains only the user's saved records and imports.
 
 The fabric menu's **Test fabric swatch** compares warp and weft strips with the

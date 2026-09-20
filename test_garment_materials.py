@@ -139,8 +139,12 @@ class AssignmentTest(unittest.TestCase):
         self.assertEqual(p.panel_fabrics[panel]['kind'], 'stripe')
         # A fabric without a colour leaves the piece's own colour alone.
         p.edit_panel_fabrics([other], 'bg', '#aa5500')
-        self.assign([other], POPLIN)
+        plain = material('Undyed sample', weight=120.)
+        p.edit_panel_fabrics([other], 'material', plain['source_fabric_id'], plain)
         self.assertEqual(p.panel_colors[other], '#aa5500')
+        # Every common fabric brings a representative shade of its own.
+        self.assign([other], POPLIN)
+        self.assertEqual(p.panel_colors[other], '#f3f1ea')
         p.edit_panel_fabrics([panel], 'bg', '#ffffff')                # and stays recolourable
         self.assertEqual(p.panel_materials[panel], DENIM)
 

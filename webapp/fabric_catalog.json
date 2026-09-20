@@ -1,5 +1,5 @@
 {
-  "revision": 1,
+  "revision": 2,
   "references": {
     "akter2024": {
       "title": "Cotton-polyester woven fabrics (2024)",
@@ -30,6 +30,7 @@
       "composition": "100% cotton",
       "construction": "Plain weave",
       "description": "A light shirting starting point for shirts and summer dresses.",
+      "display_color": "#f3f1ea",
       "estimates": {
         "weight": 100,
         "thickness": 0.2,
@@ -47,6 +48,7 @@
       "composition": "100% cotton",
       "construction": "3/1 Z twill",
       "description": "Cotton twill study sample with published directional bending.",
+      "display_color": "#b9a27a",
       "estimates": {
         "stretch_warp": 2200,
         "stretch_weft": 1400,
@@ -86,6 +88,7 @@
       "composition": "100% linen (flax)",
       "construction": "Plain weave",
       "description": "Midweight linen with published weight and thickness.",
+      "display_color": "#d8ccb2",
       "estimates": {
         "bend_warp": 3e-05,
         "bend_weft": 2e-05,
@@ -117,6 +120,7 @@
       "composition": "100% polyester",
       "construction": "Plain weave",
       "description": "A lightweight woven starting point for linings and blouses.",
+      "display_color": "#c7ccd4",
       "estimates": {
         "weight": 120,
         "thickness": 0.18,
@@ -134,6 +138,7 @@
       "composition": "100% silk",
       "construction": "Satin weave",
       "description": "A soft, light starting point for dresses and blouses.",
+      "display_color": "#ead9c0",
       "estimates": {
         "weight": 85,
         "thickness": 0.15,
@@ -151,6 +156,7 @@
       "composition": "100% polyester",
       "construction": "Plain weave",
       "description": "A very light, flexible starting point for layers and scarves.",
+      "display_color": "#efdcdf",
       "estimates": {
         "weight": 60,
         "thickness": 0.12,
@@ -168,6 +174,7 @@
       "composition": "100% wool",
       "construction": "Twill weave",
       "description": "A midweight tailoring starting point for jackets and trousers.",
+      "display_color": "#4a4e57",
       "estimates": {
         "weight": 220,
         "thickness": 0.45,
@@ -185,6 +192,7 @@
       "composition": "100% cotton",
       "construction": "3/1 twill",
       "description": "A structured denim starting point for jeans and jackets.",
+      "display_color": "#2f4468",
       "estimates": {
         "weight": 340,
         "thickness": 0.75,
@@ -202,6 +210,7 @@
       "composition": "100% cotton",
       "construction": "Plain weave",
       "description": "A firm woven starting point for bags and workwear.",
+      "display_color": "#cdbf9f",
       "estimates": {
         "weight": 350,
         "thickness": 0.7,
@@ -219,6 +228,7 @@
       "composition": "100% cotton",
       "construction": "Single jersey knit",
       "description": "A soft T-shirt knit starting point; more stretch across the courses.",
+      "display_color": "#b8bcc2",
       "estimates": {
         "weight": 160,
         "thickness": 0.5,
@@ -236,6 +246,7 @@
       "composition": "95% cotton / 5% elastane",
       "construction": "Single jersey knit",
       "description": "A stretchy knit starting point for fitted tops and leggings.",
+      "display_color": "#26282c",
       "estimates": {
         "weight": 180,
         "thickness": 0.55,
@@ -253,6 +264,7 @@
       "composition": "65% cotton / 33% polyester / 2% elastane",
       "construction": "Twill weave",
       "description": "A study sample with published weight, thickness and KES bending.",
+      "display_color": "#6b6a4a",
       "estimates": {
         "stretch_warp": 2500,
         "stretch_weft": 450,

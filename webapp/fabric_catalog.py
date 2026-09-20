@@ -7,6 +7,7 @@ from copy import deepcopy
 from functools import lru_cache
 import json
 from pathlib import Path
+import re
 from urllib.parse import urlsplit
 
 from webapp import fabric_formats as formats
@@ -70,8 +71,13 @@ def _records():
             composition=item['composition'], construction=item['construction'],
             sample=item.get('sample', ''), notes=item['notes'],
             references=[catalog['references'][r] for r in item.get('references', [])]))
+        # A representative shade for the library and for pieces cut from the
+        # template. It is presentation, never a measurement of any real cloth.
+        color = item.get('display_color')
+        if color is not None and not re.fullmatch(r'#[0-9a-f]{6}', str(color)):
+            raise ValueError('Catalog display colors are lowercase six-digit hex.')
         content = dict(schema=1, description=item['description'], properties=values,
-            appearance={}, curves=[], solver_tuning={}, catalog=info,
+            appearance=dict(display_color=color) if color else {}, curves=[], solver_tuning={}, catalog=info,
             source=dict(format='SewEasy fabric collection', catalog_id=item['id']))
         records.append(dict(id='standard:catalog:' + item['id'], name=item['name'],
                             content=content, standard=True, has_source=False, edit_token=None))

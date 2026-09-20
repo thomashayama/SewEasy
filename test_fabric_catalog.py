@@ -74,6 +74,22 @@ class CatalogTest(unittest.TestCase):
                 self.assertEqual(fmt.read_package(exported, 'fabric.u3ma')[0]['seweasy-fabric-sources.txt'],
                                  files['seweasy-fabric-sources.txt'])
 
+    def test_every_template_has_its_own_representative_display_color(self):
+        import re
+        formats = fmt
+        records = catalog.standard_fabrics()
+        shades = [r['content']['appearance'].get('display_color') for r in records]
+        self.assertTrue(all(re.fullmatch(r'#[0-9a-f]{6}', shade or '') for shade in shades))
+        self.assertEqual(len(set(shades)), len(records))          # twelve tiles that can be told apart
+        denim = next(r for r in records if r['id'] == 'standard:catalog:cotton-denim')
+        self.assertEqual(denim['content']['appearance']['display_color'], '#2f4468')
+        # It is presentation: no property claims it, and it rides with copies, garments and exports.
+        self.assertTrue(all('color' not in (p.get('source') or '') for p in denim['content']['properties'].values()))
+        self.assertEqual(fabrics.library_snapshot(None, denim['id'])['display_color'], '#2f4468')
+        exported = formats.export_fabric(denim)
+        self.assertEqual(formats.import_fabric(exported, 'denim.u3ma')['appearance']['display_color'], '#2f4468')
+        self.assertIn(b'display colour = #2f4468', formats.read_package(exported, 'denim.u3ma')[0][formats.NOTES_PATH])
+
     def test_catalog_metadata_cannot_inject_active_links(self):
         for link in ('javascript:alert(1)', 'data:text/html,test', 'file:///test', 'https://[',
                      'https://user:pass@example.test/', 'https://example.test/\nscript'):

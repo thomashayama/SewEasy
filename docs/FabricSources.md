@@ -109,6 +109,18 @@ The downloaded dobby material uses color suffix 750, but its embedded physics
 name ends 500. Preserve this provenance mismatch; do not claim color-specific
 physical validation. Mass agrees with the product's rounded published GSM.
 
+## Appearance of the common collection
+
+The twelve templates carry no scanned textures: none of the public measurement
+sources publishes redistributable maps, and no third-party image was copied.
+Each has a `display_color` chosen by SewEasy as the undyed or most familiar
+shade of that cloth (ecru linen, indigo denim, charcoal suiting, and so on).
+It labels the preview tile and tints pieces cut from the template, which stay
+recolourable. It is presentation only: no property cites it, it is not derived
+from any sample, and catalog revision 2 added it without touching a measured or
+estimated value. A garment already cut from a template keeps its earlier copy
+and is offered **Apply current fabric**.
+
 ## Simulation scope
 
 Import success does not establish real-world accuracy. The same CPU-side
