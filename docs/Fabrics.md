@@ -73,6 +73,51 @@ A garment keeps the copy of a fabric it was cut from. When that fabric later
 changes in the library, selecting the piece shows **Apply current fabric**;
 nothing updates until it is pressed.
 
+## Where to buy
+
+A saved fabric can list up to 12 places to buy the physical cloth
+(`webapp/fabric_sources.py`). Entry is manual: only the product page address is
+required, and anything the owner does not know stays blank. Nothing fetches a
+retailer's page, so there is no metadata extraction to confirm and no blocked
+page to handle. Common fabrics are generic cloth and list no products; a copy
+of one can.
+
+Every source states how it relates to the properties above it, and the label
+always sits beside the link:
+
+| Relation | Meaning |
+| --- | --- |
+| **Measured product** | The measurements were taken from this product. |
+| **Unverified link** (default) | Not checked against the measurements. |
+| **Similar fabric** | A suggestion of similar cloth, not the measured one. |
+
+The last two carry "It may drape differently." A matching name or fibre is never
+treated as a match: the listing's own composition, weave, weight and width are
+shown as **Listing says**, separate from the fabric's measured values, and are
+never copied into them.
+
+- **Links** must be `https://` with a real host and no embedded credentials.
+  Campaign parameters (`utm_*`, `gclid`, `fbclid`, …) are removed everywhere, and
+  Amazon Associates parameters (`tag`, `linkCode`, `ref_`, …) on Amazon hosts, so a
+  stored link identifies the product rather than whoever shared it. Links open in
+  a new tab with `rel="noopener noreferrer"`. The retailer is named from the
+  address (Amazon, Michaels, otherwise the host) unless the owner types one.
+- **A price** needs a three-letter currency and always reads with its unit and
+  variant: per yard, per metre, per precut piece, per pack, or a stated size
+  such as "per 2-yard cut".
+- **A price or stock status is dated.** It takes today's date when entered or
+  changed unless the owner gives another, and future dates are refused. After
+  30 days it is still shown, followed by **may have changed**; an undated quote
+  from an imported file reads **Not dated · may have changed**.
+- **Private notes** stay in the account. They are not written to U3MA or folder
+  exports, and a file cannot import one.
+
+Sources follow a named copy, which then edits its own list. They travel in
+exports as `custom.seweasy.purchase_sources`; on import each source is
+re-validated and an unreadable one is dropped without failing the material.
+They are not part of a garment's fabric snapshot, so saved or shared garments
+carry no shopping links.
+
 ## Storage
 
 `fabrics` is an additive SQLAlchemy table, created by the existing `init_db`
@@ -243,6 +288,10 @@ actual swatch mass = pattern area × imported areal density, including its
 clamped portion. An appearance-only package with real PNG and JPEG textures
 covers texture roles, byte-exact round trips, declared-scale mismatches,
 unreadable, unsupported and oversized images, and the refused vendor 1.0
-material. Browser checks also
-cover sample import, save, export, reimport, blank/invalid values, and the live
-WebGPU comparison.
+material. `python -m unittest test_fabric_sources` covers where-to-buy rules:
+several suppliers, missing metadata, stale, undated and out-of-stock quotes, each
+selling unit, refused and cleaned links, and private notes staying out of
+exports, imports and garment snapshots. Browser checks also
+cover sample import, save, export, reimport, blank/invalid values, the live
+WebGPU comparison, and adding, editing and removing a place to buy at desktop
+and 375 px widths.

@@ -9,4 +9,9 @@
 .se-fabric-heart.q-btn .q-icon {font-size:20px;}
 .se-fabric-heart.q-btn.is-favorite {color:#bb5267;}
 .se-fabric-heart.q-btn:hover, .se-fabric-heart.q-btn:focus-visible {color:#facc15;}
+/* Where to buy: one block per listing, its relation to the measurements always beside the link. */
+.se-fabric-source {padding:8px 0; border-top:1px solid var(--home-line,#c5ccd8);}
+.se-fabric-source-link {display:inline-flex; align-items:center; gap:4px; font-weight:600;}
+.se-fabric-match {font-size:11px; line-height:1; padding:4px 7px; border-radius:999px; border:1px solid currentColor; color:var(--home-muted,#61768b); white-space:nowrap;}
+.se-fabric-match.is-exact {color:#2f7d54;}
 .se-fabric-chooser {width:min(760px,96vw); max-width:none!important; max-height:88vh; overflow:auto;}

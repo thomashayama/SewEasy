@@ -346,6 +346,10 @@ def import_fabric(raw, filename):
     color = extension.get('display_color') if isinstance(extension, dict) else None
     if isinstance(color, str) and re.fullmatch(r'#[0-9a-fA-F]{6}', color):
         result['appearance']['display_color'] = color.lower()
+    if isinstance(extension, dict) and extension.get('purchase_sources'):
+        from webapp.fabric_sources import from_file
+        # A file is untrusted: links are re-validated, and it can carry no private notes.
+        result['purchase_sources'] = from_file(extension['purchase_sources'])
     return result
 
 
@@ -408,6 +412,8 @@ def export_notes(record, has_measurements=False):
         lines.append(f'  display colour = {content["appearance"]["display_color"]}')
     if content.get('catalog'):
         lines.append('  composition, construction and source attribution')
+    if content.get('purchase_sources'):
+        lines.append(f'  {len(content["purchase_sources"])} place(s) to buy it, without private notes')
     missing = [k for k in PROPERTY_UNITS if k not in supplied]
     lines += ['', 'Not supplied, and left empty rather than zero: ' + (', '.join(missing) or 'nothing'), '']
     lines.append('Values marked "user" are edits made in SewEasy. '
@@ -436,6 +442,11 @@ def export_fabric(record, source_bytes=None, source_name=None, bundle=False):
     previous = document['custom'].get('seweasy')
     document['custom']['seweasy'] = dict(previous if isinstance(previous, dict) else {},
         schema=1, properties=content['properties'], solver_tuning=content['solver_tuning'])
+    # Where to buy travels with the fabric; the owner's private notes never leave the account.
+    from webapp.fabric_sources import public
+    document['custom']['seweasy'].pop('purchase_sources', None)
+    if content.get('purchase_sources'):
+        document['custom']['seweasy']['purchase_sources'] = public(content['purchase_sources'])
     # The library's own swatch colour; U3M front/back maps stay as the vendor wrote them.
     document['custom']['seweasy'].pop('display_color', None)
     if (content.get('appearance') or {}).get('display_color'):

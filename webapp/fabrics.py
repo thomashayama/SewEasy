@@ -174,11 +174,13 @@ def imported_properties(email, identity):
         return _imported(_owned(db, email, identity))
 
 
-def update_fabric(email, identity, edit_token, *, name, description, values, restore=(), display_color=None):
+def update_fabric(email, identity, edit_token, *, name, description, values, restore=(), display_color=None,
+                  sources=None):
     """Compare-and-swap prevents overwrites from another tab or stale editor.
 
     `restore` names properties to take back from the imported file, provenance
     included. `display_color` is left alone when None and cleared when empty.
+    `sources` replaces the places to buy the fabric; None leaves them alone.
     """
     if identity.startswith('standard:'):
         raise ValueError('Save a copy before editing a standard fabric.')
@@ -195,6 +197,9 @@ def update_fabric(email, identity, edit_token, *, name, description, values, res
             look.pop('display_color', None)
             if display_color:
                 look['display_color'] = display_color.lower()
+        if sources is not None:
+            from webapp.fabric_sources import validate
+            content['purchase_sources'] = validate(sources)
         if not isinstance(values, dict) or not set(values) <= set(formats.PROPERTY_UNITS):
             raise ValueError('Unknown fabric property.')
         restore = set(restore) - set(values)

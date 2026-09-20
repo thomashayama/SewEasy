@@ -1,11 +1,12 @@
 """Small fabric workbench for exercising the U3M storage/import/export path."""
+from copy import deepcopy
 from pathlib import Path
 import re
 
 from nicegui import run, ui
 from sqlalchemy.exc import SQLAlchemyError
 
-from webapp import fabric_favorites, fabrics
+from webapp import fabric_favorites, fabric_sources, fabrics
 from webapp import fabric_formats as formats
 from webapp.fabric_catalog import evidence_label, metadata, standard_fabrics
 from webapp.garment_materials import SUPPORT
@@ -126,6 +127,135 @@ async def fabric_library(email, choose=None):
                         ('shear', 'Shear stiffness (N/m)'), ('damping', 'Damping rate (1/s)'),
                     ):
                         field(key, label)
+            sources = deepcopy(content.get('purchase_sources') or [])
+            initial_sources = deepcopy(sources)
+
+            async def edit_source(index=None):
+                original = sources[index] if index is not None else {}
+                was_checked = (original.get('checked_at') or '')[:10]
+                with ui.context.client, ui.dialog().props('persistent') as sub, \
+                        ui.card().classes('se-stitch-card w-full max-w-lg gap-3'):
+                    ui.label('Place to buy').classes('se-section-label text-lg')
+                    url = ui.input('Product page address', value=original.get('url', ''), placeholder='https://').props(
+                        'outlined dense type=url inputmode=url maxlength=2000').classes('w-full')
+                    match = ui.select({key: label for key, (label, _) in fabric_sources.MATCHES.items()},
+                                      value=original.get('match', 'unverified'),
+                                      label='How it relates to this fabric').props('outlined dense').classes('w-full')
+                    caution = ui.label(fabric_sources.MATCHES[match.value][1]).classes('se-param-label text-xs').props('role=note')
+                    match.on_value_change(lambda e: caution.set_text(fabric_sources.MATCHES[e.value][1]))
+                    text = {}
+
+                    def entry(key, label, **extra):
+                        value = original.get(key)
+                        text[key] = ui.input(label, value='' if value is None else f'{value:.10g}' if isinstance(value, float) else value,
+                                             **extra).props(f'outlined dense maxlength={fabric_sources.TEXT.get(key, 12)}').classes('w-full')
+                        return text[key]
+                    with ui.element('div').classes('grid grid-cols-1 sm:grid-cols-2 gap-3 w-full'):
+                        entry('retailer', 'Retailer', placeholder='From the address')
+                        entry('product_id', 'Product or SKU number')
+                        entry('variant', 'Color or variant')
+                        unit = ui.select(fabric_sources.UNITS, value=original.get('unit', 'yard'), label='Sold').props('outlined dense')
+                        entry('unit_detail', 'Piece or pack size', placeholder='e.g. 2-yard cut')
+                        availability = ui.select({key: label or 'Not recorded' for key, label in fabric_sources.AVAILABILITY.items()},
+                                                 value=original.get('availability', 'unknown'), label='Availability').props('outlined dense')
+                        entry('price', 'Price for that unit').props('inputmode=decimal')
+                        text['currency'] = ui.input('Currency', placeholder='USD', value=original.get('currency') or next(
+                            (s['currency'] for s in sources if s.get('currency')), '')).props('outlined dense maxlength=3')
+                        checked = ui.input('Price and stock checked on', value=was_checked).props('outlined dense stack-label type=date')
+                        entry('composition', 'Composition', placeholder='If the listing states it')
+                        entry('construction', 'Weave or knit')
+                        entry('weight_gsm', 'Listed weight (g/m²)').props('inputmode=decimal')
+                        entry('width_cm', 'Usable width (cm)').props('inputmode=decimal')
+                    note = ui.textarea('Private note', value=original.get('private_note', '')).props(
+                        'outlined dense rows=2 maxlength=1000').classes('w-full')
+                    ui.label('Only you see this note. It is left out of exported files.').classes('se-param-label text-xs')
+                    problem = ui.label('').classes('text-negative text-sm').props('role=alert')
+
+                    def done():
+                        item = {key: (field.value or '').strip() for key, field in text.items()}
+                        item.update(id=original.get('id'), url=url.value, match=match.value, unit=unit.value,
+                                    availability=availability.value, private_note=note.value or '')
+                        if item['retailer'] == fabric_sources.retailer_for(original.get('url', '')):
+                            item['retailer'] = ''               # named after the old address, so follow the new one
+                        quoted = (original.get('price'), original.get('currency'), original.get('availability'))
+                        try:
+                            proposed = fabric_sources.validate([dict(item, checked_at=checked.value)])[0]
+                            if checked.value == was_checked:
+                                # Same date, same quote: keep its time. A new quote with the old date was read today.
+                                same = (proposed['price'], proposed['currency'], proposed['availability']) == quoted
+                                proposed = fabric_sources.validate(
+                                    [dict(item, checked_at=original.get('checked_at') if same else None)])[0]
+                        except ValueError as exc:
+                            problem.set_text(str(exc))
+                            return
+                        if index is None:
+                            if len(sources) >= fabric_sources.MAX_SOURCES:
+                                problem.set_text(f'A fabric can list up to {fabric_sources.MAX_SOURCES} places to buy it.')
+                                return
+                            sources.append(proposed)
+                        else:
+                            sources[index] = proposed
+                        sub.close()
+                    with ui.row().classes('w-full justify-end gap-2'):
+                        ui.button('Cancel', on_click=sub.close).props('flat no-caps')
+                        ui.button('Done', on_click=done).props('unelevated no-caps')
+                sub.open()
+                await sub
+                sub.delete()
+                where_to_buy.refresh()
+                refresh()
+
+            def remove_source(index):
+                del sources[index]
+                where_to_buy.refresh()
+                refresh()
+
+            @ui.refreshable
+            def where_to_buy():
+                for index, source in enumerate(sources):
+                    shown = fabric_sources.describe(source)
+                    with ui.column().classes('se-fabric-source w-full gap-1'):
+                        with ui.row().classes('w-full items-center justify-between gap-2 no-wrap'):
+                            with ui.link(target=source['url'], new_tab=True).props('rel="noopener noreferrer"').classes(
+                                    'se-fabric-source-link text-sm min-w-0') as link:
+                                ui.label(shown['title']).classes('break-words')
+                                ui.icon('open_in_new').classes('text-xs')
+                            # Set directly: a retailer or variant may contain quotes that .props() would split on.
+                            link._props['aria-label'] = f'{shown["title"]} (opens in a new tab)'
+                            if not standard:
+                                with ui.row().classes('gap-0 no-wrap flex-none'):
+                                    for icon, verb, action in (('edit', 'Edit', edit_source), ('delete_outline', 'Remove', remove_source)):
+                                        button = ui.button(icon=icon, on_click=lambda index=index, action=action: action(index)).props(
+                                            'flat round dense size=sm')
+                                        button._props['aria-label'] = f'{verb} {shown["title"]}'
+                        with ui.row().classes('items-center gap-2'):
+                            ui.label(shown['match']).classes('se-fabric-match' + (' is-exact' if shown['exact'] else ''))
+                            quote = ' · '.join(filter(None, (shown['price'], shown['availability'])))
+                            if quote:
+                                ui.label(quote).classes('text-sm')
+                        if shown['checked']:
+                            ui.label(shown['checked']).classes('se-param-label text-xs' + (' text-warning' if shown['stale'] else ''))
+                        listing_says = ' · '.join(filter(None, (shown['details'], shown['product_id'] and f'No. {shown["product_id"]}')))
+                        if listing_says:
+                            ui.label(f'Listing says: {listing_says}').classes('se-param-label text-xs break-words')
+                        if not shown['exact']:
+                            ui.label(shown['caution']).classes('se-param-label text-xs').props('role=note')
+                        if source.get('private_note'):
+                            ui.label(f'Private note: {source["private_note"]}').classes('se-param-label text-xs break-words')
+                if not sources:
+                    ui.label('No places to buy yet.').classes('se-param-label text-sm')
+
+            # Standard fabrics are generic cloth; they name no product to buy.
+            if sources or not standard:
+                with ui.column().classes('w-full gap-2'):
+                    with ui.row().classes('w-full items-center justify-between'):
+                        ui.label('Where to buy').classes('se-section-label')
+                        if not standard:
+                            ui.button('Add', icon='add', on_click=lambda: edit_source()).props(
+                                'flat dense no-caps aria-label="Add a place to buy"')
+                    where_to_buy()
+                    ui.label('Links you add yourself. A price or stock status is what was recorded on its date, '
+                             'not a live quote.').classes('se-param-label text-xs')
             if content.get('source'):
                 source = content['source']
                 ui.label(f'Source: {source.get("filename", source["format"])}').classes('se-param-label break-all')
@@ -145,8 +275,9 @@ async def fabric_library(email, choose=None):
                         ui.label(texture['warning'].replace(texture['role'], 'This file', 1)
                                  if texture['warning'] else texture['path']).classes(
                             'se-param-label text-xs mb-2' + (' text-warning' if texture['warning'] else ''))
-                    ui.label('Texture files are stored exactly as uploaded. The swatch preview does not '
-                             'render them yet, so these sizes are not applied to a garment.').classes('se-param-label text-xs')
+                    ui.label('Texture files are stored exactly as uploaded. A garment draws a small copy of the '
+                             'front and back base color at its declared size; the other maps are kept for export.'
+                             ).classes('se-param-label text-xs')
                 if warnings:
                     ui.label('One texture reference declares a size that does not match its image.'
                              if len(warnings) == 1 else
@@ -159,7 +290,7 @@ async def fabric_library(email, choose=None):
 
             def dirty():
                 return (name.value != record['name'] or (description.value or '') != content['description']
-                        or (color.value or '') != initial_color
+                        or (color.value or '') != initial_color or sources != initial_sources
                         or any((item.value or '') != initial[key] for key, item in inputs.items()))
 
             def refresh():
@@ -179,7 +310,8 @@ async def fabric_library(email, choose=None):
                                if (item.value or '') != initial[key] and key not in back}
                     await run.io_bound(fabrics.update_fabric, email, identity, record['edit_token'],
                                        name=name.value, description=description.value or '', values=changed,
-                                       restore=back, display_color=color.value or '')
+                                       restore=back, display_color=color.value or '',
+                                       sources=sources if sources != initial_sources else None)
                     dialog.close()
                     listing.refresh()
                     ui.notify('Fabric saved', type='positive')
@@ -403,6 +535,10 @@ async def fabric_library(email, choose=None):
             for key, unit in (('weight', 'g/m²'), ('thickness', 'mm')):
                 if values[key]['value'] is not None:
                     summary.append(f'{values[key]["value"]:.4g} {unit}')
+            places = len(record['content'].get('purchase_sources') or [])
+            summary = [' · '.join(summary) or 'Physical properties not supplied']
+            if places:
+                summary.append('1 place to buy' if places == 1 else f'{places} places to buy')
             with ui.card().classes('se-stitch-card w-full p-3 gap-1'):
                 with ui.row().classes('w-full items-center justify-between gap-3'):
                     with ui.row(wrap=False).classes('items-center gap-3 min-w-0'):
@@ -415,7 +551,7 @@ async def fabric_library(email, choose=None):
                             catalog = record['content'].get('catalog')
                             if catalog:
                                 ui.label(f'{catalog["composition"]} · {catalog["construction"]}').classes('se-param-label text-sm')
-                            ui.label(' · '.join(summary) or 'Physical properties not supplied').classes('se-param-label')
+                            ui.label(' · '.join(summary)).classes('se-param-label')
                             ui.label(evidence_label(record['content'])).classes('se-param-label text-xs mt-1')
                     with ui.row(wrap=False).classes('se-fabric-actions items-center gap-1'):
                         heart_button(record)

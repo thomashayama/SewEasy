@@ -435,6 +435,45 @@ class FabricStorageTest(unittest.TestCase):
             fabrics.update_fabric(self.alice, cleared['id'], cleared['edit_token'], name=cleared['name'],
                                   description='', values={}, display_color='navy')
 
+    def test_places_to_buy_follow_copies_and_exports_but_not_garments_or_private_notes(self):
+        listed = [dict(url='https://www.amazon.com/dp/B0ABC?tag=someone-20', match='exact', variant='Navy', price='12.5',
+                       currency='USD', unit='yard', availability='in_stock', private_note='Ask Sam for the trade discount'),
+                  dict(url='https://www.michaels.com/product/1', unit='precut', unit_detail='2-yard cut',
+                       availability='out_of_stock', checked_at='2026-01-05'),
+                  dict(url='https://shop.example.com/cupro', match='similar')]
+        saved = fabrics.update_fabric(self.alice, self.record['id'], self.record['edit_token'], name=self.record['name'],
+                                      description='', values={}, sources=listed)
+        stored = saved['content']['purchase_sources']
+        self.assertEqual([s['retailer'] for s in stored], ['Amazon', 'Michaels', 'shop.example.com'])
+        self.assertEqual(stored[0]['url'], 'https://www.amazon.com/dp/B0ABC')
+        self.assertTrue(stored[0]['checked_at'])                     # a quote is dated when it is entered
+        self.assertIsNone(stored[2]['checked_at'])
+        # None leaves them alone, as it does the display colour.
+        kept = self.save(saved, name='Cupro with suppliers')
+        self.assertEqual(kept['content']['purchase_sources'], stored)
+        # A garment's copy carries cloth, not shopping links or the owner's notes.
+        self.assertNotIn('Sam', json.dumps(fabrics.snapshot(self.alice, kept['id'])))
+        self.assertNotIn('purchase_sources', fabrics.snapshot(self.alice, kept['id']))
+        for bundle in (False, True):
+            exported = fabrics.export_fabric(self.alice, kept['id'], bundle=bundle)
+            self.assertNotIn(b'Sam', b''.join(fmt.read_package(exported, 'x.zip' if bundle else 'x.u3ma')[0].values()))
+            travelled = fmt.import_fabric(exported, 'x.zip' if bundle else 'x.u3ma')['purchase_sources']
+            self.assertEqual(travelled, [dict(s, private_note='') for s in stored])
+        # A named copy starts with the same sources, then goes its own way.
+        copied = fabrics.copy_fabric(self.alice, kept['id'], name='Cupro, second supplier')
+        self.assertEqual(copied['content']['purchase_sources'], stored)
+        fabrics.update_fabric(self.alice, copied['id'], copied['edit_token'], name=copied['name'], description='',
+                              values={}, sources=stored[:1])
+        self.assertEqual(len(fabrics.get_fabric(self.alice, kept['id'])['content']['purchase_sources']), 3)
+        self.assertEqual(len(fabrics.get_fabric(self.alice, copied['id'])['content']['purchase_sources']), 1)
+        with self.assertRaisesRegex(ValueError, 'https://'):
+            fabrics.update_fabric(self.alice, kept['id'], kept['edit_token'], name=kept['name'], description='',
+                                  values={}, sources=[dict(url='http://www.amazon.com/dp/B0ABC')])
+        cleared = fabrics.update_fabric(self.alice, kept['id'], kept['edit_token'], name=kept['name'], description='',
+                                        values={}, sources=[])
+        self.assertEqual(cleared['content']['purchase_sources'], [])
+        self.assertNotIn('purchase_sources', fmt.import_fabric(fabrics.export_fabric(self.alice, cleared['id']), 'x.u3ma'))
+
     def test_hearts_reference_fabrics_without_copying_and_stay_out_of_the_wardrobe(self):
         from webapp import fabric_favorites as hearts
         from webapp.favorites import Favorites
