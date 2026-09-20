@@ -15,7 +15,6 @@ from fastapi import Request
 from fastapi.responses import RedirectResponse
 from nicegui import run, ui
 
-from assets.bodies.body_params import BodyParameters
 from gui import theme
 from webapp import auth, designs, profiles, sharing
 from webapp import measurement_guide as guide
@@ -24,8 +23,6 @@ from webapp import measurement_guide as guide
 from webapp.body_display import profile_body_glb_url
 from webapp.gui_widgets import (confirm_delete, open_share_dialog,
                                 preview_data_uri)
-
-BODY_DEFAULT_FILE = './assets/bodies/mean_all.yaml'
 
 
 def _mannequin_scene():
@@ -63,10 +60,6 @@ SECTIONS = {
     'agents': ('terminal', 'Agent connections'),
     'bases': ('architecture', 'Base garments'),
 }
-
-
-def _default_measurements() -> dict:
-    return profiles.measurements_from_body(BodyParameters(BODY_DEFAULT_FILE))
 
 
 @ui.page('/account', title='SewEasy — Account')
@@ -521,20 +514,23 @@ async def account_page(request: Request):
                 if not name:
                     ui.notify('Give the profile a name', type='warning')
                     return
-                profiles.save_profile(email, name, _default_measurements())
+                profiles.save_profile(email, name, profiles.default_measurements(new_base.value))
                 new_dialog.close()
                 new_name.value = ''
                 rows = profiles.list_profiles(email)
                 created = next((r for r in rows if r['name'] == name), None)
                 refresh_profiles(created['id'] if created else None)
-                ui.notify(f'Created "{name}" from the default body', type='positive')
+                ui.notify(f'Created "{name}" from the {profiles.DEFAULT_BODIES[new_base.value].lower()}',
+                          type='positive')
 
             with ui.dialog() as new_dialog, ui.card().classes('items-center'):
                 ui.label('New measurement profile')
-                ui.label('Starts from the default body — adjust and save') \
+                ui.label('Starts from a default body — adjust and save') \
                     .classes('se-param-label')
                 new_name = ui.input(label='Name', placeholder='e.g. My measurements') \
                     .classes('w-64').props('outlined dense')
+                new_base = ui.select(dict(profiles.DEFAULT_BODIES), value='all', label='Start from') \
+                    .classes('w-64').props('outlined dense options-dense')
                 with ui.row():
                     ui.button('Create', on_click=create_profile)
                     ui.button('Cancel', on_click=new_dialog.close).props('flat')

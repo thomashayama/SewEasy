@@ -193,17 +193,26 @@ def body_source_ui(state):
     DEFAULT = '__default__'
     CUSTOM = '__custom__'
     SHARED_PREFIX = 'shared:'  # shared-profile option keys: 'shared:<id>'
+    # Three default mannequins. Each is drawn as its own mesh, unchanged.
+    PRESETS = {DEFAULT: ('all', 'Default body'), '__woman__': ('female', 'Default woman'),
+               '__man__': ('male', 'Default man')}
+
+    def current_preset():
+        """Which default mannequin the current measurements are, if any."""
+        body = profiles.measurements_from_body(state.pattern_state.body_params)
+        for key, (name, _) in PRESETS.items():
+            preset = profiles.default_measurements(name)
+            if all(isinstance(body.get(k), float) and abs(body[k] - v) < 1e-6 for k, v in preset.items()):
+                return key
+        return None
 
     async def apply_measurements(measurements):
         state.pattern_state.set_new_body_params(measurements)
         await state.update_pattern_ui_state()
 
     async def on_select(e):
-        if e.value == DEFAULT:
-            base = {k: v for k, v in
-                    state.pattern_state.default_body_params.params.items()
-                    if not k.startswith('_')}
-            await apply_measurements(base)
+        if e.value in PRESETS:
+            await apply_measurements(profiles.default_measurements(PRESETS[e.value][0]))
             await state.apply_skin_color(None)
             if select.value == e.value:
                 select.set_options(options())
@@ -224,7 +233,7 @@ def body_source_ui(state):
                 select.set_options(options())
 
     def options():
-        opts = {DEFAULT: 'Default body'}
+        opts = {key: label for key, (_, label) in PRESETS.items()}
         if email:
             for row in profiles.list_profiles(email):
                 opts[row['id']] = row['name']
@@ -240,7 +249,7 @@ def body_source_ui(state):
     state.mark_custom_measurements = mark_custom
 
     with ui.row(wrap=False).classes('w-full items-center gap-1'):
-        select = ui.select(options(), value=DEFAULT, label='Measurements',
+        select = ui.select(options(), value=current_preset() or DEFAULT, label='Measurements',
                            on_change=on_select) \
             .classes('grow').props('outlined dense options-dense')
         ui.button(icon='upload_file', on_click=state.ui_body_dialog.open) \
@@ -323,8 +332,7 @@ def body_source_ui(state):
 
     ui.button('Customize measurements', on_click=edit_current) \
         .props('flat dense no-caps size=sm icon=straighten')
-    if any(abs(value - state.pattern_state.default_body_params.params.get(key, value)) > 1e-6
-           for key, value in state.pattern_state.body_params.params.items() if not key.startswith('_')):
+    if current_preset() is None:
         mark_custom()
 
 

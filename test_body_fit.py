@@ -37,6 +37,43 @@ class BodyFitTest(unittest.TestCase):
         np.testing.assert_array_equal(mesh.faces, original.faces)
         self.assertEqual(report['kind'], 'default')
 
+    def test_default_man_and_woman_are_their_own_unchanged_mannequins(self):
+        from seweasy.meshgen.body_fit import MANNEQUINS, mannequin_measurements
+        from webapp import profiles
+        heights = {}
+        for name, note in MANNEQUINS.items():
+            original = trimesh.load(ROOT / f'assets/bodies/mean_{name}.obj', process=False)
+            mesh, report = fit_body(mannequin_measurements(name))
+            np.testing.assert_array_equal(mesh.vertices, original.vertices)      # drawn as it is, not refitted
+            self.assertEqual((report['kind'], report['mannequin'], report['note']), ('default', name, note))
+            self.assertEqual(report['max_error_cm'], max(r['error_cm'] for r in report['measurements'].values()))
+            heights[name] = mesh.bounds[1][1]
+            # The studio's presets are the same numbers, as a detached copy.
+            preset = profiles.default_measurements(name)
+            self.assertEqual(preset, mannequin_measurements(name))
+            preset['height'] = 1
+            self.assertNotEqual(profiles.default_measurements(name)['height'], 1)
+        self.assertLess(heights['female'], heights['all'])
+        self.assertLess(heights['all'], heights['male'])
+        self.assertEqual(set(profiles.DEFAULT_BODIES), set(MANNEQUINS))
+        with self.assertRaises(ValueError):
+            profiles.default_measurements('child')
+
+    def test_custom_measurements_are_fitted_from_the_closest_mannequin(self):
+        from seweasy.meshgen.body_fit import mannequin_measurements
+        for name in ('male', 'female'):
+            base = mannequin_measurements(name)
+            edited = {**base, 'waist': base['waist'] + 4, 'hips': base['hips'] + 2}
+            edited.update(scale_coupled(base, edited))
+            mesh, report = fit_body(edited)
+            with self.subTest(name=name):
+                self.assertEqual((report['kind'], report['mannequin']), ('custom', name))
+                self.assertLessEqual(report['max_error_cm'], 1)
+                self.assertAlmostEqual(report['measurements']['waist']['target_cm'], base['waist'] + 4, places=2)
+                self.assertTrue(np.isfinite(mesh.vertices).all())
+        # A small edit of the neutral body still starts from the neutral body.
+        self.assertEqual(fit_body(profile(dict(waist=BASE['waist'] + 3)))[1]['mannequin'], 'all')
+
     def test_small_and_large_profiles_match_dimensions(self):
         for edits in PROFILES:
             with self.subTest(height=edits['height']):

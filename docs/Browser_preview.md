@@ -23,7 +23,14 @@ Open **Measurements** in the header, then **Customize measurements**, upload a m
 select a saved profile. Both the garment and mannequin use that profile. Body
 fitting runs on CPU; the fitted surface supplies the visible mesh and the
 browser's collision field. The account measurement editor uses the same fitter.
-Selecting **Default body** restores the original template unchanged.
+**Default body**, **Default woman** and **Default man** are three mannequins
+from the same averaged survey: the neutral population mean, and the women's and
+men's means (166, 172 and 179 cm tall). Choosing one applies its measurements,
+so the pattern redrafts for that body, and draws that mannequin's own mesh
+unchanged. Custom measurements are fitted from whichever of the three needs
+the least deformation, because smaller changes fit more accurately; the choice
+follows the numbers, not a stated sex. A new measurement profile in the account
+can start from any of the three. Saved thumbnails keep the neutral mannequin.
 
 Drag to turn the mannequin; **Shift-drag** or right/middle-drag moves the
 view. On touch screens, two fingers pan and pinch to zoom. Scroll zooms; the

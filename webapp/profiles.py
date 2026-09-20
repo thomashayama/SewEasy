@@ -1,5 +1,7 @@
 """CRUD for per-user body-measurement profiles"""
 
+from functools import lru_cache
+from pathlib import Path
 from typing import Optional
 
 from webapp.db import SessionLocal
@@ -21,6 +23,23 @@ def set_units(email: str, units: str) -> None:
         if row is not None:
             row.units = units
             db.commit()
+
+
+DEFAULT_BODIES = {'all': 'Default body', 'female': 'Default woman', 'male': 'Default man'}
+
+
+@lru_cache(maxsize=len(DEFAULT_BODIES))
+def _default_measurements(name):
+    from assets.bodies.body_params import BodyParameters
+    if name not in DEFAULT_BODIES:
+        raise ValueError('Unknown default body.')
+    path = Path(__file__).resolve().parents[1] / 'assets' / 'bodies' / f'mean_{name}.yaml'
+    return measurements_from_body(BodyParameters(path))
+
+
+def default_measurements(name='all') -> dict:
+    """A default mannequin's measurements: the neutral average, a woman's, or a man's."""
+    return dict(_default_measurements(name))
 
 
 def measurements_from_body(body_params) -> dict:

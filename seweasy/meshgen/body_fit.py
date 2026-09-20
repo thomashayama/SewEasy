@@ -21,6 +21,9 @@ GIRTHS = ('hips', 'waist', 'underbust', 'bust')
 FITTED = (*GIRTHS, 'height', 'head_l', 'waist_line', 'hips_line', 'vert_bust_line',
           'crotch_hip_diff', 'shoulder_w', 'shoulder_incl', 'neck_w',
           'arm_length', 'arm_pose_angle', 'wrist', 'leg_circ')
+# The three default mannequins share one topology, so one segmentation serves
+# them all. Each is drawn unchanged when its own measurements are requested.
+MANNEQUINS = {'all': 'Default mannequin', 'female': 'Default woman mannequin', 'male': 'Default man mannequin'}
 
 
 def section_rings(mesh, origin, normal=(0, 1, 0)):
@@ -87,10 +90,18 @@ def measure_mesh(mesh, m):
     return result
 
 
-@lru_cache(maxsize=1)
-def _template():
-    mesh = trimesh.load(ROOT / 'assets/bodies/mean_all.obj', process=False)
-    raw = yaml.safe_load((ROOT / 'assets/bodies/mean_all.yaml').read_text())['body']
+def mannequin_measurements(name):
+    """A default mannequin's own measurements, in the files' centimetres and degrees."""
+    if name not in MANNEQUINS:
+        raise ValueError('Unknown mannequin.')
+    raw = yaml.safe_load((ROOT / f'assets/bodies/mean_{name}.yaml').read_text())['body']
+    return {key: float(value) for key, value in raw.items()}
+
+
+@lru_cache(maxsize=len(MANNEQUINS))
+def _template(name='all'):
+    mesh = trimesh.load(ROOT / f'assets/bodies/mean_{name}.obj', process=False)
+    raw = mannequin_measurements(name)
     measurements = {k: float(v) if k in ANGLES else float(v) / 100
                     for k, v in raw.items()}
     groups = json.loads((ROOT / 'assets/bodies/ggg_body_segmentation.json').read_text())
@@ -154,11 +165,22 @@ def _deform(mesh, base, target, weights, factors):
     return trimesh.Trimesh(out, mesh.faces.copy(), process=False)
 
 
+def _closest(target):
+    """The mannequin needing the least deformation: smaller changes fit more accurately."""
+    scale = _template('all')[1]
+
+    def distance(name):
+        base = _template(name)[1]
+        return sum(((target[k] - base[k]) / (scale[k] or 1)) ** 2 for k in FITTED)
+    return min(MANNEQUINS, key=distance)       # ties keep the neutral mannequin, listed first
+
+
 @lru_cache(maxsize=8)
 def _fit_cached(key):
-    mesh, base, weights, measured = _template()
     raw = dict(key)
     target = {k: v if k in ANGLES else v / 100 for k, v in raw.items()}
+    name = _closest(target)
+    mesh, base, weights, measured = _template(name)
     same = all(abs(target[k] - base[k]) < 1e-7 for k in FITTED)
     factors = {k: target[k] / measured[k] for k in (*GIRTHS, 'wrist', 'leg_circ')}
     fitted = mesh.copy()
@@ -176,19 +198,19 @@ def _fit_cached(key):
         raise ValueError('These measurements could not produce a valid preview body')
     if not same and max(errors.values()) > 1:
         raise ValueError('Body fitting could not match this profile within 1 cm. Check the measurements.')
-    report = dict(kind='default' if same else 'custom',
+    report = dict(kind='default' if same else 'custom', mannequin=name,
         measurements={k: dict(target_cm=round(target[k]*100, 2), actual_cm=round(actual[k]*100, 2),
                              error_cm=round(errors[k], 3)) for k in actual},
         max_error_cm=round(max(errors.values()), 3),
         fitted_parameters=list(FITTED),
         approximated_parameters=[k for k in raw if k not in FITTED],
-        note='Default mannequin' if same else 'Measurement-fitted mannequin · approximate body shape')
+        note=MANNEQUINS[name] if same else 'Measurement-fitted mannequin · approximate body shape')
     return fitted.vertices.copy(), fitted.faces.copy(), report
 
 
 def fit_body(measurements):
     """Return a private mesh + measured fit report; cache only deterministic CPU work."""
-    _, base, _, _ = _template()
+    _, base, _, _ = _template('all')
     values = {k: float(measurements.get(k, v if k in ANGLES else v*100))
               for k, v in base.items()}
     if not all(np.isfinite(v) and (k in ANGLES or v > 0) for k, v in values.items()):
