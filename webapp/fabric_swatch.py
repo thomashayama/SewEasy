@@ -62,7 +62,9 @@ def swatch_scene():
     # Discrete-shell geometry factor l/h, h = (A0+A1)/(3*l).
     # E = D/2 * (l/h) * theta^2; XPBD compliance = 1/(D*l/h).
     # Base rigidity is replaced by apply_material before a preview is served.
-    # Grinspun et al., Discrete Shells (2003), equation 2.
+    # Grinspun et al., Discrete Shells (2003), equation 2. Two corrections make
+    # this grid bend like the rigidity it is given (docs/FabricSwatch.md):
+    # STRUCTURED_GRID, and a clamp-line hinge that carries half a cell.
     rigidity = .00001  # N*m, neutral fallback
     hinges = []
     for sides in edges.values():
@@ -73,7 +75,8 @@ def swatch_scene():
         edge = points[b]-points[a]
         area = (np.linalg.norm(np.cross(edge, points[c]-points[a]))
                 + np.linalg.norm(np.cross(points[d]-points[a], edge))) / 2
-        factor = 3*float(edge @ edge)/float(area)
+        on_clamp_line = abs(points[a][0]) < 1e-12 and abs(points[b][0]) < 1e-12
+        factor = 3*float(edge @ edge)/float(area) / STRUCTURED_GRID * (2 if on_clamp_line else 1)
         direction = uv[b]-uv[a]
         # Curvature acts perpendicular to the hinge. Approximate orthotropy;
         # no measured bend/twist coupling or Poisson response is claimed.
@@ -85,6 +88,36 @@ def swatch_scene():
                            tip=list(range((columns-1)*rows, columns*rows)),
                            length_m=.08, width_m=width, height_m=height)
     return scene
+
+
+# Discrete Shells' l/h assumes curvature is shared among three unstructured edge
+# directions. On this right-triangle grid, bent along a mesh axis, only the
+# cross edges and the diagonals fold, which over-counts rigidity by 2.4 on paper
+# and 2.476 measured against a small-deflection cantilever. Without it the strip
+# bent as if twice as stiff as the value entered.
+STRUCTURED_GRID = 2.476
+
+
+def elastica_drop_mm(rigidity, weight_gsm, length=.08, gravity=9.81):
+    """Tip drop of a clamped, horizontal, inextensible strip under its own weight.
+
+    The exact large-deflection answer the bend test should reproduce: with theta
+    the downward slope, D theta'' = -q (L - s) cos(theta), theta(0) = 0, theta'(L) = 0.
+    """
+    from scipy.integrate import solve_bvp
+    if not rigidity or not weight_gsm or rigidity <= 0 or weight_gsm <= 0:
+        return None
+    load = weight_gsm/1000*gravity
+
+    def slope(s, y):
+        return np.vstack((y[1], -load*(length-s)*np.cos(y[0])/rigidity))
+    s = np.linspace(0, length, 400)
+    guess = np.vstack((np.linspace(0, 1.2, s.size), np.full(s.size, 10.)))
+    solution = solve_bvp(slope, lambda a, b: np.array([a[0], b[1]]), s, guess, max_nodes=200000, tol=1e-8)
+    if not solution.success:
+        return None
+    fine = np.linspace(0, length, 8001)
+    return float(np.trapz(np.sin(solution.sol(fine)[0]), fine)*1000)
 
 
 DEFAULTS = dict(stretch_warp=1000., stretch_weft=1000., shear=100.,
@@ -128,6 +161,7 @@ def apply_material(scene, properties, direction='warp', mode='bend'):
                         unit=properties[key]['unit']) for key, default in DEFAULTS.items()}
     if any(not np.isfinite(p['value']) or p['value'] > 3.4028235e38 for p in applied.values()):
         raise ValueError('These properties exceed the numeric range of the browser simulator.')
+    applied_weight = properties['weight']['value']
     along, across = ('warp', 'weft') if direction == 'warp' else ('weft', 'warp')
     eu, ev, shear = (applied[k]['value'] for k in ('stretch_'+along, 'stretch_'+across, 'shear'))
     du, dv = (applied['bend_'+a]['value'] for a in (along, across))
@@ -163,7 +197,8 @@ def apply_material(scene, properties, direction='warp', mode='bend'):
     result['fabric_test'].update(scope='orthotropic-material', direction=direction, mode=mode,
         applied=applied, traction_n_m=traction, damping=applied['damping']['value'],
         gravity=9.81 if mode == 'bend' else 0.,
-        expected_extension_percent=traction/eu*100 if eu and mode == 'stretch' else None)
+        expected_extension_percent=traction/eu*100 if eu and mode == 'stretch' else None,
+        expected_drop_mm=elastica_drop_mm(du, applied_weight, result['swatch']['length_m']) if mode == 'bend' else None)
     if mode != 'bend':
         result['fabric_test']['numerics'] = loaded_numerics(result)
     return result

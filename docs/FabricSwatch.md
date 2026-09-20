@@ -16,6 +16,8 @@ in the browser; the server only prepares geometry and material coefficients.
 - Interior dihedral energy is D/2 × l/h × (theta-theta0)², h=(A0+A1)/(3l).
   D is an approximate directional interpolation of warp/weft rigidity using
   the curvature axis perpendicular to the rest UV edge. Compliance is 1/(D l/h).
+  On this structured grid l/h is divided by 2.476 and doubled on the clamp line
+  (see Bending against the elastica).
   There is no measured bend/twist coupling or Poisson contraction model.
 - Damping is exp(-rate × dt). Zero disables a property; null uses a labeled
   assumption (stretch 1000 N/m, shear 100 N/m, bend 1e-5 N·m, damping 14/s).
@@ -124,8 +126,49 @@ There the error grows with the ratio: about 1% at 5, 67% at 26, reached by
 100 000 N/m at 40 g/m². Soft cloth costs less than before, stiff cloth up to
 2.7 times more, which these tests accept.
 
-This settles numerical convergence only. It says nothing about whether a real
-fabric follows a linear law, and no physical specimen has been compared.
+### Bending against the elastica
+
+A clamped strip under its own weight also has an exact answer: the heavy
+elastica, D θ″ = −q (L − s) cos θ with θ(0) = 0 and θ′(L) = 0. The bend test was
+not reproducing it. The strip bent as if its rigidity were about twice the value
+entered, so the polyester's warp dropped 57.4 mm where the elastica gives
+66.4 mm. This was the model, not the solver: the drop barely moves with the step.
+
+Two causes, both in how curvature is lumped onto this mesh:
+
+- Discrete Shells' l/h assumes curvature is shared among three unstructured
+  edge directions. On a right-triangle grid bent along a mesh axis only the cross
+  edges and diagonals fold, which over-counts rigidity by 2.4 on paper and 2.476
+  measured against a small-deflection cantilever, where beam theory is exact.
+- The hinge on the clamp line stands for half a cell of curvature, not a whole
+  one. Treating it as a whole cell left the strip about 3.5% too limp even
+  after the first correction.
+
+With both, at the application's own settings:
+
+| Fixture | Elastica | Before | Now |
+| --- | --- | --- | --- |
+| Polyester warp, 1.99e-5 N·m | 66.39 mm | 57.37 (−13.6%) | 66.41 (+0.03%) |
+| Polyester weft, 1.36e-5 | 69.69 | 63.85 (−8.4%) | 69.78 (+0.13%) |
+| Cupro warp, 1.00e-5 | 72.87 | 71.12 (−2.4%) | 73.44 (+0.78%) |
+| Cupro weft, 1.60e-5 | 70.49 | 66.14 (−6.2%) | 70.69 (+0.28%) |
+| Voile weft, 2.23e-6 | 76.60 | 77.85 (+1.6%) | 78.14 (+2.0%) |
+
+**Error budget:** within 1% of the elastica up to a 72 mm drop, rising smoothly
+to 2.5% for the limpest fabrics, which curl at the clamp more tightly than a
+10 mm cell can follow. On the GPU a 140 g/m² cupro read 74.73 mm against the
+elastica's 73.9 mm, +1.1%. The calibration is weakly anisotropy-dependent, 1.88 to 2.23 across a
+sixteen-fold range of across/along rigidity, which is within that budget. It
+belongs to this grid: another mesh needs its own small-deflection check. The
+dialog shows the elastica's drop beside the reading.
+
+Earlier drops quoted in this document and in FabricSources.md were read before
+this correction and are too small by the amounts above.
+
+This settles numerical behaviour only. It says nothing about whether a real
+fabric follows a linear law, and no physical specimen has been compared. It does
+mean a rigidity estimated from a supplier's loop test is no longer doubled by
+the mesh before it is drawn.
 
 ## Validation
 

@@ -43,6 +43,16 @@ test('shear readings with the sized step match a far finer solve',()=>{
   }
 });
 
+test('the bend test reproduces the heavy elastica, the exact clamped strip under its own weight',()=>{
+  // Before the grid was calibrated these read up to 14% short: the mesh bent as if twice as stiff.
+  for(const [name,scene] of named('bend')){
+    const expected=scene.fabric_test.expected_drop_mm,got=simulate(scene,{seconds:5}).drop;
+    // The limper the strip, the tighter it curls at the clamp, and a 10 mm cell follows that less well.
+    const tolerance=expected>72?.025:.01;
+    assert.ok(Math.abs(got/expected-1)<tolerance,`${name}: ${got.toFixed(2)} mm vs ${expected.toFixed(2)} mm`);
+  }
+});
+
 test('bending is insensitive to the step, so the interactive setting is kept',()=>{
   const scene=scenes['cupro / warp / bend'];
   const interactive=simulate(scene,{seconds:4}),fine=simulate(scene,{substeps:96,iterations:8,precision:64,seconds:4});

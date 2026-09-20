@@ -759,6 +759,31 @@ class FabricSceneTest(unittest.TestCase):
         self.assertGreater(beyond['stiffness_ratio'], STIFFNESS_RATIO)
         self.assertIsNone(numerics(105.6, 1035.2515, 'bend'))       # bending keeps its interactive step
 
+    def test_bending_hinges_are_calibrated_for_this_grid_and_predict_the_elastica(self):
+        from webapp.fabric_preview import default_scene
+        from webapp.fabric_swatch import apply_material, elastica_drop_mm, STRUCTURED_GRID
+        scene = default_scene()
+        points = scene['vertices']
+        clamp = [h for h in scene['interior_hinges'] if all(abs(points[i][0]) < 1e-12 for i in h['ids'][:2])]
+        cross = [h for h in scene['interior_hinges'] if h not in clamp and h['warp_fraction'] == 1]
+        # A cross edge of a square cell: 3 l^2 / A = 3, less the grid's over-count; the clamp line carries half a cell.
+        self.assertEqual(len(clamp), 4)
+        for hinge in cross:
+            self.assertAlmostEqual(hinge['geometry_factor'], 3/STRUCTURED_GRID)
+        for hinge in clamp:
+            self.assertAlmostEqual(hinge['geometry_factor'], 6/STRUCTURED_GRID)
+        # Beam theory in the small-deflection limit, then the large-deflection values the fixtures use.
+        self.assertAlmostEqual(elastica_drop_mm(1e-3, 100., gravity=.5), .05*.08**4/(8e-3)*1000, places=4)
+        self.assertAlmostEqual(elastica_drop_mm(1.989e-5, 79.2), 66.39, places=1)
+        self.assertGreater(elastica_drop_mm(2e-6, 100.), elastica_drop_mm(2e-5, 100.))
+        self.assertIsNone(elastica_drop_mm(None, 100.))
+        p = fmt.properties()
+        for key, value in dict(weight=105.6, bend_warp=1.0022226e-5, bend_weft=1.6023748e-5).items():
+            p[key].update(value=value, origin='estimated')
+        self.assertAlmostEqual(apply_material(scene, p, 'warp', 'bend')['fabric_test']['expected_drop_mm'], 72.87, places=1)
+        self.assertAlmostEqual(apply_material(scene, p, 'weft', 'bend')['fabric_test']['expected_drop_mm'], 70.49, places=1)
+        self.assertIsNone(apply_material(scene, p, 'warp', 'stretch')['fabric_test']['expected_drop_mm'])
+
     def test_committed_reference_fixtures_are_the_applications_own_scenes(self):
         # benchmarks/swatch_reference.mjs studies these; they must not drift from what the app builds.
         import importlib.util

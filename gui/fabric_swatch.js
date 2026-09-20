@@ -39,6 +39,7 @@ export default {
         <p v-if="equal">Both use warp properties. Their results should coincide.</p>
         <p v-else>Weight is identical. Differences come from the fabric’s directional properties.</p>
         <p v-if="mode==='stretch' && material?.expected_extension_percent!=null">Linear strip prediction, warp: {{material.expected_extension_percent.toFixed(2)}}% extension. The clamped mesh approximates this response.</p>
+        <p v-if="mode==='bend' && material?.expected_drop_mm!=null">Exact clamped strip (heavy elastica), warp: {{material.expected_drop_mm.toFixed(1)}} mm drop. The 10 mm mesh follows it within 1% up to a 72 mm drop, and within 2.5% for limper fabrics.</p>
         <p v-if="material?.numerics && material.numerics.validated">Solver step sized for this fabric: {{material.numerics.substeps}} substeps per frame. Within this range the reading is within 0.3% of the exact strip.</p>
         <p v-if="material?.numerics && !material.numerics.validated" class="se-swatch-warning" role="note">This fabric is stiffer for its weight than the solver’s validated range (stiffness ratio {{material.numerics.stiffness_ratio.toFixed(1)}}, validated to 2). Its reading may be wrong by more than 1%.</p>
       </div>
