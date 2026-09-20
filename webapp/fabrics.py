@@ -300,14 +300,14 @@ def assignable(email=None):
     return [dict(id=r['id'], label=r['name'], group=group) for group, records in groups for r in records]
 
 
-def export_fabric(email, identity):
+def export_fabric(email, identity, bundle=False):
     record = get_fabric(email, identity)
     raw = filename = None
     if not record['standard']:
         with SessionLocal() as db:
             row = _owned(db, email, identity)
             raw, filename = row.source_bytes, row.source_name
-    return formats.export_fabric(record, raw, filename)
+    return formats.export_fabric(record, raw, filename, bundle=bundle)
 
 
 def original_file(email, identity):

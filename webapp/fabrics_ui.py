@@ -283,13 +283,13 @@ async def fabric_library(email, choose=None):
         except ValueError as exc:
             ui.notify(str(exc), type='negative')
 
-    async def download(record, original=False):
+    async def download(record, original=False, bundle=False):
         try:
             if original:
                 filename, raw = await run.io_bound(fabrics.original_file, email, record['id'])
             else:
-                raw = await run.io_bound(fabrics.export_fabric, email, record['id'])
-                filename = re.sub(r'[^\w .()-]', '_', record['name']) + '.u3ma'
+                raw = await run.io_bound(fabrics.export_fabric, email, record['id'], bundle)
+                filename = re.sub(r'[^\w .()-]', '_', record['name']) + ('.u3m.zip' if bundle else '.u3ma')
             ui.download(raw, filename=filename, media_type='application/octet-stream')
         except ValueError as exc:
             ui.notify(str(exc), type='negative')
@@ -434,6 +434,7 @@ async def fabric_library(email, choose=None):
                                 if not record['standard']:
                                     ui.menu_item('Save a copy', on_click=lambda _, i=record['id']: copy(i))
                                 ui.menu_item('Export U3MA', on_click=lambda _, r=record: download(r))
+                                ui.menu_item('Export U3M folder (.zip)', on_click=lambda _, r=record: download(r, bundle=True))
                                 if record['has_source']:
                                     ui.menu_item('Download original', on_click=lambda _, r=record: download(r, True))
     await listing()

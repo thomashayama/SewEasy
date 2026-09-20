@@ -206,6 +206,15 @@ loading blobs. See [external fixture validation and catalog candidates](FabricSo
   local/central headers, no extras/comments/data descriptors and zero attrs.
 - Writes weight/thickness into native U3M fields and edited normalized values
   into `custom.seweasy`. Other software may ignore the SewEasy extension.
+- **Export U3M folder (.zip)** writes the same files as an ordinary ZIP to
+  unpack beside the `.u3m`; only the container differs from the U3MA.
+- Every export carries `seweasy-export-notes.txt`: which values sit in standard
+  U3M fields, which exist only in the extension and will be ignored elsewhere,
+  which are empty, and that edits are marked `user` while the laboratory's
+  companion measurements were not rewritten. Re-exporting replaces our own
+  notes and never a vendor file of the same name. No account identifier, edit
+  token, garment or body data is written, and no solver parameters are invented
+  for another application.
 - Keeps companion files and unknown vendor extensions unchanged. Download
   original returns the exact uploaded bytes, including its original values.
 - Texture files are preserved. Of their PBR maps the renderer draws only the

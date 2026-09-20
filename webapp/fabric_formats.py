@@ -383,7 +383,43 @@ def empty_document(name, identity=None):
                      devices=dict(fab='null'), material_type=None, construction=None)))
 
 
-def export_fabric(record, source_bytes=None, source_name=None):
+NOTES_PATH = 'seweasy-export-notes.txt'
+NOTES_HEADING = 'SewEasy fabric export'
+# Every U3M reader understands these; everything else travels in custom.seweasy.
+NATIVE_PROPERTIES = ('weight', 'thickness')
+
+
+def export_notes(record, has_measurements=False):
+    """Plain text for whoever opens the package elsewhere: what another application will and will not read."""
+    content = record['content']
+    lines = [NOTES_HEADING, f'Material: {record["name"]}', f'Format: U3M 1.1, written by {IMPORTER}.', '']
+
+    def stated(key):
+        item = content['properties'][key]
+        unit = '' if item['unit'] == '1' else ' ' + item['unit']      # a bare "1" reads as a typo
+        return f'  {key} = {item["value"]:.8g}{unit} ({item["origin"]})'
+    supplied = [k for k in PROPERTY_UNITS if content['properties'][k]['value'] is not None]
+    lines.append('Written to standard U3M fields, which any U3M application reads:')
+    lines += [stated(k) for k in supplied if k in NATIVE_PROPERTIES] or ['  (no weight or thickness supplied)']
+    lines += ['  name, description, and the original visual maps and companion files, byte for byte.', '']
+    lines.append('Written only to the custom.seweasy extension. Other applications will ignore these:')
+    lines += [stated(k) for k in supplied if k not in NATIVE_PROPERTIES] or ['  (none)']
+    if (content.get('appearance') or {}).get('display_color'):
+        lines.append(f'  display colour = {content["appearance"]["display_color"]}')
+    if content.get('catalog'):
+        lines.append('  composition, construction and source attribution')
+    missing = [k for k in PROPERTY_UNITS if k not in supplied]
+    lines += ['', 'Not supplied, and left empty rather than zero: ' + (', '.join(missing) or 'nothing'), '']
+    lines.append('Values marked "user" are edits made in SewEasy. '
+                 + ('The original test measurements in the companion file were not rewritten, so they '
+                    'remain the original laboratory data, not a new measurement.' if has_measurements else
+                    'No laboratory measurement file accompanies this material.'))
+    lines.append('No proprietary solver parameters for any other application are included.')
+    return '\n'.join(lines).encode('utf-8')
+
+
+def export_fabric(record, source_bytes=None, source_name=None, bundle=False):
+    """A restricted U3MA archive, or with `bundle` the same files as an ordinary ZIP to unpack."""
     content = record['content']
     if source_bytes:
         files, manifest, document, _ = read_package(source_bytes, source_name)
@@ -425,7 +461,22 @@ def export_fabric(record, source_bytes=None, source_name=None):
         files[credit_path] = credit_bytes
     _validate(document, 'u3m_schema.json')
     files[manifest] = _encode(document)
-    return pack(files)
+    # Replace our own earlier notes; never a vendor's file that happens to share the name.
+    notes_path, suffix = str(PurePosixPath(manifest).parent / NOTES_PATH).lstrip('./'), 2
+    folded_paths = {p.casefold(): p for p in files}
+    while notes_path.casefold() in folded_paths and not files[folded_paths[notes_path.casefold()]].startswith(
+            NOTES_HEADING.encode()):
+        notes_path = str(PurePosixPath(manifest).parent / f'seweasy-export-notes-{suffix}.txt').lstrip('./')
+        suffix += 1
+    files[folded_paths.get(notes_path.casefold(), notes_path)] = export_notes(
+        record, has_measurements=bool((content.get('source') or {}).get('has_raw_measurements')))
+    if not bundle:
+        return pack(files)
+    output = BytesIO()
+    with ZipFile(output, 'w', ZIP_DEFLATED) as archive:
+        for name, data in files.items():
+            archive.writestr(_path(name), data)
+    return output.getvalue()
 
 
 def sample_package():

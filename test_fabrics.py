@@ -497,6 +497,39 @@ class FabricStorageTest(unittest.TestCase):
         self.assertFalse(any(fabrics.matches(r, weight='light') for r in common if r['id'] == 'standard:canvas'))
         self.assertTrue(fabrics.matches(self.record, query='cupro'))
 
+    def test_export_as_a_folder_and_notes_on_what_other_applications_will_not_read(self):
+        edited = self.save(values={'weight': '80', 'friction': ''})
+        archive = fabrics.export_fabric(self.alice, edited['id'])
+        folder = fabrics.export_fabric(self.alice, edited['id'], bundle=True)
+        packed, unpacked = fmt.read_package(archive, 'a.u3ma')[0], fmt.read_package(folder, 'a.zip')[0]
+        # The same files either way; only the container differs.
+        self.assertEqual({k: v for k, v in packed.items() if k != 'material.u3m'},
+                         {k: v for k, v in unpacked.items() if k != 'material.u3m'})
+        with ZipFile(BytesIO(folder)) as plain:
+            self.assertTrue(all(entry.flag_bits & 0x800 == 0 for entry in plain.infolist()))   # an ordinary ZIP
+        self.assertEqual(fmt.import_fabric(folder, 'a.zip')['properties'], edited['content']['properties'])
+        self.assertEqual(unpacked['physics.json'], (fmt.SPEC/'cupro_physics.json').read_bytes())
+        notes = unpacked[fmt.NOTES_PATH].decode()
+        native, extension = notes.split('Written only to the custom.seweasy extension')
+        self.assertIn('weight = 80 g/m2 (user)', native)
+        self.assertIn('stretch_warp = ', extension)
+        self.assertNotIn('stretch_warp', native)
+        self.assertRegex(notes, r'left empty rather than zero: .*friction')
+        self.assertIn('remain the original laboratory data', notes)
+        # Nothing about the account or the library travels with a fabric.
+        for data in unpacked.values():
+            for private in (self.alice.encode(), edited['edit_token'].encode(), b'alice'):
+                self.assertNotIn(private, data)
+        # Importing our own export and exporting again replaces the notes; a vendor's file of that name is kept.
+        again = fabrics.import_fabric(self.alice, folder, 'round.zip', name='Round trip')
+        twice = fmt.read_package(fabrics.export_fabric(self.alice, again['id']), 'b.u3ma')[0]
+        self.assertEqual([k for k in twice if 'export-notes' in k], [fmt.NOTES_PATH])
+        vendor = dict(packed, **{fmt.NOTES_PATH: b'Vendor release notes'})
+        kept = fabrics.import_fabric(self.alice, fmt.pack(vendor), 'vendor.u3ma', name='Vendor notes')
+        result = fmt.read_package(fabrics.export_fabric(self.alice, kept['id']), 'c.u3ma')[0]
+        self.assertEqual(result[fmt.NOTES_PATH], b'Vendor release notes')
+        self.assertTrue(result['seweasy-export-notes-2.txt'].startswith(fmt.NOTES_HEADING.encode()))
+
     def test_unchanged_values_preserve_measurement_provenance(self):
         value = self.record['content']['properties']['weight']['value']
         saved = self.save(values={'weight': str(value)})
