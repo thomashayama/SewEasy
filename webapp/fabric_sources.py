@@ -86,7 +86,7 @@ RETAILERS = {
     # Canada
     'Fabricville': ('fabricville.com',),
     'Fabricland': ('fabricland.ca', 'fabriclandwest.com'),
-    'Club Tissus': ('clubtissus.com',),
+    'Club Tissus': ('clubtissus.com', 'thefabricclub.ca'),      # its English storefront
     "Len's Mill Stores": ('lensmill.com',),
     'Blackbird Fabrics': ('blackbirdfabrics.com',),
     'Core Fabrics': ('corefabricstore.com',),
@@ -120,7 +120,7 @@ RETAILERS = {
     # Australia and New Zealand
     'Spotlight': ('spotlightstores.com',),
     'Lincraft': ('lincraft.com.au',),
-    'The Remnant Warehouse': ('theremnantwarehouse.com.au',),
+    'The Remnant Warehouse': ('theremnantwarehouse.com.au', 'theremnantwarehouse.com'),
     'Tessuti Fabrics': ('tessuti-shop.com',),
     'The Fabric Store': ('wearethefabricstore.com',),
 }
