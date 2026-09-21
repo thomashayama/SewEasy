@@ -21,13 +21,38 @@ class SourceRulesTest(unittest.TestCase):
         self.assertEqual((shown['price'], shown['availability'], shown['checked'], shown['details']), ('', '', '', ''))
         self.assertEqual(sources.validate(None), [])
 
-    def test_amazon_michaels_and_any_other_retailer_are_named_from_the_address(self):
+    def test_common_retailers_are_named_from_the_address_and_any_other_by_its_host(self):
         for url, retailer in (('https://www.amazon.com/dp/B0ABC', 'Amazon'), ('https://smile.amazon.co.uk/dp/B0ABC', 'Amazon'),
                               ('https://a.co/d/abc', 'Amazon'), ('https://www.michaels.com/product/1', 'Michaels'),
-                              ('https://www.moodfabrics.com/linen', 'moodfabrics.com')):
+                              ('https://canada.michaels.com/product/1', 'Michaels'), ('https://m.ebay.com/itm/1', 'eBay'),
+                              ('https://www.ebay.co.uk/itm/1', 'eBay'), ('https://www.etsy.com/listing/1/linen', 'Etsy'),
+                              ('https://www.hobbylobby.com/p/1', 'Hobby Lobby'), ('https://www.walmart.com/ip/1', 'Walmart'),
+                              ('https://www.moodfabrics.com/linen', 'Mood Fabrics'), ('https://www.bandjfabrics.com/x', 'B&J Fabrics'),
+                              ('https://www.minerva.com/mp/1', 'Minerva'), ('https://www.spotlightstores.com/p/1', 'Spotlight'),
+                              ('https://www.stoffe.de/x.html', 'stoffe.de'), ('https://shop.example.com/linen', 'shop.example.com'),
+                              # Closed shops whose addresses now forward elsewhere are not given a name.
+                              ('https://www.joann.com/linen', 'joann.com'), ('https://www.fabric.com/x', 'fabric.com'),
+                              # A lookalike host is never called by the shop's name.
+                              ('https://amazon.com.evil.example/dp/B0ABC', 'amazon.com.evil.example'),
+                              ('https://amazon.a.bc/dp/B0ABC', 'amazon.a.bc'), ('https://notetsy.com/x', 'notetsy.com')):
             with self.subTest(url=url):
                 self.assertEqual(sources.validate([dict(url=url)])[0]['retailer'], retailer)
         self.assertEqual(one(retailer='The corner shop')['retailer'], 'The corner shop')
+
+    def test_the_retailer_table_is_consistent_and_upgrades_a_bare_host(self):
+        hosts = [host for listed in sources.RETAILERS.values() for host in listed]
+        self.assertEqual(len(hosts), len(set(hosts)))
+        self.assertTrue(all(host == host.lower() and '.' in host and not host.startswith('www.') and '/' not in host
+                            for host in hosts))
+        self.assertTrue(all(0 < len(name) <= sources.TEXT['retailer'] for name in sources.RETAILERS))
+        self.assertGreaterEqual(len(sources.RETAILERS), 60)
+        self.assertEqual(sources.RETAILER_NAMES, sorted(sources.RETAILER_NAMES, key=str.casefold))
+        for name in ('Amazon', 'Michaels', 'Etsy', 'eBay', 'Walmart', 'Hobby Lobby', 'Mood Fabrics', 'Spoonflower'):
+            self.assertIn(name, sources.RETAILER_NAMES)
+        # A source saved as its bare host, before the shop was listed, reads by name without being re-saved.
+        old = dict(one(), url='https://www.moodfabrics.com/linen', retailer='moodfabrics.com')
+        self.assertEqual(sources.describe(old, now=NOW)['title'], 'Mood Fabrics')
+        self.assertEqual(sources.describe(dict(old, retailer='Mood NYC'), now=NOW)['title'], 'Mood NYC')
 
     def test_links_are_https_without_credentials_and_lose_the_sharers_tracking(self):
         for bad in ('http://www.amazon.com/dp/B0ABC', 'javascript:alert(1)', 'https://user:pw@shop.example.com/x',
@@ -36,9 +61,16 @@ class SourceRulesTest(unittest.TestCase):
                 sources.clean_url(bad)
         self.assertEqual(sources.clean_url('https://www.Amazon.com/dp/B0ABC?tag=someone-20&th=1&linkCode=ll1&utm_source=x#reviews'),
                          'https://www.amazon.com/dp/B0ABC?th=1')
-        # Elsewhere `tag` or `ref` may be what selects the product.
-        self.assertEqual(sources.clean_url('https://shop.example.com/p?tag=linen&ref=42&fbclid=abc'),
-                         'https://shop.example.com/p?tag=linen&ref=42')
+        # Elsewhere `tag`, `ref` or `hash` may be what selects the product.
+        self.assertEqual(sources.clean_url('https://shop.example.com/p?tag=linen&ref=42&hash=blue&fbclid=abc&awc=1_2&irclickid=z'),
+                         'https://shop.example.com/p?tag=linen&ref=42&hash=blue')
+        # Each marketplace loses its own affiliate parameters and keeps the ones that choose the variant.
+        self.assertEqual(sources.clean_url('https://www.ebay.com/itm/123?var=456&hash=item1&mkcid=1&campid=99&epid=7'),
+                         'https://www.ebay.com/itm/123?var=456&epid=7')
+        self.assertEqual(sources.clean_url('https://www.etsy.com/listing/1/linen?ref=shop_home&click_key=a&variation0=55'),
+                         'https://www.etsy.com/listing/1/linen?variation0=55')
+        self.assertEqual(sources.clean_url('https://www.walmart.com/ip/1?wmlspartner=x&athbdg=L1600&selected=true'),
+                         'https://www.walmart.com/ip/1?selected=true')
 
     def test_a_similar_name_never_reads_as_a_measured_match(self):
         for match, exact in (('exact', True), ('unverified', False), ('similar', False)):
@@ -106,6 +138,9 @@ class SourceRulesTest(unittest.TestCase):
             dict(id='dup', url='https://shop.example.com/b')])
         self.assertEqual([k['url'] for k in kept], ['https://www.amazon.com/dp/B0ABC', 'https://shop.example.com/a'])
         self.assertEqual(kept[0]['private_note'], '')
+        # A file cannot call its link Amazon: the name comes from where the link really goes.
+        spoofed = sources.from_file([dict(url='https://shop.example.com/x', retailer='Amazon')])[0]
+        self.assertEqual(spoofed['retailer'], 'shop.example.com')
         self.assertEqual(sources.from_file('nonsense'), [])
 
 

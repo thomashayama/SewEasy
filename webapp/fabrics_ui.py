@@ -151,7 +151,8 @@ async def fabric_library(email, choose=None):
                                              **extra).props(f'outlined dense maxlength={fabric_sources.TEXT.get(key, 12)}').classes('w-full')
                         return text[key]
                     with ui.element('div').classes('grid grid-cols-1 sm:grid-cols-2 gap-3 w-full'):
-                        entry('retailer', 'Retailer', placeholder='From the address')
+                        entry('retailer', 'Retailer', placeholder='From the address',
+                              autocomplete=fabric_sources.RETAILER_NAMES).props('stack-label')
                         entry('product_id', 'Product or SKU number')
                         entry('variant', 'Color or variant')
                         unit = ui.select(fabric_sources.UNITS, value=original.get('unit', 'yard'), label='Sold').props('outlined dense')
@@ -166,6 +167,17 @@ async def fabric_library(email, choose=None):
                         entry('construction', 'Weave or knit')
                         entry('weight_gsm', 'Listed weight (g/m²)').props('inputmode=decimal')
                         entry('width_cm', 'Usable width (cm)').props('inputmode=decimal')
+
+                    def name_from_address():
+                        try:
+                            found = fabric_sources.retailer_for(fabric_sources.clean_url(url.value))
+                        except ValueError:
+                            found = ''
+                        # Set directly: .props() would split a name such as "B&J Fabrics" on its spaces.
+                        text['retailer']._props['placeholder'] = found or 'From the address'
+                        text['retailer'].update()
+                    url.on_value_change(name_from_address)
+                    name_from_address()
                     note = ui.textarea('Private note', value=original.get('private_note', '')).props(
                         'outlined dense rows=2 maxlength=1000').classes('w-full')
                     ui.label('Only you see this note. It is left out of exported files.').classes('se-param-label text-xs')

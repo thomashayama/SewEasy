@@ -97,11 +97,26 @@ shown as **Listing says**, separate from the fabric's measured values, and are
 never copied into them.
 
 - **Links** must be `https://` with a real host and no embedded credentials.
-  Campaign parameters (`utm_*`, `gclid`, `fbclid`, …) are removed everywhere, and
-  Amazon Associates parameters (`tag`, `linkCode`, `ref_`, …) on Amazon hosts, so a
-  stored link identifies the product rather than whoever shared it. Links open in
-  a new tab with `rel="noopener noreferrer"`. The retailer is named from the
-  address (Amazon, Michaels, otherwise the host) unless the owner types one.
+  Campaign parameters and affiliate-network click ids (`utm_*`, `gclid`,
+  `fbclid`, `irclickid`, `awc`, …) are removed everywhere. Amazon, eBay, Etsy and
+  Walmart also lose their own affiliate parameters (`tag`, `campid`, `ref`,
+  `wmlspartner`, …), but only on their own sites, because elsewhere `tag` or
+  `ref` may select the product; parameters that choose a variant (`th`, `var`,
+  `variation0`) are kept. A stored link identifies the product rather than
+  whoever shared it. Links open in a new tab with `rel="noopener noreferrer"`.
+- **The retailer is named from the address.** `fabric_sources.RETAILERS` lists
+  about 75 shops by host: the marketplaces and craft chains (Amazon, eBay, Etsy,
+  Michaels, Hobby Lobby, Walmart) and the common fabric shops of the United
+  States, Canada, the United Kingdom, Europe, Australia and New Zealand.
+  Subdomains belong to their parent, Amazon and eBay match only their real
+  country sites, and a lookalike host such as `amazon.com.evil.example` keeps
+  its own name. Any other shop is named by its host, or by whatever the owner
+  types; the Retailer field completes the listed names and shows the detected
+  one as soon as an address is pasted. JOANN and Fabric.com have closed and now
+  forward to Michaels and Amazon, so they are not listed. An imported file
+  cannot name its own retailer: the name always comes from where the link goes.
+  To add a shop, add its name and host to the table; sources saved under the
+  bare host pick the name up without being re-saved.
 - **A price** needs a three-letter currency and always reads with its unit and
   variant: per yard, per metre, per precut piece, per pack, or a stated size
   such as "per 2-yard cut".
