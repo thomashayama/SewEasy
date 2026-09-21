@@ -785,7 +785,7 @@ class FabricSceneTest(unittest.TestCase):
                 p[key].update(value=value, origin='user')
             return apply_material(default_scene(), p, 'warp', mode)['fabric_test'].get('numerics')
         cupro = numerics(105.6, 1035.2515)
-        self.assertEqual((cupro['substeps'], cupro['iterations'], cupro['validated']), (234, 4, True))
+        self.assertEqual((cupro['substeps'], cupro['iterations'], cupro['validated']), (286, 4, True))
         self.assertLessEqual(cupro['stiffness_ratio'], STIFFNESS_RATIO)
         # Stiffer, or lighter, cloth needs smaller steps: the ratio is stiffness over mass.
         self.assertGreater(numerics(105.6, 6571.)['substeps'], cupro['substeps'])
@@ -811,6 +811,20 @@ class FabricSceneTest(unittest.TestCase):
             self.assertAlmostEqual(hinge['geometry_factor'], 3/STRUCTURED_GRID)
         for hinge in clamp:
             self.assertAlmostEqual(hinge['geometry_factor'], 6/STRUCTURED_GRID)
+        # The checkerboard of diagonals mirrors about the strip's centre line, so a symmetric strip cannot twist.
+        rows = 5
+        mirror = lambda i: i//rows*rows + rows-1 - i % rows
+        triangles = {frozenset(face) for face in scene['faces']}
+        self.assertEqual({frozenset(mirror(i) for i in face) for face in triangles}, triangles)
+        # Diagonals take the rigidity under test; only hinges along the strip answer to the other direction.
+        p = fmt.properties()
+        for key, value in dict(weight=100., bend_warp=1e-5, bend_weft=4e-5).items():
+            p[key].update(value=value, origin='estimated')
+        for direction, along, across in (('warp', 1e-5, 4e-5), ('weft', 4e-5, 1e-5)):
+            for hinge in apply_material(scene, p, direction, 'bend')['interior_hinges']:
+                rigidity = across if hinge['warp_fraction'] == 0 else along
+                self.assertAlmostEqual(hinge['compliance']*rigidity*hinge['geometry_factor'], 1)
+        self.assertEqual({round(h['warp_fraction'], 6) for h in scene['interior_hinges']}, {0, .5, 1})
         # Beam theory in the small-deflection limit, then the large-deflection values the fixtures use.
         self.assertAlmostEqual(elastica_drop_mm(1e-3, 100., gravity=.5), .05*.08**4/(8e-3)*1000, places=4)
         self.assertAlmostEqual(elastica_drop_mm(1.989e-5, 79.2), 66.39, places=1)

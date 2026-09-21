@@ -13,11 +13,13 @@ in the browser; the server only prepares geometry and material coefficients.
   normalized dot product of the deformed material axes. Each scalar XPBD
   compliance is 1/(A × stiffness), with multipliers accumulated within a step.
   Hard distance constraints and the garment strain limiter are disabled here.
+- The 10 mm cells are split in a checkerboard of the two diagonals, which is
+  mirror-symmetric about the strip, so a symmetric load cannot twist it.
 - Interior dihedral energy is D/2 × l/h × (theta-theta0)², h=(A0+A1)/(3l).
-  D is an approximate directional interpolation of warp/weft rigidity using
-  the curvature axis perpendicular to the rest UV edge. Compliance is 1/(D l/h).
-  On this structured grid l/h is divided by 2.476 and doubled on the clamp line
-  (see Bending against the elastica).
+  Compliance is 1/(D l/h). Edges across the strip and the diagonals take the
+  rigidity along the strip, the one under test; only edges lying along the
+  strip take the other. On this grid l/h is divided by 2.431 and doubled on the
+  clamp line (see Bending against the elastica and Mesh resolution).
   There is no measured bend/twist coupling or Poisson contraction model.
 - Damping is exp(-rate × dt). Zero disables a property; null uses a labeled
   assumption (stretch 1000 N/m, shear 100 N/m, bend 1e-5 N·m, damping 14/s).
@@ -79,52 +81,59 @@ are consistent with them, so a converged strip extends by exactly
 traction ÷ stiffness on any mesh. Any other reading is solver error, which
 makes it measurable. `benchmarks/swatch_reference.mjs` repeats the GPU solver
 on the CPU step for step; on the application's own scenes it reproduces the
-browser's readings to four figures (polyester warp 0.5259% against the GPU's
-0.526%), so its findings are the GPU's.
+browser's readings to four figures (cupro bend 73.29 / 70.53 mm and shear
+13.51 / 9.71 mm on both), so its findings are the GPU's.
 
 What it found, on the stiff polyester's warp (6571 N/m, exact 0.3804%):
 
 | Substeps × iterations per frame | Reading | Error |
 | --- | --- | --- |
-| 12 × 32 | 3.767% | +890% |
-| 48 × 32, the old setting | 0.526% | +38% |
-| 48 × 128 | 0.357% | −6% |
-| 48 × 512 | 0.380% | −0.04% |
-| 192 × 8, the old cost | 0.409% | +7.5% |
-| 384 × 4, the old cost | 0.386% | +1.5% |
-| 768 × 4 | 0.380% | −0.06% |
+| 12 × 32 | 3.628% | +854% |
+| 48 × 32, the old setting | 0.528% | +39% |
+| 48 × 128 | 0.366% | −3.8% |
+| 48 × 512 | 0.381% | +0.02% |
+| 192 × 8, the old cost | 0.422% | +10.8% |
+| 384 × 4, the old cost | 0.392% | +3.0% |
+| 768 × 4 | 0.381% | +0.01% |
+| 832 × 4, the sized step | 0.380% | −0.10% |
 
-- **Step size, not iterations.** At equal cost, smaller substeps beat more
-  iterations by an order of magnitude, and adding iterations alone converges
+- **Step size, not iterations.** The sized step reads far closer than
+  48 × 128 at about half its cost, and adding iterations alone converges
   slowly and not monotonically. An under-converged solve also drifted a pure
-  pull sideways by up to 0.16 mm; at the sized step it does not.
+  pull sideways by up to 1.5 mm; at the sized step it does not.
 - **Not floating point.** Float32 and float64 agree to four figures at every
   stretch and shear setting, up to 768 substeps. Bending is the exception:
   below about 1/190 of a frame, gravity's per-step increment nears float32
   resolution and the drop wanders by 0.3%, so bending keeps its larger step.
 - **Not the mesh, for stretch.** The exact answer is mesh-independent, and
   the reading matches it. Shear and bending are discretised, so their readings
-  carry the 10 mm mesh's own error, which this study does not remove.
+  carry the 10 mm mesh's own error; Mesh resolution below measures it.
 - **Bending is insensitive.** Its drop moves under 0.3% from 12 × 4 to 192 × 4.
 
 The governing number is XPBD's stiffness ratio for a constraint, Σw|∇C|²·dt² ÷
 compliance: stiffness over mass, times the step squared. The old setting put
 the polyester near 400. `loaded_numerics` sizes the step so the worst
-constraint sits at 2, between 96 and 1024 substeps, with four iterations:
+constraint sits at 1, between 96 and 1024 substeps, with four iterations:
 
 | Fabric | Substeps | Warp / weft error, old | Now |
 | --- | --- | --- | --- |
-| Polyester dobby, 6571 / 3560 N/m | 679 | +38% / +5.4% | −0.13% / −0.02% |
-| Cotton voile, 1675 / 338 N/m | 319 | −6.1% / +0.2% | −0.20% / 0.00% |
-| Cupro, 588 / 1035 N/m | 234 | +0.35% / −1.9% | −0.03% / −0.24% |
+| Polyester dobby, 6571 / 3560 N/m | 832 | +39% / +8.9% | −0.10% / −0.04% |
+| Cotton voile, 1675 / 338 N/m | 390 | −2.4% / +0.1% | −0.03% / −0.01% |
+| Cupro, 588 / 1035 N/m | 286 | +0.2% / −0.9% | −0.01% / −0.02% |
 
-Shear moved the same way: the polyester over-read by 23% and is now within
-0.5% of a far finer solve. **Error budget:** inside the range, every measured
-and synthetic case from 50 to 10 000 N/m read within 0.3% of exact. Past 1024
-substeps the step can shrink no further; the scene says so and the dialog warns.
-There the error grows with the ratio: about 1% at 5, 67% at 26, reached by
-100 000 N/m at 40 g/m². Soft cloth costs less than before, stiff cloth up to
-2.7 times more, which these tests accept.
+The target was 2 until the mesh study. There a light, soft cloth (60 g/m²,
+200 N/m) still read 1.0% low and the cupro's weft 0.36% low; at 1 they read
+0.13% and 0.02% low, for 41% more steps.
+
+Shear moved the same way: the polyester over-read by 29% and is now within
+0.05% of a far finer solve. **Error budget for the step:** inside the range,
+every measured sample reads within 0.1% of exact and every synthetic case from
+60 to 350 g/m² and 50 to 10 000 N/m within 0.2%. Past 1024 substeps the step
+can shrink no further; the scene says so and the dialog warns. That now starts
+sooner, for cloth both light and stiff (60 g/m² above about 7 500 N/m). There
+the error grows with the ratio: 2% at 4, 15% at 8 and 74% at 20, reached by
+100 000 N/m at 40 g/m². Soft cloth costs less than the old fixed step, stiff
+cloth up to 2.7 times more, which these tests accept.
 
 ### Bending against the elastica
 
@@ -138,32 +147,98 @@ Two causes, both in how curvature is lumped onto this mesh:
 
 - Discrete Shells' l/h assumes curvature is shared among three unstructured
   edge directions. On a right-triangle grid bent along a mesh axis only the cross
-  edges and diagonals fold, which over-counts rigidity by 2.4 on paper and 2.476
+  edges and diagonals fold, which over-counts rigidity by 2.4 on paper and 2.431
   measured against a small-deflection cantilever, where beam theory is exact.
 - The hinge on the clamp line stands for half a cell of curvature, not a whole
   one. Treating it as a whole cell left the strip about 3.5% too limp even
   after the first correction.
 
-With both, at the application's own settings:
+With both, at the application's own settings (the last column is the mesh
+the application uses now; Mesh resolution says what changed):
 
-| Fixture | Elastica | Before | Now |
+| Fixture | Elastica | Uncorrected | Checkerboard, 2.431 |
 | --- | --- | --- | --- |
-| Polyester warp, 1.99e-5 N·m | 66.39 mm | 57.37 (−13.6%) | 66.41 (+0.03%) |
-| Polyester weft, 1.36e-5 | 69.69 | 63.85 (−8.4%) | 69.78 (+0.13%) |
-| Cupro warp, 1.00e-5 | 72.87 | 71.12 (−2.4%) | 73.44 (+0.78%) |
-| Cupro weft, 1.60e-5 | 70.49 | 66.14 (−6.2%) | 70.69 (+0.28%) |
-| Voile weft, 2.23e-6 | 76.60 | 77.85 (+1.6%) | 78.14 (+2.0%) |
+| Polyester warp, 1.99e-5 N·m | 66.39 mm | 57.37 (−13.6%) | 66.13 (−0.4%) |
+| Polyester weft, 1.36e-5 | 69.69 | 63.85 (−8.4%) | 69.61 (−0.1%) |
+| Voile warp, 1.00e-5 assumed | 72.28 | | 72.57 (+0.4%) |
+| Cupro warp, 1.00e-5 | 72.87 | 71.12 (−2.4%) | 73.28 (+0.6%) |
+| Cupro weft, 1.60e-5 | 70.49 | 66.14 (−6.2%) | 70.53 (+0.05%) |
+| Voile weft, 2.23e-6 | 76.60 | 77.85 (+1.6%) | 78.11 (+2.0%) |
 
 **Error budget:** within 1% of the elastica up to a 72 mm drop, rising smoothly
 to 2.5% for the limpest fabrics, which curl at the clamp more tightly than a
-10 mm cell can follow. On the GPU a 140 g/m² cupro read 74.73 mm against the
-elastica's 73.9 mm, +1.1%. The calibration is weakly anisotropy-dependent, 1.88 to 2.23 across a
-sixteen-fold range of across/along rigidity, which is within that budget. It
-belongs to this grid: another mesh needs its own small-deflection check. The
-dialog shows the elastica's drop beside the reading.
+10 mm cell can follow. On the GPU the cupro read 73.29 / 70.53 mm, the CPU
+reference's own figures. The dialog shows the elastica's drop beside the reading.
 
 Earlier drops quoted in this document and in FabricSources.md were read before
 this correction and are too small by the amounts above.
+
+### Mesh resolution
+
+The application's grid is fixed at 10 mm, 50 vertices in one GPU workgroup.
+`benchmarks/swatch_mesh.mjs` builds the same strip at any cell size, and is
+tested to equal the application's scenes at 10 mm; `benchmarks/swatch_refinement.mjs`
+solves it on 10, 5 and 2.5 mm cells in float64. Finer cells need finer steps:
+a membrane's stiffness ratio grows as 1/h², a hinge's as 1/h⁴. Doubling the
+step count at 5 mm moved no reading by more than 0.03%.
+
+**Shear has no exact answer, and the 10 mm grid reads it low.** The strip is a
+short cantilever loaded sideways, so it bends in its own plane as well as
+shearing, and linear triangles are stiff in that mode. The mesh-converged value
+is a Richardson extrapolation of the three readings (observed order 1.3 to 1.75):
+
+| Fixture | 10 mm | 5 mm | 2.5 mm | Converged | Error at 10 mm | at 5 mm |
+| --- | --- | --- | --- | --- | --- | --- |
+| Polyester warp | 5.071 mm | 5.363 | 5.484 | 5.569 | −8.9% | −3.7% |
+| Polyester weft | 5.835 | 6.219 | 6.359 | 6.440 | −9.4% | −3.4% |
+| Voile warp | 7.686 | 8.249 | 8.431 | 8.518 | −9.8% | −3.2% |
+| Voile weft | 19.505 | 21.530 | 22.130 | 22.384 | −12.9% | −3.8% |
+| Cupro warp | 13.507 | 14.767 | 15.146 | 15.308 | −11.8% | −3.5% |
+| Cupro weft | 9.706 | 10.476 | 10.711 | 10.813 | −10.2% | −3.1% |
+
+How the cells are split does not matter here: the cupro's warp converges to
+15.308, 15.323 and 15.311 mm for the checkerboard and the two uniform splits.
+**Error budget:** the shear reading is 9 to 13% low, most for cloth that
+stretches easily, on top of a step error under 0.1%. The dialog says so. It
+ranks fabrics; it is not a measurement from which to read a shear stiffness.
+A 5 mm grid would still read 3 to 4% low and no longer fits one workgroup.
+
+**Bending has the elastica, and the 10 mm grid is as close as finer ones.**
+With the 10 mm calibration held fixed:
+
+| Fixture | Elastica | 10 mm | 5 mm | 2.5 mm |
+| --- | --- | --- | --- | --- |
+| Polyester warp | 66.39 mm | −0.4% | −0.7% | −0.6% |
+| Polyester weft | 69.69 | −0.1% | −0.7% | −0.6% |
+| Voile warp | 72.28 | +0.4% | −0.3% | −0.1% |
+| Cupro warp | 72.87 | +0.6% | −0.4% | −0.4% |
+| Cupro weft | 70.49 | +0.05% | −0.4% | −0.3% |
+| Voile weft | 76.60 | +2.0% | +0.3% | −0.2% |
+
+Only the limp voile gains from finer cells, which confirms that its 2% is the
+tight curl at the clamp. The others drift slightly low because the grid factor
+is not quite a constant: a small-deflection cantilever needs 2.431 at 10 mm,
+2.483 at 5 mm and 2.466 at 3.3 mm. The clamp holds the first cells flat, which
+stops the relaxation that gives 2.4 on paper, over a length set by the strip's
+width rather than the cell. The calibration belongs to this grid: another mesh
+needs its own small-deflection check.
+
+The study also found two faults in the fixture itself, both now fixed:
+
+- **The strip twisted.** Every cell was split along the same diagonal. That
+  couples bending to twist (on paper a curvature κ along the strip induces a
+  twist κ/5), so one corner of the free edge hung lower than the other: 1.2 mm
+  for the voile's weft, 3.3 mm for the cupro's warp and 5.8 mm for the
+  polyester's, across a 40 mm edge. Mirroring the split reversed the sign. A
+  checkerboard of the two diagonals is mirror-symmetric about the strip and
+  hangs level to 0.05 mm, with the same drop.
+- **The across-strip rigidity leaked into the answer.** Diagonal hinges took
+  the mean of the two rigidities, and they take part in how this grid bends. A
+  small-deflection cantilever then behaved as if its rigidity were 2.17 to
+  2.73 times the hinge value as the across/along ratio went from a quarter to
+  four: an error of 11% either way in the rigidity under test, for fabrics
+  whose two directions differ (the voile's by 4.5). With diagonals taking the
+  rigidity along the strip the range is 2.40 to 2.47, under 2%.
 
 This settles numerical behaviour only. It says nothing about whether a real
 fabric follows a linear law, and no physical specimen has been compared. It does
@@ -184,13 +259,17 @@ The comparison was also inspected at a 390 × 844 mobile viewport without
 horizontal overflow. These are diagnostics, not portable golden values.
 The interactive bend budget gave 71.118/66.145 mm tip drop, versus
 70.994/65.989 mm with refinement, below 0.16 mm difference on this fixture.
+Those figures predate the bending calibration and the checkerboard mesh. On the
+current fixture the GPU reads the cupro at 73.29 / 70.53 mm drop, 4.25 / 2.41%
+extension and 13.51 / 9.71 mm shear, each equal to the CPU reference.
 Loaded tests prioritize numerical accuracy and can run slower than real time.
 
 ```powershell
 python -m unittest test_fabrics test_browser_preview test_button_closures test_dress_shirt_collar -q
 node --test benchmarks/test_swatch.mjs benchmarks/test_simulation_clock.mjs benchmarks/test_browser_drape.mjs benchmarks/test_collar_placement.mjs benchmarks/test_button_closures.mjs
-node --test benchmarks/test_swatch_convergence.mjs    # about a minute: loaded tests against their exact answers
+node --test benchmarks/test_swatch_convergence.mjs    # about two minutes: exact answers, mesh symmetry, the shear budget
 node benchmarks/swatch_reference.mjs --substeps=48 --iterations=32    # reproduce any row above
+node benchmarks/swatch_refinement.mjs                 # the Mesh resolution tables, about 40 minutes; --mode=factor for the grid factor
 ```
 
 `benchmarks/swatch_fixtures.json` holds the solver inputs of the application's

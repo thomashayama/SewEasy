@@ -4,6 +4,8 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {simulate,fixtures} from './swatch_reference.mjs';
+import {swatchScene} from './swatch_mesh.mjs';
+import {material,gridFactor,reading} from './swatch_refinement.mjs';
 
 const scenes=fixtures(),named=mode=>Object.entries(scenes).filter(([name])=>name.endsWith('/ '+mode));
 // Relative error exposes a stiff fabric's 0.38% strain; the absolute bound, in
@@ -24,9 +26,12 @@ test('the old fixed step fails the same tolerance, which is what this guards',()
   const scene=scenes['polyester dobby / warp / stretch'],expected=scene.fabric_test.expected_extension_percent;
   const before=simulate(scene,{substeps:48,iterations:32,seconds:2.5});
   assert.ok(before.extension/expected-1>.3,`48 x 32 read ${before.extension.toFixed(4)}%`);     // the documented +38%
-  // More iterations at the same step are the wrong cure; smaller steps at equal cost are the right one.
-  const iterated=simulate(scene,{substeps:48,iterations:128,seconds:2.5}),stepped=simulate(scene,{substeps:384,iterations:4,seconds:2.5});
-  assert.ok(Math.abs(stepped.extension/expected-1)<Math.abs(iterated.extension/expected-1)/2);
+  // More iterations at the same step are the wrong cure: the sized step does ten times better at little over half the cost.
+  const iterated=simulate(scene,{substeps:48,iterations:128,seconds:2.5}),sized=simulate(scene,{seconds:2.5});
+  const {substeps,iterations}=scene.fabric_test.numerics;
+  assert.ok(substeps*iterations<48*128*.6);
+  assert.ok(Math.abs(sized.extension/expected-1)<Math.abs(iterated.extension/expected-1)/10,
+    `${sized.extension.toFixed(4)}% against ${iterated.extension.toFixed(4)}%`);
 });
 
 test('float32 state is not the limit: it matches float64 at the sized step',()=>{
@@ -57,4 +62,50 @@ test('bending is insensitive to the step, so the interactive setting is kept',()
   const scene=scenes['cupro / warp / bend'];
   const interactive=simulate(scene,{seconds:4}),fine=simulate(scene,{substeps:96,iterations:8,precision:64,seconds:4});
   assert.ok(Math.abs(interactive.drop/fine.drop-1)<RELATIVE,`${interactive.drop.toFixed(3)} vs ${fine.drop.toFixed(3)} mm`);
+});
+
+// Mesh resolution (benchmarks/swatch_refinement.mjs). The refined strips come from swatch_mesh.mjs,
+// which is only worth refining if at the application's cell size it is the application's scene.
+test('the refinable strip equals the scenes the application builds at 10 mm',()=>{
+  const close=(a,b)=>Math.abs(a-b)<=1e-9*Math.max(1,Math.abs(a),Math.abs(b));
+  for(const [name,scene] of Object.entries(scenes)){
+    const [sample,direction,mode]=name.split(' / '),mine=swatchScene({...material(sample,direction),mode});
+    assert.deepEqual(mine.membrane_batches,scene.membrane_batches,name);
+    assert.deepEqual(mine.interior_hinge_batches,scene.interior_hinge_batches,name);
+    assert.deepEqual(mine.swatch.tip,scene.swatch.tip);
+    assert.ok(scene.vertices.every((q,i)=>q.every((x,k)=>close(x,mine.vertices[i][k]))),name);
+    assert.ok(scene.inverse_mass.every((w,i)=>close(w,mine.inverse_mass[i])),name);
+    assert.ok(scene.external_forces.every((f,i)=>f.every((x,k)=>close(x,mine.external_forces[i][k]))),name);
+    scene.membranes.forEach((m,i)=>{
+      assert.deepEqual(m.ids,mine.membranes[i].ids);
+      for(const key of ['u','v','compliance'])assert.ok(m[key].every((x,k)=>close(x,mine.membranes[i][key][k])),`${name} membrane ${i}.${key}`);
+    });
+    scene.interior_hinges.forEach((h,i)=>{
+      assert.deepEqual(h.ids,mine.interior_hinges[i].ids);
+      assert.ok(close(h.compliance,mine.interior_hinges[i].compliance),`${name} hinge ${i}`);
+    });
+    if(mode!=='bend')assert.equal(mine.fabric_test.numerics.substeps,scene.fabric_test.numerics.substeps,name);
+  }
+});
+
+test('a symmetric strip hangs level; splitting every cell the same way made it twist',()=>{
+  for(const [name,scene] of named('bend'))
+    assert.ok(Math.abs(simulate(scene,{seconds:5}).tilt)<.1,`${name}: one corner hangs lower`);
+  const uniform=swatchScene({...material('polyester dobby','warp'),mode:'bend',pattern:'uniform',diagonal:'blend',structuredGrid:2.476});
+  assert.ok(Math.abs(simulate(uniform,{seconds:5}).tilt)>3);                       // 5.8 mm across a 40 mm edge
+});
+
+test('the bend test answers to the rigidity along the strip, not the one across it',()=>{
+  // Diagonal hinges that blended both directions moved this by 10% either way.
+  const factors=[.25,1,4].map(across=>gridFactor(1,{across}));
+  for(const factor of factors)assert.ok(Math.abs(factor/2.431-1)<.02,`grid factor ${factor.toFixed(4)}`);
+  const blended=[.25,4].map(across=>gridFactor(1,{across,diagonal:'blend'}));
+  assert.ok(blended[1]/blended[0]>1.2);
+});
+
+test('the 10 mm grid reads shear low by the documented amount',()=>{
+  // No exact answer exists for this test, so the reference is the same strip on 5 mm cells:
+  // 8.5% more movement for cupro, on the way to a mesh-converged 11.7% (docs/FabricSwatch.md).
+  const coarse=reading('cupro','warp','shear',1).value,fine=reading('cupro','warp','shear',2).value;
+  assert.ok(coarse/fine-1<-.07&&coarse/fine-1>-.10,`${coarse.toFixed(3)} mm at 10 mm, ${fine.toFixed(3)} mm at 5 mm`);
 });

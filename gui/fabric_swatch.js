@@ -40,8 +40,9 @@ export default {
         <p v-else>Weight is identical. Differences come from the fabric’s directional properties.</p>
         <p v-if="mode==='stretch' && material?.expected_extension_percent!=null">Linear strip prediction, warp: {{material.expected_extension_percent.toFixed(2)}}% extension. The clamped mesh approximates this response.</p>
         <p v-if="mode==='bend' && material?.expected_drop_mm!=null">Exact clamped strip (heavy elastica), warp: {{material.expected_drop_mm.toFixed(1)}} mm drop. The 10 mm mesh follows it within 1% up to a 72 mm drop, and within 2.5% for limper fabrics.</p>
-        <p v-if="material?.numerics && material.numerics.validated">Solver step sized for this fabric: {{material.numerics.substeps}} substeps per frame. Within this range the reading is within 0.3% of the exact strip.</p>
-        <p v-if="material?.numerics && !material.numerics.validated" class="se-swatch-warning" role="note">This fabric is stiffer for its weight than the solver’s validated range (stiffness ratio {{material.numerics.stiffness_ratio.toFixed(1)}}, validated to 2). Its reading may be wrong by more than 1%.</p>
+        <p v-if="material?.numerics && material.numerics.validated">Solver step sized for this fabric: {{material.numerics.substeps}} substeps per frame. {{mode==='stretch'?'Within this range the reading is within 0.2% of the exact strip.':'Within this range the step adds under 0.2%.'}}</p>
+        <p v-if="mode==='shear'" role="note">No exact answer exists for this test. Against the same strip on a mesh-converged grid, the 10 mm mesh reads this movement 9–13% low, most for cloth that stretches easily. Compare fabrics with it; do not read a shear stiffness from it.</p>
+        <p v-if="material?.numerics && !material.numerics.validated" class="se-swatch-warning" role="note">This fabric is stiffer for its weight than the solver’s validated range (stiffness ratio {{material.numerics.stiffness_ratio.toFixed(1)}}, validated to 1). Its reading may be wrong by more than 1%.</p>
       </div>
       <svg v-if="mode==='bend'" viewBox="-17 -12 115 105" role="img" aria-label="Swatch side profiles on an equal millimetre scale">
         <g class="se-swatch-grid">

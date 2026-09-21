@@ -83,8 +83,10 @@ export function simulate(scene,{substeps,iterations,seconds=8,precision=32,order
   }
 
   const tip=scene.swatch.tip,length=scene.swatch.length_m,height=scene.swatch.height_m;
+  // `tilt` is how much lower one corner of the free edge hangs than the other: a symmetric strip has none.
   const reading=()=>({extension:(tip.reduce((s,i)=>s+p[i*3],0)/tip.length/length-1)*100,
-    drop:(height-tip.reduce((s,i)=>s+p[i*3+1],0)/tip.length)*1000,shear:tip.reduce((s,i)=>s+p[i*3+2],0)/tip.length*1000});
+    drop:(height-tip.reduce((s,i)=>s+p[i*3+1],0)/tip.length)*1000,shear:tip.reduce((s,i)=>s+p[i*3+2],0)/tip.length*1000,
+    tilt:(p[tip[0]*3+1]-p[tip[tip.length-1]*3+1])*1000});
   const key=bending?'drop':scene.fabric_test.mode==='shear'?'shear':'extension',history=[];
   const frames=Math.round(seconds/FRAME);
   for(let frame=0;frame<frames;frame++){

@@ -37,7 +37,10 @@ def swatch_scene():
     for x in range(columns-1):
         for z in range(rows-1):
             a, b, c, d = x*rows+z, (x+1)*rows+z, x*rows+z+1, (x+1)*rows+z+1
-            faces.extend(([a, c, b], [c, d, b]))
+            # A checkerboard of the two diagonals is mirror-symmetric about the strip.
+            # Splitting every cell the same way made a bent strip twist: one corner
+            # of the free edge hung 1-6 mm lower than the other.
+            faces.extend(([a, c, d], [a, d, b]) if (x+z) % 2 else ([a, c, b], [c, d, b]))
     faces = np.array(faces)
     # Visible clamp only; collision is deliberately off in this isolated test.
     clamp = trimesh.creation.box(extents=[.024, .006, .05])
@@ -93,9 +96,11 @@ def swatch_scene():
 # Discrete Shells' l/h assumes curvature is shared among three unstructured edge
 # directions. On this right-triangle grid, bent along a mesh axis, only the
 # cross edges and the diagonals fold, which over-counts rigidity by 2.4 on paper
-# and 2.476 measured against a small-deflection cantilever. Without it the strip
-# bent as if twice as stiff as the value entered.
-STRUCTURED_GRID = 2.476
+# and 2.431 measured on this 10 mm checkerboard against a small-deflection
+# cantilever, where beam theory is exact. Without it the strip bent as if twice
+# as stiff as the value entered. The value belongs to this grid: the clamp holds
+# the first cells flat, so finer cells need slightly more (benchmarks/swatch_refinement.mjs).
+STRUCTURED_GRID = 2.431
 
 
 def elastica_drop_mm(rigidity, weight_gsm, length=.08, gravity=9.81):
@@ -127,9 +132,10 @@ DEFAULTS = dict(stretch_warp=1000., stretch_weft=1000., shear=100.,
 # XPBD converges in a substep only while a constraint's stiffness ratio
 # sum(w |grad C|^2) dt^2 / compliance stays near one. A fixed 48 substeps put a
 # stiff polyester near 400 and over-read its extension by 38%; holding the
-# worst ratio at 2 keeps every measured sample within 0.2% of the exact strip.
+# worst ratio at 1 keeps every measured sample within 0.1% of the exact strip, and
+# every synthetic one within 0.2%; at 2 a light, soft cloth still read 1% low.
 FRAME = 1/60
-STIFFNESS_RATIO = 2.
+STIFFNESS_RATIO = 1.
 SUBSTEPS = (96, 1024)
 LOADED_ITERATIONS = 4
 
@@ -171,8 +177,10 @@ def apply_material(scene, properties, direction='warp', mode='bend'):
             raise ValueError('These properties exceed the numeric range of the browser simulator.')
         return value
     for hinge in result['interior_hinges']:
-        fraction = hinge['warp_fraction']
-        rigidity = fraction*du + (1-fraction)*dv
+        # Only hinges lying along the strip resist the other direction. A diagonal
+        # that blended both let the across-strip rigidity change this test's answer
+        # by up to 10%; taking the rigidity under test holds that to 1.5%.
+        rigidity = du if hinge['warp_fraction'] > 0 else dv
         hinge['compliance'] = compliance(rigidity*hinge['geometry_factor'])
     uv = np.asarray(result['uv'])
     membranes = []
