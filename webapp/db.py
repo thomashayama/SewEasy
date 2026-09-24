@@ -49,6 +49,8 @@ def _migrate():
                     'fabric_color': 'VARCHAR'},
         'users': {'units': "VARCHAR DEFAULT 'in' NOT NULL"},
         'wardrobe_shares': {'visibility': 'VARCHAR'},
+        # DEFAULT backfills existing rows: every earlier invitation was read-only
+        'wardrobe_invitations': {'role': "VARCHAR DEFAULT 'viewer' NOT NULL"},
     }
     inspector = inspect(engine)
     for table, columns in added.items():
@@ -64,3 +66,6 @@ def _migrate():
         conn.execute(text(
             'CREATE INDEX IF NOT EXISTS ix_oauth_states_created_at '
             'ON oauth_states (created_at)'))
+
+    from webapp.access import migrate_profile_shares
+    migrate_profile_shares(engine)

@@ -181,7 +181,13 @@ class AgentRender(Base):
 
 
 class WardrobeShare(TimestampMixin, Base):
-    """Access to a named item. revision_id is its stable ID (legacy column name)."""
+    """The access record of one garment, outfit, fabric or body profile.
+
+    The table name dates from when only wardrobe items could be shared; see
+    webapp/access.py for the model. revision_id is the item's stable ID (a
+    legacy column name), stored as text for every kind. No record means
+    private: one is created the first time the owner opens sharing.
+    """
     __tablename__ = 'wardrobe_shares'
     __table_args__ = (UniqueConstraint('owner_key', 'kind', 'revision_id', name='uq_wardrobe_share_revision'),)
     id = Column(String, primary_key=True)  # Unguessable capability for link access.
@@ -199,12 +205,16 @@ class WardrobeShare(TimestampMixin, Base):
 
 
 class WardrobeInvitation(Base):
-    """Invitations appear when the recipient signs in with this verified email."""
+    """A member of an access record: a viewer or an admin, never the owner.
+
+    Membership appears when the recipient signs in with this verified email.
+    """
     __tablename__ = 'wardrobe_invitations'
     __table_args__ = (UniqueConstraint('share_id', 'recipient_email', name='uq_wardrobe_invitation'),)
     id = Column(Integer, primary_key=True, autoincrement=True)
     share_id = Column(String, ForeignKey('wardrobe_shares.id', ondelete='CASCADE'), nullable=False, index=True)
     recipient_email = Column(String, nullable=False, index=True)
+    role = Column(String, nullable=False, default='viewer', server_default='viewer')
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     share = relationship('WardrobeShare', back_populates='invitations')
 
@@ -243,7 +253,8 @@ class FinishedPhoto(TimestampMixin, Base):
 
 
 class BodyProfileShare(Base):
-    """Read access to a body profile granted to another user.
+    """Legacy read access to a body profile, emptied into viewer members of
+    the unified access records at startup (webapp.access).
 
     The recipient is keyed on their (lowercased) email rather than a User
     FK, so an item can be shared with someone before their first sign-in;

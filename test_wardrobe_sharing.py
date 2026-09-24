@@ -26,7 +26,7 @@ class SharingTest(unittest.TestCase):
             db.add_all([User(email='alice@example.com', name='Alice'), User(email='bob@example.com', name='Bob'),
                         User(email='mallory@example.com', name='Mallory')])
             db.commit()
-        self.patches = [patch('webapp.' + module + '.SessionLocal', self.sessions) for module in ('wardrobe', 'wardrobe_sharing')]
+        self.patches = [patch('webapp.' + module + '.SessionLocal', self.sessions) for module in ('wardrobe', 'wardrobe_sharing', 'access')]
         for p in self.patches:
             p.start()
         self.alice, self.bob, self.mallory = [Wardrobe(email=email + '@example.com') for email in ('alice', 'bob', 'mallory')]
@@ -42,7 +42,9 @@ class SharingTest(unittest.TestCase):
         self.tmp.cleanup()
 
     def test_private_default_and_owner_only_controls(self):
-        self.assertEqual(self.owner.settings(self.token), dict(public_link=False, visibility='private', recipients=[]))
+        settings = self.owner.settings(self.token)
+        self.assertEqual({k: settings[k] for k in ('public_link', 'visibility', 'recipients', 'members', 'role')},
+                         dict(public_link=False, visibility='private', recipients=[], members=[], role='owner'))
         self.assertEqual(self.owner.ensure('garment', self.g['id']), self.token)
         for viewer in (self.reader, self.guest, WardrobeSharing(self.mallory)):
             for action in (lambda: viewer.get(self.token), lambda: viewer.fork(self.token),

@@ -35,17 +35,14 @@ SHARE_RESULT_MESSAGES = {
 
 async def open_share_dialog(owner_email: str, kind: str, item_id: int,
                             item_name: str):
-    """Dialog to share a body profile or design with other users by email
-    and to see/revoke who it is already shared with.
-    `kind` is 'profile' or 'design'."""
-    if kind == 'profile':
-        share_fn = sharing.share_profile
-        recipients_fn = sharing.profile_recipients
-        revoke_fn = sharing.revoke_profile_share
-    else:
-        share_fn = sharing.share_design
-        recipients_fn = sharing.design_recipients
-        revoke_fn = sharing.revoke_design_share
+    """Dialog to share a legacy saved design with other users by email and
+    to see/revoke who it is already shared with. `kind` is 'design'; every
+    other item uses webapp.access_ui."""
+    if kind != 'design':
+        raise ValueError('Only earlier saved designs use this dialog.')
+    share_fn = sharing.share_design
+    recipients_fn = sharing.design_recipients
+    revoke_fn = sharing.revoke_design_share
 
     with ui.dialog() as dialog, ui.card().classes('items-center'):
         ui.label(f'Share "{item_name}"').classes('font-medium')
@@ -218,12 +215,9 @@ def body_source_ui(state):
                 select.set_options(options())
         elif email and (isinstance(e.value, int)
                         or str(e.value).startswith(SHARED_PREFIX)):
-            if isinstance(e.value, int):
-                data = await run.io_bound(profiles.get_profile, email, e.value)
-            else:
-                data = await run.io_bound(
-                    sharing.get_shared_profile, email,
-                    int(e.value[len(SHARED_PREFIX):]))
+            # Yours or shared with you: either way the profile's own access decides.
+            profile_id = e.value if isinstance(e.value, int) else int(e.value[len(SHARED_PREFIX):])
+            data = await run.io_bound(profiles.get_profile, email, profile_id)
             if data is None:
                 ui.notify('Saved measurements not found', type='negative')
                 return
@@ -237,8 +231,8 @@ def body_source_ui(state):
         if email:
             for row in profiles.list_profiles(email):
                 opts[row['id']] = row['name']
-            for row in sharing.shared_profiles_with_me(email):
-                opts[f'{SHARED_PREFIX}{row["profile_id"]}'] = \
+            for row in profiles.shared_profiles(email):
+                opts[f'{SHARED_PREFIX}{row["id"]}'] = \
                     f'{row["name"]} — shared by {row["owner_name"]}'
         return opts
 

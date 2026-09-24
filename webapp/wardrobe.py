@@ -107,7 +107,8 @@ class Wardrobe:
 
     def _sync_shares(self, db, library):
         from webapp.wardrobe_sharing import _snapshot
-        for row in db.query(WardrobeShare).filter_by(owner_key=self.owner_key):
+        for row in db.query(WardrobeShare).filter(WardrobeShare.owner_key == self.owner_key,
+                                                  WardrobeShare.kind.in_(('garment', 'outfit'))):
             records = library['garments' if row.kind == 'garment' else 'outfits']
             item = next((x for x in records if x['id'] == row.revision_id), None)
             if item:
@@ -236,9 +237,27 @@ class Wardrobe:
                 raise ValueError('Unknown item type.')
             return deepcopy(result)
 
-    def delete_outfit(self, outfit_id):
+    def delete_item(self, kind, item_id):
+        """Delete a garment or outfit along with its access, bookmarks and photos.
+
+        Outfits embed their garments, so deleting a garment leaves them intact.
+        Copies other people saved are theirs and remain.
+        """
+        if kind not in ('garment', 'outfit'):
+            raise ValueError('Unknown item type.')
+        from webapp.access import forget
         with self._edit() as library:
-            library['outfits'] = [o for o in library['outfits'] if o['id'] != outfit_id]
+            bucket = 'garments' if kind == 'garment' else 'outfits'
+            if not any(item['id'] == item_id for item in library[bucket]):
+                raise ValueError('This item is not in your library.')
+            library[bucket] = [item for item in library[bucket] if item['id'] != item_id]
+            library.get('thumbnails', {}).pop(f'{kind}:{item_id}', None)
+        with SessionLocal() as db:
+            forget(db, kind, item_id)
+            db.commit()
+
+    def delete_outfit(self, outfit_id):
+        self.delete_item('outfit', outfit_id)
 
     def save_thumbnail(self, kind, item_id, image, *, items=None):
         from webapp.garment_catalog import standard_garments
@@ -255,3 +274,50 @@ class Wardrobe:
                 raise ValueError('The design changed while its thumbnail was rendering.')
             library.setdefault('thumbnails', {})[key] = normalized
         return normalized
+
+
+def delete_item(kind, item_id, owner):
+    """For webapp.access, once an admin's role is checked."""
+    Wardrobe(owner).delete_item(kind, item_id)
+
+
+def transfer_item(kind, item_id, old_owner, new_owner):
+    """Move a garment or outfit between two account libraries in one transaction.
+
+    Its ID, share link, thumbnail and finished photos go with it; a name the
+    new owner already uses gains a number. Returns the moved item.
+    """
+    from webapp.access import reassign, unique_name
+    from webapp.models import FinishedPhoto, User
+    bucket = 'garments' if kind == 'garment' else 'outfits'
+    with SessionLocal() as db:
+        if db.bind.dialect.name == 'sqlite':
+            db.execute(text('BEGIN IMMEDIATE'))
+        else:
+            # Both owners' rows, in a stable order, as Wardrobe._edit locks one.
+            db.query(User).filter(User.email.in_(sorted((old_owner, new_owner)))).order_by(
+                User.email).with_for_update().all()
+        rows = {email: db.get(WardrobeLibrary, email) for email in (old_owner, new_owner)}
+        source, target = (normalize_library(rows[email].content if rows[email] else None)
+                          for email in (old_owner, new_owner))
+        item = next((x for x in source[bucket] if x['id'] == item_id), None)
+        if item is None:
+            raise ValueError('This item is no longer available.')
+        share = reassign(db, kind, item_id, old_owner, new_owner)
+        source[bucket].remove(item)
+        item['name'] = unique_name(item['name'], [x['name'] for x in target[bucket]])
+        target[bucket].append(item)
+        image = source.get('thumbnails', {}).pop(f'{kind}:{item_id}', None)
+        if image:
+            target.setdefault('thumbnails', {})[f'{kind}:{item_id}'] = image
+        for email, library in ((old_owner, source), (new_owner, target)):
+            if rows[email] is None:
+                rows[email] = WardrobeLibrary(owner_email=email)
+                db.add(rows[email])
+            rows[email].content = deepcopy(library)
+        from webapp.wardrobe_sharing import _snapshot
+        share.snapshot = _snapshot(item, kind)
+        db.query(FinishedPhoto).filter_by(owner_email=old_owner, kind=kind, item_id=item_id).update(
+            dict(owner_email=new_owner), synchronize_session=False)
+        db.commit()
+        return deepcopy(item)

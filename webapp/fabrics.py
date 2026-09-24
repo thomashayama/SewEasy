@@ -1,4 +1,10 @@
-"""Account-owned fabric records and immutable, body-independent snapshots."""
+"""Account-owned fabric records and immutable, body-independent snapshots.
+
+Fabrics follow the shared access model in webapp/access.py: viewers read,
+export and copy one; admins also edit and delete it; the owner alone can
+transfer it. Purchase sources' private notes are the owner's alone: nobody
+else reads them, an admin's save keeps them, and a transfer drops them.
+"""
 from copy import deepcopy
 import re
 from uuid import uuid4
@@ -9,6 +15,7 @@ from sqlalchemy.exc import IntegrityError
 from gui.fabric_library import FABRIC_PRESETS
 from webapp.db import SessionLocal
 from webapp.models import Fabric
+from webapp import access
 from webapp import fabric_formats as formats
 
 
@@ -24,17 +31,35 @@ def _name(name):
     return name.strip()
 
 
-def _record(row):
-    return dict(id=row.id, name=row.name, content=deepcopy(row.content), edit_token=row.edit_token,
+def _private(content, role):
+    """Everyone but the owner reads purchase sources with the owner's notes blank, as an import has them."""
+    if role != 'owner' and content.get('purchase_sources'):
+        from webapp.fabric_sources import PRIVATE
+        content['purchase_sources'] = [dict(source, **dict.fromkeys(PRIVATE, ''))
+                                       for source in content['purchase_sources']]
+    return content
+
+
+def _record(row, role='owner', owner_name=None):
+    return dict(id=row.id, name=row.name, content=_private(deepcopy(row.content), role), edit_token=row.edit_token,
                 created_at=row.created_at, updated_at=row.updated_at, standard=False,
-                has_source=bool(row.source_name))
+                has_source=bool(row.source_name), role=role, owner_name=owner_name)
 
 
-def _owned(db, email, identity):
-    row = db.scalar(select(Fabric).where(Fabric.id == identity, Fabric.owner_email == _email(email)))
-    if row is None:
+def _open(db, email, identity, minimum='viewer'):
+    """A saved fabric and the caller's role on it. A guest may open a linked or public one."""
+    email = email.strip().lower() if isinstance(email, str) and email.strip() else None
+    row = db.get(Fabric, identity) if isinstance(identity, str) else None
+    current = access.item_role(db, 'fabric', identity, email, row.owner_email) if row else None
+    if current is None:
         raise ValueError('Fabric unavailable.')
-    return row
+    if access.RANK[current] < access.RANK[minimum]:
+        raise ValueError('Only the fabric’s owner or an admin can change it.')
+    return row, current
+
+
+def _opened(db, row, role):
+    return _record(row, role, None if role == 'owner' else access.display_name(db, row.owner_email))
 
 
 def _normalized_content(row):
@@ -94,16 +119,32 @@ def list_fabrics(email):
             Fabric.owner_email == _email(email)).order_by(Fabric.updated_at.desc()))]
 
 
+def shared_fabrics(email):
+    """Fabrics others share with you, as a member or their friend, with your role on each."""
+    views = access.Access(_email(email)).shared_with_me(('fabric',))
+    with SessionLocal() as db:
+        rows = {r.id: r for r in db.scalars(select(Fabric).where(
+            Fabric.id.in_([v['revision_id'] for v in views])))} if views else {}
+        return [dict(_record(rows[v['revision_id']], v['role'], v['owner_name']), share_id=v['id'],
+                     is_member=v['is_member']) for v in views if v['revision_id'] in rows]
+
+
+def listed(email, identity):
+    """A list entry for any fabric you can open, without reading its stored file."""
+    with SessionLocal() as db:
+        return _opened(db, *_open(db, email, identity))
+
+
 def get_fabric(email, identity):
-    _email(email)
     if identity.startswith('standard:'):
+        _email(email)
         for item in standard_fabrics():
             if item['id'] == identity:
                 return item
         raise ValueError('Fabric unavailable.')
     with SessionLocal() as db:
-        row = _owned(db, email, identity)
-        return dict(_record(row), content=_normalized_content(row))
+        row, role = _open(db, email, identity)
+        return dict(_opened(db, row, role), content=_private(_normalized_content(row), role))
 
 
 def _create(email, name, content, source_bytes=None, source_name=None):
@@ -147,11 +188,12 @@ def _copy_name(email, name, imported=False):
 
 
 def copy_fabric(email, identity, name=None):
+    """Your own private copy of any fabric you can open (a viewer's fork)."""
     source = get_fabric(email, identity)
     raw = filename = None
     if not source['standard']:
         with SessionLocal() as db:
-            row = _owned(db, email, identity)
+            row, _ = _open(db, email, identity)
             raw, filename = row.source_bytes, row.source_name
     return _create(email, name or _copy_name(email, source['name']), source['content'], raw, filename)
 
@@ -171,7 +213,7 @@ def imported_properties(email, identity):
     if identity.startswith('standard:'):
         return {}
     with SessionLocal() as db:
-        return _imported(_owned(db, email, identity))
+        return _imported(_open(db, email, identity)[0])
 
 
 def update_fabric(email, identity, edit_token, *, name, description, values, restore=(), display_color=None,
@@ -181,11 +223,12 @@ def update_fabric(email, identity, edit_token, *, name, description, values, res
     `restore` names properties to take back from the imported file, provenance
     included. `display_color` is left alone when None and cleared when empty.
     `sources` replaces the places to buy the fabric; None leaves them alone.
+    The owner or an admin may save; an admin's save keeps the owner's notes.
     """
     if identity.startswith('standard:'):
         raise ValueError('Save a copy before editing a standard fabric.')
     with SessionLocal() as db:
-        row = _owned(db, email, identity)
+        row, role = _open(db, email, identity, 'admin')
         content = _normalized_content(row)
         if not isinstance(description, str) or len(description) > 4000:
             raise ValueError('Keep the description under 4,000 characters.')
@@ -198,8 +241,14 @@ def update_fabric(email, identity, edit_token, *, name, description, values, res
             if display_color:
                 look['display_color'] = display_color.lower()
         if sources is not None:
-            from webapp.fabric_sources import validate
-            content['purchase_sources'] = validate(sources)
+            from webapp.fabric_sources import PRIVATE, validate
+            sources = validate(sources)
+            if role != 'owner':
+                kept = {s['id']: s for s in content.get('purchase_sources') or []}
+                for source in sources:
+                    for key in PRIVATE:
+                        source[key] = kept.get(source['id'], {}).get(key, '')
+            content['purchase_sources'] = sources
         if not isinstance(values, dict) or not set(values) <= set(formats.PROPERTY_UNITS):
             raise ValueError('Unknown fabric property.')
         restore = set(restore) - set(values)
@@ -219,16 +268,56 @@ def update_fabric(email, identity, edit_token, *, name, description, values, res
         formats.validate_properties(content['properties'])
         try:
             changed = db.execute(update(Fabric).where(
-                Fabric.id == identity, Fabric.owner_email == _email(email), Fabric.edit_token == edit_token
+                Fabric.id == identity, Fabric.owner_email == row.owner_email, Fabric.edit_token == edit_token
             ).values(name=_name(name), content=content, edit_token=str(uuid4())))
             if changed.rowcount != 1:
                 raise ValueError('This fabric changed in another tab. Reopen it before saving.')
+            access.sync(db, 'fabric', identity, dict(
+                name=_name(name), display_color=(content.get('appearance') or {}).get('display_color')))
             db.commit()
         except IntegrityError:
             db.rollback()
             raise ValueError('That fabric name is already in use.') from None
         db.expire_all()
-        return _record(_owned(db, email, identity))
+        return _opened(db, *_open(db, email, identity))
+
+
+def delete_fabric(email, identity):
+    """For the owner or an admin. Garments already cut from it keep their own copy."""
+    if str(identity).startswith('standard:'):
+        raise ValueError('Standard fabrics cannot be deleted.')
+    with SessionLocal() as db:
+        row, _ = _open(db, email, identity, 'admin')
+        access.forget(db, 'fabric', identity)
+        db.delete(row)
+        db.commit()
+
+
+def delete_item(kind, identity, owner):
+    """For webapp.access, once an admin's role is checked."""
+    with SessionLocal() as db:
+        row = db.get(Fabric, identity)
+        if row is not None:
+            access.forget(db, 'fabric', identity)
+            db.delete(row)
+            db.commit()
+
+
+def transfer_item(kind, identity, old_owner, new_owner):
+    """Hand a fabric to a member. A name they already use gains a number; the notes stay behind."""
+    with SessionLocal() as db:
+        row = db.get(Fabric, identity)
+        if row is None or row.owner_email != old_owner:
+            raise ValueError('This fabric is no longer available.')
+        access.reassign(db, 'fabric', identity, old_owner, new_owner)
+        taken = db.scalars(select(Fabric.name).where(Fabric.owner_email == new_owner)).all()
+        row.owner_email, row.name = new_owner, access.unique_name(row.name, taken)
+        row.content = _private(deepcopy(row.content), 'new owner')
+        row.edit_token = str(uuid4())   # An editor open on the old ownership must reload.
+        access.sync(db, 'fabric', identity, dict(
+            name=row.name, display_color=(row.content.get('appearance') or {}).get('display_color')))
+        db.commit()
+        return _record(row)
 
 
 APPLIED_KEYS = ('description', 'properties', 'solver_tuning', 'catalog', 'texture_maps')
@@ -290,17 +379,18 @@ def assignable(email=None):
     """Fabrics a signed-in or guest studio may cut a piece from, each listed once."""
     from webapp.fabric_catalog import standard_fabrics as catalog_fabrics
     from webapp.fabric_favorites import favorites
-    owned, hearted = [], []
+    owned, shared, hearted = [], [], []
     if email:
         try:
-            owned, hearted = list_fabrics(email), favorites(email)
+            owned, shared, hearted = list_fabrics(email), shared_fabrics(email), favorites(email)
         except ValueError:
-            owned, hearted = [], []
+            owned, shared, hearted = [], [], []
     # The artistic presets already are the panel's own "Drape presets" group.
     hearted = [r for r in hearted if not r['id'].startswith('standard:') or r['id'].startswith('standard:catalog:')]
     first = {r['id'] for r in hearted}
     groups = (('Favorites', hearted),
               ('My fabrics', [r for r in owned if r['id'] not in first]),
+              ('Shared with me', [r for r in shared if r['id'] not in first]),
               ('Common fabrics', [r for r in catalog_fabrics() if r['id'] not in first]))
     return [dict(id=r['id'], label=r['name'], group=group) for group, records in groups for r in records]
 
@@ -310,14 +400,14 @@ def export_fabric(email, identity, bundle=False):
     raw = filename = None
     if not record['standard']:
         with SessionLocal() as db:
-            row = _owned(db, email, identity)
+            row, _ = _open(db, email, identity)
             raw, filename = row.source_bytes, row.source_name
     return formats.export_fabric(record, raw, filename, bundle=bundle)
 
 
 def original_file(email, identity):
     with SessionLocal() as db:
-        row = _owned(db, email, identity)
+        row, _ = _open(db, email, identity)
         if row.source_bytes is None:
             raise ValueError('This fabric has no imported source file.')
         return row.source_name, row.source_bytes

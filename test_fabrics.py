@@ -339,6 +339,8 @@ class FabricStorageTest(unittest.TestCase):
         Base.metadata.create_all(self.engine)
         sessions = sessionmaker(bind=self.engine)
         stack.enter_context(patch.object(fabrics, 'SessionLocal', sessions))
+        from webapp import access
+        stack.enter_context(patch.object(access, 'SessionLocal', sessions))
         with sessions() as db:
             db.add_all([User(email='alice@example.test'), User(email='bob@example.test')])
             db.commit()

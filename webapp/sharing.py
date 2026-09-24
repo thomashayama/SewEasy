@@ -1,19 +1,20 @@
-"""Sharing body profiles and designs between users.
+"""Legacy read-only sharing of saved designs (the pre-wardrobe `designs` table).
 
-A share grants the recipient read access to the live item: it appears in
-their account ("Shared with me") and in the studio's measurement/library
-pickers, always reflecting the owner's latest edits. Recipients can also
-copy a shared item into their own library to get an editable version.
+Garments, outfits, fabrics and body profiles use the unified access model in
+webapp/access.py instead; body-profile shares made here were migrated to it.
 
-Recipients are addressed by (lowercased) email, so an item can be shared
+A share grants the recipient read access to the live design: it appears in
+their account ("Shared with me"), always reflecting the owner's latest edits.
+Recipients can also copy it into their own library to get an editable version.
+
+Recipients are addressed by (lowercased) email, so a design can be shared
 with someone who hasn't signed in yet.
 """
 
 from typing import Optional
 
 from webapp.db import SessionLocal
-from webapp.models import (BodyProfile, BodyProfileShare, Design,
-                           DesignShare, User)
+from webapp.models import Design, DesignShare, User
 
 
 def _normalize(email: str) -> str:
@@ -51,14 +52,6 @@ def _share(db, item, shares_model, item_column, owner_email: str,
     return 'shared'
 
 
-def share_profile(owner_email: str, profile_id: int,
-                  recipient_email: str) -> str:
-    with SessionLocal() as db:
-        return _share(db, db.get(BodyProfile, profile_id), BodyProfileShare,
-                      BodyProfileShare.profile_id, owner_email,
-                      recipient_email)
-
-
 def share_design(owner_email: str, design_id: int,
                  recipient_email: str) -> str:
     with SessionLocal() as db:
@@ -74,11 +67,6 @@ def _recipients(db, item, owner_email: str) -> list:
             for s in sorted(item.shares, key=lambda s: s.created_at)]
 
 
-def profile_recipients(owner_email: str, profile_id: int) -> list:
-    with SessionLocal() as db:
-        return _recipients(db, db.get(BodyProfile, profile_id), owner_email)
-
-
 def design_recipients(owner_email: str, design_id: int) -> list:
     with SessionLocal() as db:
         return _recipients(db, db.get(Design, design_id), owner_email)
@@ -92,13 +80,6 @@ def _revoke(db, share, item, owner_email: str) -> bool:
     return True
 
 
-def revoke_profile_share(owner_email: str, share_id: int) -> bool:
-    with SessionLocal() as db:
-        share = db.get(BodyProfileShare, share_id)
-        item = share.profile if share is not None else None
-        return _revoke(db, share, item, owner_email)
-
-
 def revoke_design_share(owner_email: str, share_id: int) -> bool:
     with SessionLocal() as db:
         share = db.get(DesignShare, share_id)
@@ -108,21 +89,6 @@ def revoke_design_share(owner_email: str, share_id: int) -> bool:
 
 # ----------------------------------------------------------------------
 # Recipient side: list, read, copy, and decline incoming shares
-
-def shared_profiles_with_me(email: str) -> list:
-    with SessionLocal() as db:
-        rows = (db.query(BodyProfileShare, BodyProfile)
-                .join(BodyProfile,
-                      BodyProfileShare.profile_id == BodyProfile.id)
-                .filter(BodyProfileShare.recipient_email == email)
-                .order_by(BodyProfile.updated_at.desc())
-                .all())
-        return [{'share_id': s.id, 'profile_id': p.id, 'name': p.name,
-                 'owner_email': p.owner_email,
-                 'owner_name': _owner_display(db, p.owner_email),
-                 'updated_at': p.updated_at}
-                for s, p in rows]
-
 
 def shared_designs_with_me(email: str) -> list:
     with SessionLocal() as db:
@@ -146,22 +112,6 @@ def _shared_with(db, shares_model, item_column, item_id: int, email: str):
             .one_or_none())
 
 
-def get_shared_profile(email: str, profile_id: int) -> Optional[dict]:
-    """The profile's data iff it is shared with `email` (same shape as
-    profiles.get_profile, plus the owner's display name)."""
-    with SessionLocal() as db:
-        if _shared_with(db, BodyProfileShare, BodyProfileShare.profile_id,
-                        profile_id, email) is None:
-            return None
-        row = db.get(BodyProfile, profile_id)
-        if row is None:
-            return None
-        return {'id': row.id, 'name': row.name,
-                'measurements': row.measurements,
-                'skin_color': row.skin_color,
-                'owner_name': _owner_display(db, row.owner_email)}
-
-
 def get_shared_design(email: str, design_id: int) -> Optional[dict]:
     """The design's data iff it is shared with `email` (same shape as
     designs.get_design, plus the owner's display name)."""
@@ -179,18 +129,8 @@ def get_shared_design(email: str, design_id: int) -> Optional[dict]:
                 'owner_name': _owner_display(db, row.owner_email)}
 
 
-def decline_profile_share(email: str, share_id: int) -> bool:
-    """Recipient removes a share from their list (owner's item untouched)"""
-    with SessionLocal() as db:
-        share = db.get(BodyProfileShare, share_id)
-        if share is None or share.recipient_email != email:
-            return False
-        db.delete(share)
-        db.commit()
-        return True
-
-
 def decline_design_share(email: str, share_id: int) -> bool:
+    """Recipient removes a share from their list (owner's design untouched)"""
     with SessionLocal() as db:
         share = db.get(DesignShare, share_id)
         if share is None or share.recipient_email != email:
@@ -209,24 +149,6 @@ def _unique_name(db, model, owner_email: str, base: str) -> str:
     while f'{base} ({n})' in names:
         n += 1
     return f'{base} ({n})'
-
-
-def copy_shared_profile(email: str, profile_id: int) -> Optional[str]:
-    """Copy a profile shared with `email` into their own library.
-    Returns the new profile's name, or None if it isn't shared with them."""
-    with SessionLocal() as db:
-        if _shared_with(db, BodyProfileShare, BodyProfileShare.profile_id,
-                        profile_id, email) is None:
-            return None
-        src = db.get(BodyProfile, profile_id)
-        if src is None:
-            return None
-        name = _unique_name(db, BodyProfile, email, src.name)
-        db.add(BodyProfile(owner_email=email, name=name,
-                           measurements=dict(src.measurements),
-                           skin_color=src.skin_color))
-        db.commit()
-        return name
 
 
 def copy_shared_design(email: str, design_id: int) -> Optional[str]:

@@ -1,5 +1,6 @@
 """Wardrobe home with cached renders and a background queue for missing thumbnails."""
 from pathlib import Path
+import re
 
 from fastapi import Request
 from nicegui import app, run, ui
@@ -8,6 +9,9 @@ from sqlalchemy.exc import SQLAlchemyError
 from gui import theme
 from webapp import auth, config
 from webapp.wardrobe import Wardrobe, latest_garments
+from webapp.access import NOUNS
+from webapp.access_ui import access_dialog
+from webapp.gui_widgets import confirm_delete
 from webapp.wardrobe_sharing import WardrobeSharing, access_label
 from webapp.wardrobe_actions import share_dialog, source_label
 from webapp.favorites import Favorites
@@ -15,6 +19,10 @@ from webapp.friends import Friends
 from webapp.finished_photos_ui import photos_dialog
 from webapp.garment_catalog import draft_items, library_matches, standard_garments, starter_item, studio_snapshot
 from webapp.thumbnail_ui import ThumbnailQueue
+
+
+# Shared with me and Explore also list fabrics and measurement profiles.
+KIND_LABELS = dict(fabric='Fabric', body='Measurements')
 
 
 @ui.page('/', title='SewEasy — Your wardrobe')
@@ -54,6 +62,23 @@ def home_page(request: Request):
         open_items(item['garments'] if kind == 'outfits' else [item], item['name'], item.get('revision_id'),
                    'outfit' if kind == 'outfits' else 'garment', item.get('updated_at'))
 
+    async def delete_item(kind, item_id, name, share_id=None):
+        """Your own item from its card, or one you administer by its share ID."""
+        if not await confirm_delete(f'Delete the {NOUNS[kind]} “{name}”? '
+                                    + ('It is deleted for everyone with access. ' if share_id else '')
+                                    + 'Copies others saved remain theirs.'):
+            return
+        try:
+            if share_id:
+                await run.io_bound(sharing.delete, share_id)
+            else:
+                await run.io_bound(store.delete_item, kind, item_id)
+        except ValueError as error:
+            ui.notify(str(error), type='warning')
+            return
+        ui.notify(f'Deleted {name}', type='positive')
+        library.refresh()
+
     def item_actions(kind, item):
         with ui.button(icon='more_horiz').props('flat round dense').classes('se-library-actions') as more:
             more._props['aria-label'] = f'{item["name"]} actions'
@@ -61,6 +86,29 @@ def home_page(request: Request):
                 ui.menu_item('Privacy & sharing', lambda: share_dialog(store, kind, item, library.refresh))
                 ui.menu_item('Made it — add photos', lambda: photos_dialog(store, kind, item))
                 ui.menu_item('Save a copy', lambda: show_copy(kind, item))
+                ui.menu_item('Delete', lambda: delete_item(kind, item['id'], item['name']))
+
+    def shared_actions(item):
+        """What the viewer's role allows on someone else's item."""
+        name = item['snapshot'].get('name', '')
+        admin = item['role'] in ('owner', 'admin')
+        if not admin and not item['is_member']:
+            return
+        with ui.button(icon='more_horiz').props('flat round dense').classes('se-library-actions') as more:
+            more._props['aria-label'] = f'{name} actions'
+            with ui.menu():
+                if admin:
+                    ui.menu_item('Privacy & sharing', lambda: access_dialog(
+                        sharing, item['id'], library.refresh, library.refresh))
+                    ui.menu_item('Delete', lambda: delete_item(item['kind'], item['revision_id'], name, item['id']))
+                if item['is_member']:
+                    def leave():
+                        try:
+                            sharing.leave(item['id'])
+                        except ValueError as error:
+                            ui.notify(str(error), type='warning')
+                        library.refresh()
+                    ui.menu_item('Remove from my list', leave)
 
     def favorite_button(kind, item_id, name):
         key = f'{kind}:{item_id}'
@@ -150,19 +198,41 @@ def home_page(request: Request):
             item_actions('outfit', item)
             favorite_button('outfit', item['id'], item['name'])
 
+    def material_art(item, status):
+        """Fabrics and measurements have no garment drawing: a swatch colour or an icon."""
+        color = item['snapshot'].get('display_color') or ''
+        with ui.element('div').classes('se-home-flats se-library-art se-library-material'):
+            if item['kind'] == 'fabric' and re.fullmatch(r'#[0-9a-fA-F]{6}', color):
+                ui.element('div').classes('se-library-swatch').style(f'background-color:{color}')
+            else:
+                ui.icon('texture' if item['kind'] == 'fabric' else 'accessibility_new').classes('se-library-kind')
+            icon, label = status
+            indicator = ui.icon(icon).classes('se-library-status').props('role=img aria-hidden=false')
+            indicator._props['aria-label'] = label
+            indicator.tooltip(label)
+
     def shared_card(item):
         snapshot = item['snapshot']
-        with ui.element('div').classes('se-library-entry'):
+        wardrobe_item = item['kind'] in ('garment', 'outfit')
+        has_actions = not item['is_owner'] and (item.get('role') in ('owner', 'admin') or item.get('is_member'))
+        with ui.element('div').classes('se-library-entry' + (' is-owned' if has_actions else '')):
             with ui.button(on_click=lambda: ui.navigate.to(f'/shared/{item["id"]}')).props('flat no-caps').classes('se-library-card') as card:
-                card._props['aria-label'] = f'View shared {snapshot["name"]}'
+                card._props['aria-label'] = f'View shared {NOUNS[item["kind"]]} {snapshot["name"]}'
                 mode = item.get('visibility', 'private')
-                illustrations(snapshot['garments'] if item['kind'] == 'outfit' else [snapshot],
-                              'se-library-art', image=item.get('thumbnail'), status=(
-                    {'private': 'lock_outline', 'friends': 'people_outline', 'link': 'link', 'public': 'public'}[mode],
-                    access_label(mode, mode == 'private' and not item['is_owner'])))
-                caption(snapshot, item['owner_name'])
-            favorite_button(item['kind'] if item['is_owner'] else 'share',
-                            item['revision_id'] if item['is_owner'] else item['id'], snapshot['name'])
+                status = ({'private': 'lock_outline', 'friends': 'people_outline', 'link': 'link', 'public': 'public'}[mode],
+                          access_label(mode, mode == 'private' and not item['is_owner']))
+                if wardrobe_item:
+                    illustrations(snapshot['garments'] if item['kind'] == 'outfit' else [snapshot],
+                                  'se-library-art', image=item.get('thumbnail'), status=status)
+                else:
+                    material_art(item, status)
+                detail = item['owner_name'] + (' · Admin' if item.get('role') == 'admin' else '')
+                caption(snapshot, detail if wardrobe_item else f'{KIND_LABELS[item["kind"]]} · {detail}')
+            if wardrobe_item:
+                favorite_button(item['kind'] if item['is_owner'] else 'share',
+                                item['revision_id'] if item['is_owner'] else item['id'], snapshot['name'])
+            if not item['is_owner']:
+                shared_actions(item)
 
     with ui.dialog() as new_dialog, ui.card().classes('se-new-outfit-dialog'):
         with ui.row().classes('w-full items-center justify-between'):
@@ -289,8 +359,8 @@ def home_page(request: Request):
                 elif kind == 'shared':
                     with ui.column().classes('se-library-empty'):
                         ui.icon('people_outline').classes('se-empty-icon')
-                        ui.label('No shared designs yet' if user else 'Shared designs live here').classes('se-empty-title')
-                        ui.label('Designs shared by friends or by invitation will appear here.' if user else
+                        ui.label('Nothing shared with you yet' if user else 'Shared items live here').classes('se-empty-title')
+                        ui.label('Garments, outfits, fabrics and measurements shared by friends or by invitation appear here.' if user else
                                  'Sign in with your invited email to see private shares.').classes('se-home-muted')
                         if user:
                             ui.link('Find friends', '/account?section=friends')
@@ -299,7 +369,8 @@ def home_page(request: Request):
                         ui.icon('favorite_border' if kind == 'favorites' else 'public').classes('se-empty-icon')
                         ui.label('Keep your favorites here' if kind == 'favorites' else 'Discover what others are making').classes('se-empty-title')
                         ui.label(('Tap the heart on a garment or outfit to find it here.' if user else 'Sign in to save favorites across devices.')
-                                 if kind == 'favorites' else 'Public garments and outfits appear here. Publish one from Privacy & sharing.').classes('se-home-muted')
+                                 if kind == 'favorites' else 'Public garments, outfits, fabrics and measurements appear here. '
+                                 'Publish one from Privacy & sharing.').classes('se-home-muted')
                 else:
                     with ui.element('div').classes('se-library-empty se-library-first'):
                         ui.icon('checkroom').classes('se-empty-icon')

@@ -33,6 +33,8 @@ class Favorites:
                 if enabled:
                     raise
             else:
+                if source['kind'] not in ('garment', 'outfit'):
+                    raise ValueError('Choose a garment or outfit.')
                 if source['is_owner']:
                     kind, item_id = source['kind'], source['revision_id']
         elif enabled:
@@ -64,7 +66,9 @@ class Favorites:
         for kind, item_id in refs:
             try:
                 if kind == 'share':
-                    result.append(dict(sharing.get(item_id), favorite_kind=kind))
+                    source = sharing.get(item_id)
+                    if source['kind'] in ('garment', 'outfit'):
+                        result.append(dict(source, favorite_kind=kind))
                 elif f'{kind}:{item_id}' in owned:
                     result.append(dict(id=item_id, kind=kind, favorite_kind=kind, is_owner=True,
                                        snapshot=owned[f'{kind}:{item_id}']))

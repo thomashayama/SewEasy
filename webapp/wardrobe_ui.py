@@ -13,6 +13,7 @@ from webapp.thumbnail_ui import ThumbnailQueue
 
 def wardrobe_ui(state):
     store = Wardrobe(state.user['email'] if state.user else None, app.storage.user)
+    sharing = WardrobeSharing(store)
     previews = ThumbnailQueue(store)
     pattern = state.pattern_state
     state._editor_mode = getattr(state, '_editor_mode', 'garment')
@@ -36,6 +37,28 @@ def wardrobe_ui(state):
         kind = kind or state._editor_mode
         identity = active_item()['id'] if kind == 'garment' else state._outfit_revision_id
         return next((g for g in store.read()['garments' if kind == 'garment' else 'outfits'] if g['id'] == identity), None)
+
+    def administered(kind=None):
+        """The shared original open here, when you are its admin (webapp/access.py)."""
+        kind = kind or state._editor_mode
+        if not state._source_share or not store.email:
+            return None
+        try:
+            source = sharing.get(state._source_share)
+        except ValueError:
+            return None
+        identity = active_item()['id'] if kind == 'garment' else state._outfit_revision_id
+        if source['kind'] != kind or source['revision_id'] != identity or source['role'] != 'admin':
+            return None
+        return source
+
+    def original_item(kind=None):
+        """What Save updates: your own item, or one you administer in its owner's library."""
+        own = owned_item(kind)
+        if own:
+            return own
+        source = administered(kind)
+        return source['snapshot'] if source else None
 
     async def apply(items, active=0):
         state.toggle_param_update_events(state.ui_design_refs)
@@ -100,14 +123,17 @@ def wardrobe_ui(state):
         previews.reload_library()
         mode = state._editor_mode
         items = current_items()
-        owned = owned_item()
+        mine = owned_item()
+        source = None if mine else administered()
+        owned = mine or (source and source['snapshot'])
         name = items[0]['name'] if mode == 'garment' else state._outfit_name
         unchanged = owned and (same_design(items[0], owned) if mode == 'garment' else same_items(items, owned['garments']))
         state.ui_outfit_title.set_text(name)
         state.ui_editor_kind.set_text('Garment' if mode == 'garment' else 'Outfit')
         state.ui_wardrobe_heading.set_text('This garment' if mode == 'garment' else 'This outfit')
         state.ui_wardrobe_panel.props(f'aria-label="This {mode}"')
-        state.ui_draft_status.set_text('Saved' if unchanged else 'Unsaved changes' if owned else 'Working copy')
+        state.ui_draft_status.set_text(('Saved' if unchanged else 'Unsaved changes' if owned else 'Working copy')
+                                       + (f' · {source["owner_name"]}’s {mode}' if source else ''))
         state.ui_save_button.set_text('Save' if owned or (mode == 'outfit' and not state._source_share) else 'Save a copy')
         state.ui_save_options.set_visibility(bool(owned))
         state.ui_share_button.set_visibility(bool(owned))
@@ -118,7 +144,8 @@ def wardrobe_ui(state):
             ui.menu_item('Save a copy', lambda: show_save(copy=True))
             if owned:
                 ui.menu_item('Rename', lambda: show_save(rename=True))
-                ui.menu_item('Privacy & sharing', lambda: share_dialog(store, mode, owned_item()))
+                ui.menu_item('Privacy & sharing', lambda: share_dialog(store, mode, original_item(), on_done=refresh_studio))
+            if mine:
                 ui.menu_item('Made it — add photos', lambda: photos_dialog(store, mode, owned_item()))
         state.ui_outfit_list.clear()
         with state.ui_outfit_list:
@@ -173,8 +200,10 @@ def wardrobe_ui(state):
             if state._draft_failed:
                 raise ValueError('Fix the pattern settings before saving.')
             kind = kind or state._editor_mode
-            original = owned_item(kind)
+            original = original_item(kind)
             copy = copy or original is None
+            # Someone else's original, saved as its admin into the owner's library.
+            administering = not copy and owned_item(kind) is None
             origin = None
             if copy:
                 source = active_item() if kind == 'garment' else dict(name=state._outfit_name, id=state._outfit_revision_id)
@@ -187,8 +216,12 @@ def wardrobe_ui(state):
             parent = original['id'] if original and not copy else None
             if kind == 'garment':
                 item = active_item()
-                result = store.save_garment(name, item['params'], item['appearance'], parent_id=parent,
-                    new=copy, origin=origin, expected_updated_at=item.get('updated_at', '') if parent else None)
+                if administering:
+                    result = sharing.save_garment(state._source_share, name, item['params'], item['appearance'],
+                                                  expected_updated_at=item.get('updated_at', ''))
+                else:
+                    result = store.save_garment(name, item['params'], item['appearance'], parent_id=parent,
+                        new=copy, origin=origin, expected_updated_at=item.get('updated_at', '') if parent else None)
                 if pattern.outfit_items:
                     pattern.outfit_items[pattern.active_garment] = deepcopy(result)
                 else:
@@ -196,6 +229,9 @@ def wardrobe_ui(state):
                     # Rebuild once when they become a saved garment, so fabric
                     # selection and the scene use the same garment namespace.
                     await apply([result])
+            elif administering:
+                result = sharing.save_outfit(state._source_share, name, current_items(),
+                                             expected_updated_at=state._outfit_updated_at)
             else:
                 result = store.save_outfit(name, items=current_items(), parent_id=parent, new=copy, origin=origin,
                                            expected_updated_at=state._outfit_updated_at if parent else None)
@@ -203,7 +239,7 @@ def wardrobe_ui(state):
                 state._outfit_name = result['name']
                 state._outfit_revision_id = result['id']
                 state._outfit_updated_at = result['updated_at']
-            if kind == state._editor_mode:
+            if kind == state._editor_mode and not administering:
                 state._source_share = None
             refresh_studio()
             previews.enqueue_library()
@@ -216,7 +252,7 @@ def wardrobe_ui(state):
             saving = False
 
     async def save():
-        owned = owned_item()
+        owned = original_item()
         if owned:
             await persist(owned['name'])
         else:
@@ -236,7 +272,7 @@ def wardrobe_ui(state):
 
     def show_save(copy=False, rename=False, kind=None):
         kind = kind or state._editor_mode
-        original = owned_item(kind)
+        original = original_item(kind)
         name = active_item()['name'] if kind == 'garment' else state._outfit_name
         copy = copy or (not original and (kind == 'garment' or bool(state._source_share)))
         dialog_action.update(kind=kind, copy=copy)
@@ -246,7 +282,9 @@ def wardrobe_ui(state):
         name_input.set_label(kind.capitalize() + ' name')
         name_input.set_value(store.suggested_copy_name(kind, name) if copy else '' if name == 'Untitled outfit' else name)
         dialog_hint.set_text('An independent item with its own design, colors and fabrics.' if copy else
-                             'Updates this item in your library.' if original else 'Keeps this combination and its fabric settings.')
+                             ('Updates this item in your library.' if owned_item(kind) else
+                              'Updates the original for everyone with access.') if original else
+                             'Keeps this combination and its fabric settings.')
         save_dialog.open()
 
     async def detail_save():
@@ -288,6 +326,7 @@ def wardrobe_ui(state):
     state.show_add_garment = show_add
     state.save_current = save
     state.rename_current = lambda: show_save(rename=True)
-    state.share_current = lambda: share_dialog(store, state._editor_mode, owned_item()) if owned_item() else None
+    state.share_current = lambda: share_dialog(store, state._editor_mode, original_item(),
+                                               on_done=refresh_studio) if original_item() else None
     state.refresh_wardrobe = refresh_studio
     refresh_studio()

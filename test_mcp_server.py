@@ -37,7 +37,7 @@ class MCPTest(unittest.TestCase):
         self.stack.callback(self.engine.dispose)
         Base.metadata.create_all(self.engine)
         self.sessions = sessionmaker(bind=self.engine)
-        for module in ('agent_tokens', 'base_garments', 'agent_renders', 'wardrobe', 'wardrobe_sharing'):
+        for module in ('agent_tokens', 'base_garments', 'agent_renders', 'wardrobe', 'wardrobe_sharing', 'access'):
             self.stack.enter_context(patch('webapp.' + module + '.SessionLocal', self.sessions))
         for module in ('mcp_server', 'agent_renders'):
             self.stack.enter_context(patch('webapp.' + module + '.APP_URL', 'http://testserver'))

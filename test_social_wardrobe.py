@@ -42,7 +42,7 @@ class SocialWardrobeTest(unittest.TestCase):
         self.stack.callback(engine.dispose)
         Base.metadata.create_all(engine)
         self.sessions = sessionmaker(bind=engine)
-        for module in ('wardrobe', 'wardrobe_sharing', 'friends', 'favorites', 'finished_photos'):
+        for module in ('wardrobe', 'wardrobe_sharing', 'access', 'friends', 'favorites', 'finished_photos'):
             self.stack.enter_context(patch('webapp.' + module + '.SessionLocal', self.sessions))
         with self.sessions() as db:
             db.add_all([User(email=name + '@example.test', name=name.title()) for name in ('alice', 'bob', 'eve')])

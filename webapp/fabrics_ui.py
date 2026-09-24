@@ -7,6 +7,8 @@ from nicegui import run, ui
 from sqlalchemy.exc import SQLAlchemyError
 
 from webapp import fabric_favorites, fabric_sources, fabrics
+from webapp.access import Access, access_label
+from webapp.access_ui import item_share_dialog
 from webapp import fabric_formats as formats
 from webapp.fabric_catalog import evidence_label, metadata, standard_fabrics
 from webapp.garment_materials import SUPPORT
@@ -43,13 +45,24 @@ def preview_tile(record):
 DRAPE_SCOPE = {'piece': 'drapes each piece', 'garment': 'drapes the whole garment', 'stored': 'swatch tests only'}
 
 
-async def fabric_library(email, choose=None):
-    """The account's fabric library. With `choose`, the same list becomes the studio's picker."""
+async def fabric_library(email, choose=None, open_id=None):
+    """The account's fabric library. With `choose`, the same list becomes the studio's picker.
+
+    `open_id` opens that fabric's properties once the list is shown, as a
+    shared fabric's page does.
+    """
     ui.add_css(Path(__file__).with_name('fabrics.css').read_text(encoding='utf-8'))
     async def edit(identity):
-        record = await run.io_bound(fabrics.get_fabric, email, identity)
+        try:
+            record = await run.io_bound(fabrics.get_fabric, email, identity)
+        except ValueError as error:
+            ui.notify(str(error), type='warning')
+            return
         content = record['content']
         standard = record['standard']
+        # Standard fabrics and fabrics you only view open read-only, with Save a copy.
+        role = record.get('role')
+        readonly = standard or role == 'viewer'
         inputs, initial, restored = {}, {}, {}
         # An edit or a cleared field can hide what the original file measured.
         imported = (await run.io_bound(fabrics.imported_properties, email, identity)
@@ -60,10 +73,14 @@ async def fabric_library(email, choose=None):
                 ui.button(icon='close', on_click=dialog.close).props('flat round dense aria-label="Close fabric editor"')
             name = ui.input('Fabric name', value=record['name']).props('outlined dense maxlength=120').classes('w-full')
             description = ui.textarea('Notes', value=content['description']).props('outlined dense rows=2 maxlength=4000').classes('w-full')
-            if standard:
+            if readonly:
                 name.props('readonly')
                 description.props('readonly')
-                ui.label('Standard fabric · Save a copy to make it your own.').classes('se-param-label text-sm')
+                ui.label('Standard fabric · Save a copy to make it your own.' if standard else
+                         f'Shared by {record["owner_name"]} · Save a copy to make it your own.').classes('se-param-label text-sm')
+            elif role == 'admin':
+                ui.label(f'{record["owner_name"]}’s fabric · As an admin, your saves update it for everyone.') \
+                    .classes('se-param-label text-sm')
             catalog = metadata(content.get('catalog'))
             if catalog:
                 ui.label(f'{catalog["composition"]} · {catalog["construction"]}').classes('text-sm')
@@ -85,7 +102,7 @@ async def fabric_library(email, choose=None):
                     inputs[key] = ui.input(label, value=initial[key], placeholder='Unknown',
                                            on_change=lambda: refresh()).props(
                         'outlined dense clearable inputmode=decimal').classes('w-full')
-                    if standard:
+                    if readonly:
                         inputs[key].props('readonly').props(remove='clearable')
                     origin = {'unknown': 'Not supplied', 'user': 'Your value', 'reported': 'Reported value',
                               'measured': 'Measured', 'estimated': 'Estimate'}[prop['origin']]
@@ -93,7 +110,7 @@ async def fabric_library(email, choose=None):
                     with ui.label(f'{origin} · {DRAPE_SCOPE[scope]}').classes('se-param-label text-xs'):
                         ui.tooltip(' '.join(filter(None, [prop.get('source'), effect]))).classes('max-w-sm')
                     original = imported.get(key) or {}
-                    if not standard and original.get('value') is not None and original['value'] != prop['value']:
+                    if not readonly and original.get('value') is not None and original['value'] != prop['value']:
                         text = f'{original["value"]:.8g}'
 
                         def restore(key=key, text=text):
@@ -113,7 +130,7 @@ async def fabric_library(email, choose=None):
                 with ui.column().classes('gap-1 min-w-0 col-span-2 sm:col-span-1'):   # a phone clips the hex
                     color = ui.color_input('Display color', value=initial_color, on_change=lambda: refresh()).props(
                         'outlined dense clearable').classes('w-full')
-                    if standard:
+                    if readonly:
                         color.props('readonly').props(remove='clearable')
                     ui.label('Pieces cut from this fabric start this color.').classes('se-param-label text-xs')
             with ui.expansion('Additional physical properties').classes('w-full'):
@@ -178,9 +195,12 @@ async def fabric_library(email, choose=None):
                         text['retailer'].update()
                     url.on_value_change(name_from_address)
                     name_from_address()
+                    # The owner's own note: an admin neither sees nor replaces it.
                     note = ui.textarea('Private note', value=original.get('private_note', '')).props(
                         'outlined dense rows=2 maxlength=1000').classes('w-full')
-                    ui.label('Only you see this note. It is left out of exported files.').classes('se-param-label text-xs')
+                    note.set_visibility(role == 'owner')
+                    if role == 'owner':
+                        ui.label('Only you see this note. It is left out of exported files.').classes('se-param-label text-xs')
                     problem = ui.label('').classes('text-negative text-sm').props('role=alert')
 
                     def done():
@@ -234,7 +254,7 @@ async def fabric_library(email, choose=None):
                                 ui.icon('open_in_new').classes('text-xs')
                             # Set directly: a retailer or variant may contain quotes that .props() would split on.
                             link._props['aria-label'] = f'{shown["title"]} (opens in a new tab)'
-                            if not standard:
+                            if not readonly:
                                 with ui.row().classes('gap-0 no-wrap flex-none'):
                                     for icon, verb, action in (('edit', 'Edit', edit_source), ('delete_outline', 'Remove', remove_source)):
                                         button = ui.button(icon=icon, on_click=lambda index=index, action=action: action(index)).props(
@@ -258,11 +278,11 @@ async def fabric_library(email, choose=None):
                     ui.label('No places to buy yet.').classes('se-param-label text-sm')
 
             # Standard fabrics are generic cloth; they name no product to buy.
-            if sources or not standard:
+            if sources or not readonly:
                 with ui.column().classes('w-full gap-2'):
                     with ui.row().classes('w-full items-center justify-between'):
                         ui.label('Where to buy').classes('se-section-label')
-                        if not standard:
+                        if not readonly:
                             ui.button('Add', icon='add', on_click=lambda: edit_source()).props(
                                 'flat dense no-caps aria-label="Add a place to buy"')
                     where_to_buy()
@@ -295,7 +315,7 @@ async def fabric_library(email, choose=None):
                              if len(warnings) == 1 else
                              f'{len(warnings)} texture references declare sizes that do not match their images.'
                              ).classes('se-param-label text-sm').props('role=note')
-            if not standard:
+            if not readonly:
                 ui.label('Garments already cut from this fabric keep their saved copy. Choose the fabric '
                          'again in the sewing pattern to apply a change.').classes('se-param-label text-sm')
             error = ui.label('').classes('text-negative text-sm').props('role=alert')
@@ -306,7 +326,7 @@ async def fabric_library(email, choose=None):
                         or any((item.value or '') != initial[key] for key, item in inputs.items()))
 
             def refresh():
-                if standard or 'save' not in controls:
+                if readonly or 'save' not in controls:
                     return
                 unsaved = dirty()
                 controls['state'].set_text('Unsaved changes' if unsaved else 'All changes saved')
@@ -332,10 +352,10 @@ async def fabric_library(email, choose=None):
                     controls['save'].enable()
             controls = {}
             with ui.row().classes('w-full items-center justify-end gap-2'):
-                if not standard:
+                if not readonly:
                     controls['state'] = ui.label('All changes saved').classes('se-param-label text-sm mr-auto').props('role=status')
                 controls['cancel'] = ui.button('Close', on_click=dialog.close).props('flat no-caps')
-                if standard:
+                if readonly:
                     async def make_copy():
                         dialog.close()
                         await copy(identity)
@@ -420,6 +440,28 @@ async def fabric_library(email, choose=None):
         except ValueError as exc:
             ui.notify(str(exc), type='negative')
 
+    async def delete(record):
+        from webapp.gui_widgets import confirm_delete
+        shared = record['role'] != 'owner'
+        if not await confirm_delete(f'Delete the fabric “{record["name"]}”'
+                                    + (' for everyone with access' if shared else '')
+                                    + '? Garments already cut from it keep their own copy.'):
+            return
+        try:
+            await run.io_bound(fabrics.delete_fabric, email, record['id'])
+        except ValueError as exc:
+            ui.notify(str(exc), type='warning')
+            return
+        ui.notify(f'Deleted {record["name"]}', type='positive')
+        listing.refresh()
+
+    def leave(record):
+        try:
+            Access(email).leave(record['share_id'])
+        except ValueError as exc:
+            ui.notify(str(exc), type='warning')
+        listing.refresh()
+
     async def compare(identity):
         from webapp.fabric_preview import comparison_dialog
         try:
@@ -492,8 +534,8 @@ async def fabric_library(email, choose=None):
                  'Cut pieces from a fabric under Fabric type in the sewing pattern.').classes('se-param-label')
     with ui.row().classes('w-full items-center justify-between gap-3'):
         # A guest studio has no account library or hearts to show.
-        views = {'favorites': 'Favorites', 'saved': 'My fabrics', 'common': 'Common fabrics'} if email else {
-            'common': 'Common fabrics'}
+        views = {'favorites': 'Favorites', 'saved': 'My fabrics', 'shared': 'Shared with me',
+                 'common': 'Common fabrics'} if email else {'common': 'Common fabrics'}
         collection = ui.toggle(views, value='favorites' if choose and hearts else 'common',
                                on_change=lambda: listing.refresh()).props('no-caps unelevated')
         with ui.row().classes('items-center gap-2 w-full sm:w-auto'):
@@ -521,8 +563,11 @@ async def fabric_library(email, choose=None):
                 records = standard_fabrics()
             elif collection.value == 'favorites':
                 records = await run.io_bound(fabric_favorites.favorites, email)
+            elif collection.value == 'shared':
+                records = await run.io_bound(fabrics.shared_fabrics, email)
             else:
                 records = await run.io_bound(fabrics.list_fabrics, email)
+            badges = await run.io_bound(Access(email).owner_access, ('fabric',)) if email else {}
         except (ValueError, SQLAlchemyError):
             records = None
         # A filter/tab change can finish before an older database read. Only
@@ -539,6 +584,7 @@ async def fabric_library(email, choose=None):
         if not records:
             empty = {'favorites': 'Tap a heart to keep a fabric here. Nothing is copied.',
                      'saved': 'Save a copy from Common fabrics, import a material, or create your own.',
+                     'shared': 'Fabrics others share with you, or with their friends, appear here.',
                      'common': 'No common fabrics are available.'}[collection.value]
             ui.label('No fabrics match your search or weight.' if total else empty).classes('se-param-label py-4')
         for record in records:
@@ -565,6 +611,13 @@ async def fabric_library(email, choose=None):
                                 ui.label(f'{catalog["composition"]} · {catalog["construction"]}').classes('se-param-label text-sm')
                             ui.label(' · '.join(summary)).classes('se-param-label')
                             ui.label(evidence_label(record['content'])).classes('se-param-label text-xs mt-1')
+                            if record.get('owner_name'):
+                                ui.label(f'Shared by {record["owner_name"]}'
+                                         + (' · You are an admin' if record['role'] == 'admin' else '')).classes(
+                                    'se-param-label text-xs')
+                            elif f'fabric:{record["id"]}' in badges:
+                                badge = badges[f'fabric:{record["id"]}']
+                                ui.label(access_label(badge['visibility'], badge['invited'])).classes('se-param-label text-xs')
                     with ui.row(wrap=False).classes('se-fabric-actions items-center gap-1'):
                         heart_button(record)
                         if choose:
@@ -576,13 +629,22 @@ async def fabric_library(email, choose=None):
                             ui.button('Test swatch', icon='science', on_click=lambda _, i=record['id']: compare(i)).props('flat no-caps')
                         if record['standard']:
                             ui.button('Save a copy', icon='content_copy', on_click=lambda _, i=record['id']: copy(i)).props('flat no-caps')
+                        manages = record.get('role') in ('owner', 'admin')
                         with ui.button(icon='more_horiz').props('flat round aria-label="Fabric actions"'):
                             with ui.menu():
-                                ui.menu_item('View properties' if record['standard'] else 'Edit', on_click=lambda _, i=record['id']: edit(i))
+                                ui.menu_item('Edit' if manages else 'View properties', on_click=lambda _, i=record['id']: edit(i))
                                 if not record['standard']:
                                     ui.menu_item('Save a copy', on_click=lambda _, i=record['id']: copy(i))
                                 ui.menu_item('Export U3MA', on_click=lambda _, r=record: download(r))
                                 ui.menu_item('Export U3M folder (.zip)', on_click=lambda _, r=record: download(r, bundle=True))
                                 if record['has_source']:
                                     ui.menu_item('Download original', on_click=lambda _, r=record: download(r, True))
+                                if manages:
+                                    ui.menu_item('Privacy & sharing', on_click=lambda _, i=record['id']: item_share_dialog(
+                                        email, 'fabric', i, on_removed=listing.refresh, on_done=listing.refresh))
+                                    ui.menu_item('Delete', on_click=lambda _, r=record: delete(r))
+                                if record.get('is_member'):
+                                    ui.menu_item('Remove from my list', on_click=lambda _, r=record: leave(r))
     await listing()
+    if open_id:
+        await edit(open_id)
