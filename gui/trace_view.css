@@ -1,0 +1,103 @@
+/* Pattern projector (/trace). The canvas is pure black (or white): anything
+   else lights the fabric. The controls float above and hide with H. */
+html, body { overflow: hidden; }
+.se-trace {
+  position: fixed; inset: 0; z-index: 2000; background: #000; color: #f3f1ea;
+  font-family: 'Public Sans', system-ui, sans-serif; outline: none;
+  --trace-panel: rgba(24, 26, 31, .94); --trace-text: #f3f1ea; --trace-muted: #a9aeb8;
+  --trace-line: rgba(255, 255, 255, .16); --trace-control: rgba(255, 255, 255, .08); --trace-accent: #ff9f1c;
+}
+.se-trace.is-light {
+  background: #fff; color: #1d2b42;
+  --trace-panel: rgba(250, 250, 247, .96); --trace-text: #1d2b42; --trace-muted: #5a6270;
+  --trace-line: rgba(29, 43, 66, .16); --trace-control: rgba(29, 43, 66, .06); --trace-accent: #c56a00;
+}
+.se-trace-canvas { position: absolute; inset: 0; width: 100%; height: 100%; touch-action: none; user-select: none; }
+
+/* Drawing: stroke widths are screen pixels (the viewBox is the window). */
+.se-trace-piece { fill: rgba(0, 0, 0, 0); pointer-events: all; cursor: grab; stroke-linejoin: round; }
+.se-trace-piece.is-selected { stroke-dasharray: 10 5; }
+.se-trace-mark { fill: none; pointer-events: none; }
+.se-trace-label { pointer-events: none; text-anchor: middle; dominant-baseline: middle; font-weight: 600; }
+.se-trace-grid { fill: none; stroke: #4c6b8a; stroke-width: .6; opacity: .45; pointer-events: none; }
+.se-trace-grid.is-major { stroke-width: 1.2; opacity: .8; }
+.se-trace.is-light .se-trace-grid { stroke: #7f9ab5; }
+.se-trace-square { fill: rgba(255, 159, 28, .12); stroke: var(--trace-accent); stroke-width: 2; pointer-events: none; }
+.se-trace-square.is-calibrating { fill: rgba(255, 159, 28, .22); }
+.se-trace-frame { fill: none; stroke: var(--trace-accent); stroke-width: 1.5; stroke-dasharray: 8 6; pointer-events: none; }
+.se-trace-guide { fill: none; stroke: var(--trace-accent); stroke-width: 1.5; pointer-events: none; }
+.se-trace-dim { fill: var(--trace-accent); font-size: 15px; font-weight: 600; dominant-baseline: middle; pointer-events: none; }
+.se-trace-handle { cursor: move; }
+.se-trace-handle-hit { fill: rgba(0, 0, 0, 0); pointer-events: all; }
+.se-trace-handle-ring { fill: none; stroke: var(--trace-accent); stroke-width: 2; pointer-events: none; }
+.se-trace-handle-cross { stroke: var(--trace-text); stroke-width: 1; pointer-events: none; }
+.se-trace-handle.is-selected .se-trace-handle-ring { stroke-width: 4; fill: rgba(255, 159, 28, .25); }
+
+/* Controls */
+.se-trace-panel {
+  position: absolute; top: 12px; left: 12px; width: min(360px, calc(100vw - 24px)); max-height: calc(100vh - 24px);
+  overflow: auto; background: var(--trace-panel); color: var(--trace-text); border: 1px solid var(--trace-line);
+  border-radius: 8px; box-shadow: 0 10px 30px rgba(0, 0, 0, .35); font-size: 13px; line-height: 1.45;
+}
+.se-trace-panel.is-right { left: auto; right: 12px; }
+/* While calibrating the markers sit near the corners; the middle is free. */
+.se-trace-panel.is-centred { left: 50%; right: auto; top: 50%; transform: translate(-50%, -50%); }
+.se-trace-panel[hidden], .se-trace-reveal[hidden], .se-trace-banner[hidden], .se-trace-section[hidden] { display: none; }
+.se-trace-panel button, .se-trace-reveal {
+  font: inherit; color: inherit; background: var(--trace-control); border: 1px solid var(--trace-line);
+  border-radius: 6px; padding: 5px 10px; cursor: pointer; min-height: 30px;
+}
+.se-trace-panel button:hover, .se-trace-reveal:hover { border-color: var(--trace-accent); }
+.se-trace-panel button:focus-visible, .se-trace-panel input:focus-visible, .se-trace-panel select:focus-visible,
+.se-trace-reveal:focus-visible { outline: 2px solid var(--trace-accent); outline-offset: 1px; }
+.se-trace-panel input[type=number], .se-trace-panel select {
+  font: inherit; color: inherit; background: var(--trace-control); border: 1px solid var(--trace-line);
+  border-radius: 6px; padding: 4px 6px; min-height: 30px; width: 100%; min-width: 0;
+}
+.se-trace-panel select option { color: #1d2b42; }
+.se-trace-header {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 10px 12px;
+  border-bottom: 1px solid var(--trace-line);
+}
+.se-trace-header strong { display: block; font-family: 'Bricolage Grotesque', 'Public Sans', sans-serif; font-size: 16px; }
+.se-trace-header span { color: var(--trace-muted); font-size: 12px; overflow-wrap: anywhere; }
+.se-trace-header-actions { display: flex; gap: 6px; flex: none; }
+.se-trace-tabs { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; padding: 10px 12px 0; }
+.se-trace-tabs button.is-active, .se-trace-segmented button.is-active {
+  background: var(--trace-accent); border-color: var(--trace-accent); color: #1d1300; font-weight: 600;
+}
+.se-trace-section { padding: 10px 12px; display: grid; gap: 10px; }
+.se-trace-section p, .se-trace-section ol { margin: 0; }
+.se-trace-section ol { padding-left: 18px; display: grid; gap: 4px; }
+.se-trace-segmented { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; gap: 6px; }
+.se-trace-row { display: flex; gap: 8px; align-items: flex-end; flex-wrap: wrap; }
+.se-trace-row > * { flex: 1 1 120px; }
+.se-trace-row > button { flex: 0 0 auto; }
+.se-trace-field { display: grid; gap: 3px; color: var(--trace-muted); font-size: 12px; }
+.se-trace-with-unit { display: flex; align-items: center; gap: 6px; color: var(--trace-text); }
+.se-trace-unit { flex: none; min-width: 18px; }
+.se-trace-note { color: var(--trace-muted); font-size: 12px; }
+.se-trace-primary { background: var(--trace-accent) !important; color: #1d1300 !important; font-weight: 600; }
+.se-trace-empty { color: var(--trace-muted); }
+.se-trace-pieces { list-style: none; margin: 0; padding: 0; max-height: 30vh; overflow: auto; display: grid; gap: 2px; }
+.se-trace-pieces li { display: flex; align-items: center; gap: 6px; }
+.se-trace-pieces li button { flex: 1; text-align: left; border-color: transparent; background: none; padding: 3px 6px; min-height: 26px; }
+.se-trace-pieces li button.is-selected { border-color: var(--trace-accent); background: var(--trace-control); }
+.se-trace-chosen { font-weight: 600; margin-bottom: 6px !important; }
+.se-trace-buttons { display: flex; flex-wrap: wrap; gap: 6px; }
+.se-trace-swatches { display: flex; gap: 6px; align-items: center; }
+.se-trace-swatches button { width: 26px; height: 26px; min-height: 26px; padding: 0; border-radius: 50%; border: 2px solid var(--trace-line); }
+.se-trace-swatches button.is-active { outline: 2px solid var(--trace-accent); outline-offset: 2px; }
+.se-trace-checks { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 10px; }
+.se-trace-check { display: flex; align-items: center; gap: 6px; cursor: pointer; }
+.se-trace-panel input[type=checkbox], .se-trace-panel input[type=range] { accent-color: var(--trace-accent); }
+.se-trace-footer {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 10px 12px;
+  border-top: 1px solid var(--trace-line); color: var(--trace-muted); font-size: 11px;
+}
+.se-trace-reveal { position: absolute; top: 12px; left: 12px; opacity: .55; background: var(--trace-panel); }
+.se-trace-reveal:hover, .se-trace-reveal:focus-visible { opacity: 1; }
+.se-trace-banner {
+  position: absolute; left: 50%; bottom: 12px; transform: translateX(-50%); max-width: min(640px, calc(100vw - 24px));
+  background: #5c1f1f; color: #fff; border-radius: 6px; padding: 8px 12px; font-size: 13px; text-align: center;
+}

@@ -3,7 +3,8 @@
 The main page follows the first refined concept: the current outfit on the left,
 a pattern canvas in the center, and a fabric inspector above a live 3D preview
 on the right. The header contains the outfit name, measurements, Save outfit,
-PDF export and the configured account/sign-in control.
+Export (a print-ready PDF, or the pattern projector for tracing on a projector
+or TV; see `Pattern_projector.md`) and the configured account/sign-in control.
 
 - Click a garment card to edit its design. The card menu saves a version or
   removes a garment from the working outfit; saved library versions stay intact.

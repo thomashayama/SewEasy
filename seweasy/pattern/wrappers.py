@@ -391,12 +391,12 @@ class VisPattern(core.ParametrizedPattern):
                     continue
                 p=np.array([*seat['position'],1])@transform
                 if kind=='button':
-                    dwg.add(dwg.circle(center=p.tolist(),r=f['diameter_cm']/2*self.px_per_unit,
+                    dwg.add(dwg.circle(center=p.tolist(),r=f['diameter_cm']/2,
                                        fill='none',stroke='rgb(80,80,80)',stroke_width=.3))
                     dwg.add(dwg.circle(center=p.tolist(),r=.35,fill='rgb(80,80,80)'))
                 else:
                     axis=np.asarray(seat['direction'])@transform[:2]
-                    axis=axis/(np.linalg.norm(axis) or 1)*f['diameter_cm']*.6*self.px_per_unit
+                    axis=axis/(np.linalg.norm(axis) or 1)*f['diameter_cm']*.6
                     dwg.add(dwg.line(start=(p-axis).tolist(),end=(p+axis).tolist(),
                                     stroke='rgb(80,80,80)',stroke_width=.7))
         return dwg
@@ -406,7 +406,8 @@ class VisPattern(core.ParametrizedPattern):
         if count <= 0:
             return
         label = buttons.get('placket_label', 'button_placket')
-        radius = buttons.get('diameter', 1.3) / 2 * self.px_per_unit
+        # SVG user units are centimetres: marks are drawn at their true size.
+        radius = buttons.get('diameter', 1.3) / 2
 
         for pname, panel in self.pattern['panels'].items():
             if buttons.get('panels') and pname not in buttons['panels']:
@@ -442,7 +443,7 @@ class VisPattern(core.ParametrizedPattern):
         for z in zippers:
             label = z.get('seam_label')
             length_frac = float(z.get('length', 0.6))
-            half = z.get('width', 1.2) / 2 * self.px_per_unit
+            half = z.get('width', 1.2) / 2
             for pname, panel in self.pattern['panels'].items():
                 seg_idx = next((i for i, e in enumerate(panel['edges'])
                                 if e.get('label') == label), None)

@@ -25,6 +25,7 @@ from . import theme
 from .browser_drape import BrowserDrape, prepare_scene, snapshot_scene
 from .pattern_canvas import PatternCanvas, FabricPanel
 from .design_number import DesignNumberInput
+from . import trace_view
 from webapp import gui_widgets as account_widgets
 
 # Optional AI photo-to-design service (see chatgarment_modal.py); the GUI
@@ -276,7 +277,10 @@ class GUIState:
                         self.ui_save_button = ui.button('Save', on_click=lambda: self.save_current()).props('unelevated').classes('se-save-outfit')
                         with ui.button(icon='expand_more').props('unelevated aria-label="Save options"').classes('se-save-options') as self.ui_save_options:
                             self.ui_save_menu = ui.menu()
-                    ui.button('Export', icon='file_download', on_click=self.state_download).props('outline')
+                    with ui.button('Export', icon='file_download').props('outline'):
+                        with ui.menu():
+                            ui.menu_item('Print-ready PDF', self.state_download)
+                            ui.menu_item('Project for tracing (projector or TV)', self.open_trace)
                     with ui.element('div').classes('se-studio-account'):
                         account_widgets.auth_header_ui(self, compact=True)
             with ui.element('div').classes('se-studio-body') as self.ui_studio_body:
@@ -1153,6 +1157,20 @@ class GUIState:
             self.toggle_param_update_events(self.ui_design_refs)
 
     # !SECTION
+
+    def open_trace(self):
+        """Hand the drafted pieces to the pattern projector (/trace) in a new tab."""
+        try:
+            data = trace_view.payload(self)
+        except Exception as e:
+            traceback.print_exc()
+            print(e)
+            data = None
+        if not data:
+            ui.notify('Nothing to project yet — choose a garment first', type='warning')
+            return
+        app.storage.user[trace_view.STORAGE_KEY] = data
+        ui.navigate.to('/trace', new_tab=True)
 
     async def state_download(self):
         """Download the current garment as a print-ready PDF"""
