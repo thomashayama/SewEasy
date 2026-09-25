@@ -7,6 +7,7 @@ transfer it.
 
 from functools import lru_cache
 from pathlib import Path
+import re
 from typing import Optional
 
 from webapp import access
@@ -68,6 +69,34 @@ def set_arm_pose(email: str, degrees: float) -> float:
             row.arm_pose = degrees
             db.commit()
     return degrees
+
+
+# Keep in step with gui/webgpu/hair.js (HAIR_STYLES, HAIR_COLORS, DEFAULT_HAIR).
+HAIR_STYLES = ('none', 'short', 'bun')
+DEFAULT_HAIR = {'style': 'short', 'color': '#3a2a22'}
+
+
+def clean_hair(style, color) -> dict:
+    """A valid hair choice; anything unknown falls back to the default."""
+    return {'style': style if style in HAIR_STYLES else DEFAULT_HAIR['style'],
+            'color': color.lower() if isinstance(color, str) and re.fullmatch(r'#[0-9a-fA-F]{6}', color)
+            else DEFAULT_HAIR['color']}
+
+
+def get_hair(email: str) -> dict:
+    with SessionLocal() as db:
+        row = db.get(User, email)
+        return clean_hair(row.hair_style, row.hair_color) if row else dict(DEFAULT_HAIR)
+
+
+def set_hair(email: str, style, color) -> dict:
+    hair = clean_hair(style, color)
+    with SessionLocal() as db:
+        row = db.get(User, email)
+        if row is not None:
+            row.hair_style, row.hair_color = hair['style'], hair['color']
+            db.commit()
+    return hair
 
 
 def clamp_arm_pose(degrees) -> float:

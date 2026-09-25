@@ -1,5 +1,6 @@
 import {Cloth} from '/webgpu/physics.js?v=21';
-import {Renderer} from '/webgpu/render.js?v=25';
+import {Renderer} from '/webgpu/render.js?v=26';
+import {HAIR_COLORS,HAIR_STYLES} from '/webgpu/hair.js?v=1';
 
 // GPU objects live outside Vue's reactive graph. Each mounted stage owns one
 // device and one loop; a serialized loader discards obsolete scene requests.
@@ -44,6 +45,15 @@ export default {
             <input type="range" min="20" max="75" step="1" :value="pose" aria-label="Arm pose, degrees below horizontal"
               @input="pose=+$event.target.value" @change="$emit('arm-pose',{value:+$event.target.value})"></label>
           <small>Degrees below horizontal: lower values raise the arms. Re-poses the mannequin and sleeves for draping; the sewing pattern stays the same.</small>
+          <label class="se-drape-hair">Hair
+            <select :value="hair_style" @change="$emit('hair',{style:$event.target.value,color:hair_color})">
+              <option v-for="(label,key) in hairStyles" :key="key" :value="key">{{label}}</option>
+            </select></label>
+          <div v-if="hair_style!=='none'" class="se-drape-swatches" role="radiogroup" aria-label="Hair colour">
+            <button v-for="(label,color) in hairColors" :key="color" type="button" role="radio" :aria-checked="color===hair_color"
+              :aria-label="label" :title="label" :style="{background:color}" :class="{'is-active':color===hair_color}"
+              @click="$emit('hair',{style:hair_style,color})"></button>
+          </div>
           <button v-if="hasButtons" @click="toggleButtons">{{buttonsClosed ? 'Unbutton shirt' : 'Button shirt'}}</button>
           <label v-if="hasSupport"><input type="checkbox" v-model="support" @change="setSupport"> Hold neckline <small>(fitting aid)</small></label>
           <small>{{paused ? 'Drag to inspect the paused drape' : 'Drag left / right to turn the mannequin'}}<br>Drag up / down to change view<br>Shift-drag or right-drag to pan · Scroll to zoom<br>Touch: two fingers to pan or pinch to zoom</small>
@@ -62,10 +72,11 @@ export default {
   </div>`,
   props: {scene_url:String, active:Boolean, docked:Boolean, preparing:Boolean, error:String,
     fabric_color:String, panel_colors:Object, panel_fabrics:Object, body_color:String, show_body:Boolean,
-    arm_pose:Number},
+    arm_pose:Number, hair_style:{type:String,default:'short'}, hair_color:{type:String,default:'#3a2a22'}},
   data: () => ({ready:false, warmed:false, progress:'Choose a garment to preview.', failure:'', paused:false,
     fps:0, frames:0, loadedScene:'', hasSupport:false, support:false, wind:false,
-    bodyNote:'Default mannequin',fitRows:[],hasButtons:false,buttonsClosed:true,pose:45}),
+    bodyNote:'Default mannequin',fitRows:[],hasButtons:false,buttonsClosed:true,pose:45,
+    hairStyles:HAIR_STYLES,hairColors:HAIR_COLORS}),
   computed: {
     state() {return this.error || this.failure ? 'error' : !this.preparing && !this.scene_url ? 'empty' : this.preparing || !this.ready ? 'preparing' :
       this.paused ? 'paused' : this.active || (this.wind && this.docked) ? 'running' : this.warmed ? 'ready' : 'warming';},
@@ -87,6 +98,7 @@ export default {
     panel_colors: {deep:true, handler() {this.appearance();}},
     panel_fabrics: {deep:true, handler() {this.appearance();}},
     body_color() {this.appearance();}, show_body() {this.appearance();},
+    hair_style() {this.appearance();}, hair_color() {this.appearance();},
     arm_pose: {immediate:true, handler(value) {if(Number.isFinite(value))this.pose=value;}},
   },
   methods: {
@@ -177,6 +189,7 @@ export default {
       e.renderer.setFabricColors(this.fabric_color,this.panel_colors);
       if(this.panel_fabrics)e.renderer.setFabricPrints(this.panel_fabrics);
       e.renderer.bodyView.color=[...linear(this.body_color),0];
+      e.renderer.setHair(this.hair_style,this.hair_color);
       e.renderer.showBody=this.show_body;e.renderer.dirty=true;
     },
     wake() {const e=engines.get(this);if(e?.cloth && !this.paused && !this.active){e.warmupRemaining=Math.max(e.warmupRemaining,1.2);this.warmed=false;}},

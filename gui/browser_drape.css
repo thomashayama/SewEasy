@@ -36,3 +36,10 @@
 .se-drape-menu .se-drape-pose {display:grid; grid-template-columns:1fr auto; align-items:center; gap:2px 8px;}
 .se-drape-menu .se-drape-pose input {grid-column:1 / -1; width:100%;}
 .se-drape-pose output {font-variant-numeric:tabular-nums;}
+
+/* Hair: a 3D viewing setting like the arm pose. */
+.se-drape-menu .se-drape-hair {display:flex; align-items:center; justify-content:space-between; gap:8px;}
+.se-drape-hair select {font:inherit; color:inherit; background:#fff; border:1px solid #c5ccd8; border-radius:5px; padding:3px 6px;}
+.se-drape-swatches {display:flex; flex-wrap:wrap; gap:6px; padding:0 8px 6px;}
+.se-drape-menu .se-drape-swatches button {width:22px; height:22px; padding:0; border-radius:50%; border:2px solid #fafaf7; box-shadow:0 0 0 1px #c5ccd8;}
+.se-drape-menu .se-drape-swatches button.is-active {box-shadow:0 0 0 2px #35558a;}

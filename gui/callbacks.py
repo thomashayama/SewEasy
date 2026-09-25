@@ -101,6 +101,7 @@ class GUIState:
         # kept over every body loaded into this studio.
         self.arm_pose = self._arm_pose_preference()
         self.pattern_state.set_arm_pose(self.arm_pose)
+        self.hair = self._hair_preference()
 
         # A design stashed before an auth/account navigation survives the
         # round trip (signing in must not discard the work being saved)
@@ -263,6 +264,30 @@ class GUIState:
         except Exception:
             traceback.print_exc()
             return None
+
+    def _hair_preference(self):
+        from webapp import profiles
+        try:
+            if self.user:
+                return profiles.get_hair(self.user['email'])
+            saved = app.storage.user.get('hair') or {}
+            return profiles.clean_hair(saved.get('style'), saved.get('color'))
+        except Exception:
+            traceback.print_exc()
+            return dict(profiles.DEFAULT_HAIR)
+
+    async def set_hair(self, style, color):
+        """A viewing choice: redraws the preview's hair at once; no redraft or re-mesh."""
+        from webapp import profiles
+        self.hair = profiles.clean_hair(style, color)
+        self.ui_browser_drape.configure(hair_style=self.hair['style'], hair_color=self.hair['color'])
+        try:
+            if self.user:
+                await run.io_bound(profiles.set_hair, self.user['email'], style, color)
+            else:
+                app.storage.user['hair'] = dict(self.hair)
+        except Exception:
+            traceback.print_exc()   # still shown in this session
 
     async def set_arm_pose(self, degrees):
         """Re-pose the mannequin and the sleeves' 3D placement; the 2D pattern is unchanged."""
@@ -625,10 +650,12 @@ class GUIState:
     def def_3d_scene(self):
         self.ui_browser_drape = BrowserDrape(self.pattern_state.fabric_color, self.body_color) \
             .classes('w-full h-full p-0 m-0')
-        self.ui_browser_drape.configure(docked=True, arm_pose=round(float(self.pattern_state.body_params['arm_pose_angle']), 1))
+        self.ui_browser_drape.configure(docked=True, arm_pose=round(float(self.pattern_state.body_params['arm_pose_angle']), 1),
+                                        hair_style=self.hair['style'], hair_color=self.hair['color'])
         self.ui_browser_drape.on('retry', self.retry_3d_scene)
         self.ui_browser_drape.on('show-body', lambda e: self.ui_browser_drape.configure(show_body=e.args['value']))
         self.ui_browser_drape.on('arm-pose', lambda e: self.set_arm_pose(e.args['value']))
+        self.ui_browser_drape.on('hair', lambda e: self.set_hair(e.args.get('style'), e.args.get('color')))
 
     # !SECTION
     # SECTION -- Other UI details

@@ -2,10 +2,12 @@ import {buffer} from './physics.js?v=21';
 import {cameraControls,framingScale} from './camera.js?v=15';
 import {Buttons} from './buttons.js?v=3';
 import {lightBackground,watchSystemBackground} from './appearance.js?v=1';
+import {STRAND_M,coveredHead,hairMesh} from './hair.js?v=1';
 
 function normalize(v){const l=Math.hypot(...v)||1;return v.map(x=>x/l);}
 function cross(a,b){return [a[1]*b[2]-a[2]*b[1],a[2]*b[0]-a[0]*b[2],a[0]*b[1]-a[1]*b[0]];}
 function dot(a,b){return a.reduce((s,v,i)=>s+v*b[i],0);}
+const toLinear=hex=>[1,3,5].map(j=>(parseInt(hex.slice(j,j+2),16)/255)**2.2);
 function multiply(a,b){const r=new Float32Array(16);for(let c=0;c<4;c++)for(let row=0;row<4;row++)for(let k=0;k<4;k++)r[c*4+row]+=a[k*4+row]*b[c*4+k];return r;}
 export function cameraMatrix(eye,target,aspect,pan=[0,0]){
  const z=normalize(eye.map((x,i)=>x-target[i])),x=normalize(cross([0,1,0],z)),y=cross(z,x);
@@ -63,9 +65,18 @@ fn turn(v:vec3<f32>)->vec3<f32>{let cs=view.angle.xy;return vec3<f32>(cs.x*v.x+c
  if(kind==3u){let shift=vec2<f32>(f32(u32(abs(floor(p.y)))%2u)*.5,0);let d=length(fract(p+shift+.5)-.5);ink=1.0-smoothstep(.28-length(aa),.28+length(aa),d);}
  if(kind==4u){ink=(1.0-smoothstep(.5-aa.x,.5+aa.x,f.x)+1.0-smoothstep(.5-aa.y,.5+aa.y,f.y))*.5;}
  if(kind==5u){let lines=vec2<f32>(1)-smoothstep(vec2<f32>(.045)-aa,vec2<f32>(.045)+aa,f);ink=max(lines.x,lines.y);}
- let printed=select(select(view.color.rgb*o.color,mix(o.bg,o.fg,ink),kind>0u&&kind<6u),texel,kind==6u);
+ // Hair: each strand across the flow gets its own shade, fading to the mean
+ // once strands are finer than a pixel, so a full-length view does not shimmer.
+ // Computed for every fragment: derivatives must stay in uniform control flow.
+ let s=o.uv.x/max(o.motif.y,.0002);let shade=fract(sin(floor(s)*12.9898)*43758.5453);
+ let along=.93+.07*sin(o.uv.y*90.0+shade*6.2832);
+ let detail=1.0-smoothstep(.35,.9,fwidth(s));
+ let isHair=kind==7u;
+ let strands=select(1.0,mix(1.0,mix(.72,1.2,shade)*along,detail),isHair);
+ let sheen=select(0.0,pow(max(dot(n,normalize(l+v)),0.0),28.0)*.16,isHair);
+ let printed=select(select(view.color.rgb*o.color*strands,mix(o.bg,o.fg,ink),kind>0u&&kind<6u),texel,kind==6u);
  let color=select(printed*(1.0-.45*stitching),heat,view.color.a>.5);
- return vec4<f32>(pow(color*light+rim,vec3<f32>(1.0/2.2)),1);
+ return vec4<f32>(pow(color*light+rim+sheen,vec3<f32>(1.0/2.2)),1);
 }`;
 export const FABRIC_STRIDE=16,FABRIC_KINDS=['plain','pinstripe','stripe','polka_dot','gingham','windowpane','texture'];
 // Per vertex: [kind, print spacing m, front layer, back layer], fg, bg, [front w,h, back w,h] in metres.
@@ -106,6 +117,8 @@ export class Renderer {
   this.buffers.push(this.panelIds,this.emptyPanels,this.holes);
   const makeUniform=color=>{const b=buffer(device,new Float32Array(32),GPUBufferUsage.UNIFORM);this.buffers.push(b);return {buffer:b,color};};
   this.clothView=makeUniform([0.18,0.40,0.59,0]);this.bodyView=makeUniform([0.72,0.64,0.57,0]);
+  // Hair turns with the mannequin, so it shares the body's motion; no hair until asked for.
+  this.hairView=makeUniform([.04,.02,.015,0]);this.hair=null;this.hairKey='none';
   this.buttons=new Buttons(device,cloth,this.clothView.buffer,format);
   const module=device.createShaderModule({code:shader});
   this.pipeline=device.createRenderPipeline({layout:'auto',vertex:{module,entryPoint:'vertex'},fragment:{module,entryPoint:'fragment',targets:[{format}]},primitive:{topology:'triangle-list',cullMode:'none'},depthStencil:{format:'depth24plus',depthWriteEnabled:true,depthCompare:'less'}});
@@ -124,7 +137,28 @@ export class Renderer {
   const cloth=this.cloth,maps=this.maps.createView({dimension:'2d-array'});
   const bind=(uniform,q,n,color,uv,fabric,panels)=>this.device.createBindGroup({layout:this.pipeline.getBindGroupLayout(0),entries:[{binding:0,resource:{buffer:uniform}},{binding:1,resource:{buffer:q}},{binding:2,resource:{buffer:n}},{binding:3,resource:{buffer:color}},{binding:4,resource:{buffer:uv}},{binding:5,resource:{buffer:fabric}},{binding:6,resource:{buffer:panels}},{binding:7,resource:{buffer:this.holes}},{binding:8,resource:maps},{binding:9,resource:this.mapSampler}]});
   this.clothBind=bind(this.clothView.buffer,cloth.q,cloth.normals,this.clothColors,cloth.uv,this.fabricData,this.panelIds);this.bodyBind=bind(this.bodyView.buffer,cloth.body,cloth.bodyNormals,this.bodyColors,this.emptyUV,this.emptyFabric,this.emptyPanels);
+  if(this.hair){const b=this.hair.buffers;this.hairBind=bind(this.hairView.buffer,b.positions,b.normals,b.colors,b.uv,b.fabric,b.panels);}
  }
+ // Style 'none', 'short' or 'bun' (hair.js) in a '#rrggbb' colour. Shaped from
+ // this scene's fitted head; hidden while a hood covers it.
+ setHair(style='none',color=null){
+  const key=coveredHead(this.cloth.scene)?'none':style;
+  if(key!==this.hairKey){
+   this.dropHair();this.hairKey=key;
+   const mesh=hairMesh(this.cloth.scene,key);
+   if(mesh){
+    const d=this.device,S=GPUBufferUsage.STORAGE,fabric=new Float32Array(mesh.count*FABRIC_STRIDE);
+    for(let i=0;i<mesh.count;i++){fabric[i*FABRIC_STRIDE]=7;fabric[i*FABRIC_STRIDE+1]=STRAND_M;}
+    const buffers={positions:buffer(d,mesh.positions,S),normals:buffer(d,mesh.normals,S),colors:buffer(d,new Float32Array(mesh.count*4).fill(1),S),
+     uv:buffer(d,mesh.uv,S),fabric:buffer(d,fabric,S),panels:buffer(d,new Uint32Array(mesh.count),S),faces:buffer(d,mesh.faces,GPUBufferUsage.INDEX)};
+    this.hair={buffers,count:mesh.faces.length};
+   }
+   this.rebind();
+  }
+  if(color)this.hairView.color=[...toLinear(color),0];
+  this.dirty=true;
+ }
+ dropHair(){if(this.hair)for(const b of Object.values(this.hair.buffers))b.destroy();this.hair=null;this.hairBind=null;}
  async loadTextures(textures=this.cloth.scene.fabric_textures){
   const images=[...new Set(Object.values(textures||{}).flatMap(m=>[m?.front?.image,m?.back?.image]).filter(Boolean))];
   if(!images.length)return;
@@ -152,10 +186,11 @@ export class Renderer {
   // same canvas keeps the user's camera distance and pan unchanged.
   const v=this.camera,r=v.distance*framingScale(w,h),eye=[v.target[0]+r*Math.sin(v.yaw)*Math.cos(v.pitch),v.target[1]+r*Math.sin(v.pitch),v.target[2]+r*Math.cos(v.yaw)*Math.cos(v.pitch)];
   const mvp=cameraMatrix(eye,v.target,w/h,v.pan);
-  for(const view of [this.clothView,this.bodyView]){const a=new Float32Array(32);a.set(mvp);a.set([...eye,1],16);a.set(view.color,20);a.set(view===this.bodyView?this.cloth.motion.uniform():[1,0,1,0,0,0,0,0],24);this.device.queue.writeBuffer(view.buffer,0,a);}
+  for(const view of [this.clothView,this.bodyView,this.hairView]){const a=new Float32Array(32);a.set(mvp);a.set([...eye,1],16);a.set(view.color,20);a.set(view===this.clothView?[1,0,1,0,0,0,0,0]:this.cloth.motion.uniform(),24);this.device.queue.writeBuffer(view.buffer,0,a);}
   const pass=encoder.beginRenderPass({colorAttachments:[{view:this.context.getCurrentTexture().createView(),clearValue:this.background,loadOp:'clear',storeOp:'store'}],depthStencilAttachment:{view:this.depth.createView(),depthClearValue:1,depthLoadOp:'clear',depthStoreOp:'store'},...(querySet?{timestampWrites:{querySet,beginningOfPassWriteIndex:2,endOfPassWriteIndex:3}}:{})});
   pass.setPipeline(this.pipeline);
   if(this.showBody){pass.setBindGroup(0,this.bodyBind);pass.setIndexBuffer(this.cloth.bodyFaces,'uint32');pass.drawIndexed(this.cloth.scene.body_faces.length*3);}
+  if(this.showBody&&this.hair){pass.setBindGroup(0,this.hairBind);pass.setIndexBuffer(this.hair.buffers.faces,'uint32');pass.drawIndexed(this.hair.count);}
   pass.setBindGroup(0,this.clothBind);pass.setIndexBuffer(this.cloth.faces,'uint32');pass.drawIndexed(this.cloth.scene.faces.length*3);this.buttons.render(pass);pass.end();
  }
  setFabricColors(base,overrides={}){
@@ -191,5 +226,5 @@ export class Renderer {
    return canvas.toDataURL('image/webp',.88);
   }finally{readback.unmap();readback.destroy();}
  }
- destroy(){this.destroyed=true;this.maps.destroy();this.stopTheme?.();this.controls.destroy();this.resizeObserver.disconnect();this.depth?.destroy();this.buttons.destroy();for(const b of this.buffers)b.destroy();}
+ destroy(){this.destroyed=true;this.dropHair();this.maps.destroy();this.stopTheme?.();this.controls.destroy();this.resizeObserver.disconnect();this.depth?.destroy();this.buttons.destroy();for(const b of this.buffers)b.destroy();}
 }

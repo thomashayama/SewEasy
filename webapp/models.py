@@ -34,6 +34,9 @@ class User(TimestampMixin, Base):
     default_profile_id = Column(Integer)
     # 3D preview arm pose, degrees below horizontal; NULL = the mannequin's own
     arm_pose = Column(Float)
+    # 3D preview hair: 'none', 'short' or 'bun', and a '#rrggbb' colour; NULL = defaults
+    hair_style = Column(String)
+    hair_color = Column(String)
 
     body_profiles = relationship('BodyProfile', back_populates='owner',
                                  cascade='all,delete')

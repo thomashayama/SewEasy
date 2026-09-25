@@ -52,6 +52,18 @@ not change. The mannequin fitter reads the angle below horizontal, the same way
 the garment programs place sleeves (before, it read it from vertical, which only
 agreed at the default 45°).
 
+**Hair** is another ⋯ menu setting: None, Short (the default) or Bun, in one
+of six colours, saved per account (in the browser when signed out). It is built
+in the browser (`gui/webgpu/hair.js`) from the fitted mannequin's own head:
+the scalp above a hairline running from the forehead over the ears to the nape
+is cut out along that curve, then lifted along the surface normals into a shell
+that is fuller on top and feathers to the hairline; a bun adds a swirl at the
+back of the head, above the nape so collars stay clear. The shader draws fine
+strands along a flow that runs from the crown (or into the bun), fading to the
+plain colour at a distance so it does not shimmer. Hair is drawn only: it takes
+no part in cloth collision, is not in thumbnails or exports, and is hidden when
+a garment has a hood (a panel named `hood`).
+
 Drag to turn the mannequin; **Shift-drag** or right/middle-drag moves the
 view. On touch screens, two fingers pan and pinch to zoom. Scroll zooms; the
 arrow keys rotate and **Shift+arrows** pan when the canvas has focus.
