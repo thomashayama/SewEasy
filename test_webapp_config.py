@@ -58,6 +58,16 @@ class AuthConfigTest(unittest.TestCase):
         self.assertEqual(config['DATABASE_URL'], 'sqlite:///data/current.db')
         self.assertEqual(config['JWT_SECRET'], 'test-session-key')
 
+    def test_postgres_urls_name_the_installed_driver(self):
+        # SQLAlchemy 2.1 made psycopg 3 the default for postgresql://; the image installs psycopg2.
+        for url in ('postgres://user:pw@db.example:5432/app', 'postgresql://user:pw@db.example:5432/app'):
+            with self.subTest(url=url):
+                self.assertEqual(self.load_config(env={'DATABASE_URL': url})['DATABASE_URL'],
+                                 'postgresql+psycopg2://user:pw@db.example:5432/app')
+        explicit = 'postgresql+psycopg2://user@db.example/app'
+        self.assertEqual(self.load_config(env={'DATABASE_URL': explicit})['DATABASE_URL'], explicit)
+        self.assertEqual(self.load_config()['DATABASE_URL'], 'sqlite:///data/seweasy.db')
+
 
 if __name__ == '__main__':
     unittest.main()

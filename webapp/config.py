@@ -8,11 +8,13 @@ from dotenv import dotenv_values
 
 # --- Database ---
 # Default: local SQLite file for dependency-free development.
-# Railway/Heroku-style managed Postgres injects postgres:// URLs; SQLAlchemy
-# needs the postgresql:// scheme.
+# Railway/Heroku-style managed Postgres injects postgres:// URLs. Name the
+# driver that is installed (psycopg2-binary): a bare postgresql:// means
+# whatever SQLAlchemy's default is, and 2.1 switched that to psycopg 3.
 DATABASE_URL = os.getenv('DATABASE_URL', 'sqlite:///data/seweasy.db')
-if DATABASE_URL.startswith('postgres://'):
-    DATABASE_URL = DATABASE_URL.replace('postgres://', 'postgresql://', 1)
+for _scheme in ('postgres://', 'postgresql://'):
+    if DATABASE_URL.startswith(_scheme):
+        DATABASE_URL = 'postgresql+psycopg2://' + DATABASE_URL[len(_scheme):]
 
 # --- App location ---
 APP_URL = os.getenv('APP_URL', 'http://localhost:8080').rstrip('/')
