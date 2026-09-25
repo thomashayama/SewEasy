@@ -13,7 +13,7 @@ from pathlib import Path
 import numpy as np
 from fastapi import Request
 from fastapi.responses import RedirectResponse
-from nicegui import run, ui
+from nicegui import app, run, ui
 
 from gui import theme
 from webapp import auth, designs, profiles, sharing
@@ -23,6 +23,7 @@ from webapp import measurement_guide as guide
 from webapp.body_display import profile_body_glb_url
 from webapp.access import Access
 from webapp.access_ui import item_share_dialog
+from webapp.measurement_help import measurement_overview, show_measurement_help
 from webapp.gui_widgets import (confirm_delete, open_share_dialog,
                                 preview_data_uri)
 
@@ -184,6 +185,10 @@ async def account_page(request: Request):
                     leave_btn = ui.button('Remove from my list',
                                           on_click=lambda: leave_current()) \
                         .props('flat size=sm icon=close no-caps')
+                    default_btn = ui.button('Make default', on_click=lambda: toggle_default()) \
+                        .props('outline size=sm icon=star_outline no-caps')
+                    with default_btn:
+                        default_tip = ui.tooltip('Open new designs with these measurements')
                     share_btn = ui.button('Share',
                                           on_click=lambda: share_current()) \
                         .props('outline size=sm icon=share') \
@@ -224,27 +229,12 @@ async def account_page(request: Request):
             with ui.expansion('How to measure').classes('w-full se-stitch-card'):
                 ui.label(guide.GENERAL_TIPS).classes('text-sm text-stone-600')
                 unit_note = ui.label('').classes('text-sm text-stone-600')
-                ui.image(guide.OVERVIEW_DIAGRAM).classes('w-full max-w-md mx-auto mt-2')
-                ui.label(guide.OVERVIEW_CREDIT).classes('se-param-label text-[0.65rem]')
-                ui.label('Every field below has a ? button with a diagram '
+                measurement_overview()
+                ui.label('Every field below has a ? button with a diagram and a photo '
                          'showing exactly where that measurement is taken.') \
                     .classes('text-sm text-stone-600 mt-1')
 
-            # Shared per-measurement help dialog
-            with ui.dialog() as guide_dialog, \
-                    ui.card().classes('items-center max-w-sm'):
-                guide_title = ui.label('').classes('se-section-label')
-                guide_image = ui.image('').classes('w-56')
-                guide_text = ui.label('').classes('text-sm text-stone-600')
-                ui.button('Close', on_click=guide_dialog.close).props('flat')
-
-            def show_guide(key):
-                guide_title.set_text(guide.label_for(key))
-                guide_image.set_source(f'{guide.DIAGRAM_URL}/{key}.svg')
-                entry = guide.GUIDE.get(key)
-                guide_text.set_text(entry['how'] if entry
-                                    else 'No guide available yet.')
-                guide_dialog.open()
+            show_guide = show_measurement_help
 
             def change_units():
                 # Converts the visible fields in place: switching units
@@ -345,13 +335,15 @@ async def account_page(request: Request):
                     return
                 # Merge: fields not shown (Essential mode) keep their values
                 values = dict(data['measurements'])
+                shown = guide.editor_values(data['measurements'])
                 for key, field in fields.items():
                     try:
                         values[key] = guide.stored_value(
                             key, field.value, units.value,
-                            previous_cm=data['measurements'].get(key))
+                            previous_cm=shown.get(key))
                     except (TypeError, ValueError):
                         pass
+                inseam = values.pop('inseam', None)
 
                 # In Essential mode the hidden measurements scale with the
                 # essentials they depend on, staying anatomically consistent
@@ -359,6 +351,9 @@ async def account_page(request: Request):
                 if mode.value == 'essential':
                     scaled = guide.scale_coupled(data['measurements'], values)
                     values.update(scaled)
+                # The inseam is not stored: it sets how deep the crotch sits.
+                if inseam is not None:
+                    values = guide.apply_inseam(values, inseam)
 
                 errors, warnings = guide.validate_measurements(values)
                 if errors:
@@ -404,14 +399,19 @@ async def account_page(request: Request):
                 # Viewers read a shared profile; its owner and admins edit it.
                 role = data['role']
                 shared = shared_rows.get(data['id'])
+                is_default = data['id'] == default_profile['id']
+                default_btn.set_text('Default' if is_default else 'Make default')
+                default_btn.props(f'icon={"star" if is_default else "star_outline"}')
+                default_tip.set_text('New designs open with these measurements. Click to stop.' if is_default
+                                     else 'Open new designs with these measurements')
+                default_btn.set_visibility(True)
                 copy_btn.set_visibility(role != 'owner')
                 leave_btn.set_visibility(bool(shared and shared['is_member']))
                 share_btn.set_visibility(role in ('owner', 'admin'))
                 delete_btn.set_visibility(role in ('owner', 'admin'))
                 readonly = role == 'viewer'
-                keys = sorted(data['measurements'])
-                if mode.value == 'essential':
-                    keys = [k for k in keys if guide.is_essential(k)]
+                shown = guide.editor_values(data['measurements'])
+                keys = guide.editor_keys(data['measurements'], mode.value == 'essential')
                 with editor:
                     if role != 'owner':
                         ui.label(f'Shared by {data["owner_name"]} · '
@@ -467,7 +467,7 @@ async def account_page(request: Request):
                                     label=guide.label_for(key)
                                         + guide.unit_suffix(key, units.value),
                                     value=guide.display_value(
-                                        key, data['measurements'][key],
+                                        key, shown[key],
                                         units.value),
                                     format='%.2f',
                                     step=0.25 if units.value == 'in' else 0.5,
@@ -491,19 +491,23 @@ async def account_page(request: Request):
                             .props('unelevated icon=save').classes('mt-3 self-end')
 
             shared_rows = {}
+            default_profile = {'id': None}
 
             def refresh_profiles(select_id=None):
                 rows = profiles.list_profiles(email)
-                options = {r['id']: r['name'] for r in rows}
+                default = profiles.get_default_profile(email)
+                default_profile['id'] = default and default['id']
+                mark = lambda profile_id: ' · default' if profile_id == default_profile['id'] else ''  # noqa: E731
+                options = {r['id']: r['name'] + mark(r['id']) for r in rows}
                 shared_rows.clear()
                 shared_rows.update({r['id']: r for r in profiles.shared_profiles(email)})
                 for row in shared_rows.values():
-                    options[row['id']] = f'{row["name"]} — shared by {row["owner_name"]}'
+                    options[row['id']] = f'{row["name"]} — shared by {row["owner_name"]}' + mark(row['id'])
                 has_rows = bool(options)
                 options[NEW_PROFILE] = '＋ New profile…'
                 profile_select.set_options(options)
                 hint.set_visibility(not has_rows)
-                for button in (copy_btn, leave_btn, share_btn, delete_btn):
+                for button in (copy_btn, leave_btn, share_btn, delete_btn, default_btn):
                     button.set_visibility(False)    # load_editor shows what the role allows
                 if has_rows:
                     chosen = select_id if select_id in options \
@@ -542,6 +546,27 @@ async def account_page(request: Request):
                     return
                 ui.notify('Profile deleted')
                 refresh_profiles()
+
+            def toggle_default():
+                selected = profile_select.value
+                if selected in (None, NEW_PROFILE):
+                    return
+                make = selected != default_profile['id']
+                try:
+                    profiles.set_default_profile(email, selected if make else None)
+                except ValueError as error:
+                    ui.notify(str(error), type='warning')
+                    return
+                if make:
+                    # The draft in this browser picks it up too: no choice made here
+                    # means the studio opens with the default.
+                    pending = app.storage.user.get('pending_design')
+                    if pending:
+                        pending['body_choice'] = None
+                        app.storage.user['pending_design'] = pending
+                refresh_profiles(selected)
+                ui.notify('New designs open with these measurements' if make else 'No default measurements',
+                          type='positive' if make else 'info')
 
             def copy_current():
                 if profile_select.value in (None, NEW_PROFILE):

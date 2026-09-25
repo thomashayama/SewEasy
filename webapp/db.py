@@ -47,7 +47,9 @@ def _migrate():
                     'preview': 'TEXT',
                     'drape_glb': blob_type,
                     'fabric_color': 'VARCHAR'},
-        'users': {'units': "VARCHAR DEFAULT 'in' NOT NULL"},
+        'users': {'units': "VARCHAR DEFAULT 'in' NOT NULL",
+                  'default_profile_id': 'INTEGER',
+                  'arm_pose': 'FLOAT'},
         'wardrobe_shares': {'visibility': 'VARCHAR'},
         # DEFAULT backfills existing rows: every earlier invitation was read-only
         'wardrobe_invitations': {'role': "VARCHAR DEFAULT 'viewer' NOT NULL"},

@@ -40,6 +40,10 @@ export default {
           <span class="se-drape-live" role="status">{{ paused ? 'Paused' : 'Live drape · ' + fps + ' fps' }}</span>
           <button @click="front">Front view</button>
           <label><input type="checkbox" :checked="show_body" @change="$emit('show-body',{value:$event.target.checked})"> Show mannequin</label>
+          <label class="se-drape-pose">Arm pose <output>{{Math.round(pose)}}°</output>
+            <input type="range" min="20" max="75" step="1" :value="pose" aria-label="Arm pose, degrees below horizontal"
+              @input="pose=+$event.target.value" @change="$emit('arm-pose',{value:+$event.target.value})"></label>
+          <small>Degrees below horizontal: lower values raise the arms. Re-poses the mannequin and sleeves for draping; the sewing pattern stays the same.</small>
           <button v-if="hasButtons" @click="toggleButtons">{{buttonsClosed ? 'Unbutton shirt' : 'Button shirt'}}</button>
           <label v-if="hasSupport"><input type="checkbox" v-model="support" @change="setSupport"> Hold neckline <small>(fitting aid)</small></label>
           <small>{{paused ? 'Drag to inspect the paused drape' : 'Drag left / right to turn the mannequin'}}<br>Drag up / down to change view<br>Shift-drag or right-drag to pan · Scroll to zoom<br>Touch: two fingers to pan or pinch to zoom</small>
@@ -57,10 +61,11 @@ export default {
     </details>
   </div>`,
   props: {scene_url:String, active:Boolean, docked:Boolean, preparing:Boolean, error:String,
-    fabric_color:String, panel_colors:Object, panel_fabrics:Object, body_color:String, show_body:Boolean},
+    fabric_color:String, panel_colors:Object, panel_fabrics:Object, body_color:String, show_body:Boolean,
+    arm_pose:Number},
   data: () => ({ready:false, warmed:false, progress:'Choose a garment to preview.', failure:'', paused:false,
     fps:0, frames:0, loadedScene:'', hasSupport:false, support:false, wind:false,
-    bodyNote:'Default mannequin',fitRows:[],hasButtons:false,buttonsClosed:true}),
+    bodyNote:'Default mannequin',fitRows:[],hasButtons:false,buttonsClosed:true,pose:45}),
   computed: {
     state() {return this.error || this.failure ? 'error' : !this.preparing && !this.scene_url ? 'empty' : this.preparing || !this.ready ? 'preparing' :
       this.paused ? 'paused' : this.active || (this.wind && this.docked) ? 'running' : this.warmed ? 'ready' : 'warming';},
@@ -82,6 +87,7 @@ export default {
     panel_colors: {deep:true, handler() {this.appearance();}},
     panel_fabrics: {deep:true, handler() {this.appearance();}},
     body_color() {this.appearance();}, show_body() {this.appearance();},
+    arm_pose: {immediate:true, handler(value) {if(Number.isFinite(value))this.pose=value;}},
   },
   methods: {
     async load() {

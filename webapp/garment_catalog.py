@@ -132,7 +132,7 @@ def studio_snapshot(items, name='Untitled outfit', previous=None, *, outfit_revi
         raise ValueError('Choose at least one garment.')
     items = deepcopy(items)
     active = items[0]
-    snapshot = {key: deepcopy(value) for key, value in (previous or {}).items() if key in ('body', 'skin')}
+    snapshot = {key: deepcopy(value) for key, value in (previous or {}).items() if key in ('body', 'skin', 'body_choice')}
     mode = editor_mode or ('outfit' if outfit_revision_id or len(items) > 1 else 'garment')
     snapshot.update(design=deepcopy(active['params']), outfit=items, outfit_name=name,
                     editor_mode=mode, source_share=source_share, outfit_updated_at=outfit_updated_at,

@@ -31,6 +31,50 @@ def set_units(email: str, units: str) -> None:
             db.commit()
 
 
+def get_default_profile(email: str) -> Optional[dict]:
+    """The profile a studio opens with, if one is set and still opens for this user."""
+    with SessionLocal() as db:
+        row = db.get(User, email)
+        profile_id = row.default_profile_id if row else None
+    return get_profile(email, profile_id) if profile_id else None
+
+
+def set_default_profile(email: str, profile_id: Optional[int]) -> None:
+    """Choose (or, with None, clear) the default profile: one you own or that is shared with you."""
+    if profile_id is not None and get_profile(email, profile_id) is None:
+        raise ValueError('This profile is no longer available.')
+    with SessionLocal() as db:
+        row = db.get(User, email)
+        if row is None:
+            raise ValueError('Sign in to choose default measurements.')
+        row.default_profile_id = int(profile_id) if profile_id is not None else None
+        db.commit()
+
+
+ARM_POSE_RANGE = (20.0, 75.0)   # degrees below horizontal (0 is a T-pose); the mannequins stand at about 45
+
+
+def get_arm_pose(email: str) -> Optional[float]:
+    with SessionLocal() as db:
+        row = db.get(User, email)
+        return row.arm_pose if row else None
+
+
+def set_arm_pose(email: str, degrees: float) -> float:
+    degrees = clamp_arm_pose(degrees)
+    with SessionLocal() as db:
+        row = db.get(User, email)
+        if row is not None:
+            row.arm_pose = degrees
+            db.commit()
+    return degrees
+
+
+def clamp_arm_pose(degrees) -> float:
+    low, high = ARM_POSE_RANGE
+    return round(min(high, max(low, float(degrees))), 1)
+
+
 DEFAULT_BODIES = {'all': 'Default body', 'female': 'Default woman', 'male': 'Default man'}
 
 

@@ -208,6 +208,9 @@ def body_source_ui(state):
         await state.update_pattern_ui_state()
 
     async def on_select(e):
+        if e.value in PRESETS or (email and (isinstance(e.value, int) or str(e.value).startswith(SHARED_PREFIX))):
+            state.body_choice = e.value     # remembered with the draft; profiles are reread
+        refresh_default_button()
         if e.value in PRESETS:
             await apply_measurements(profiles.default_measurements(PRESETS[e.value][0]))
             await state.apply_skin_color(None)
@@ -226,26 +229,76 @@ def body_source_ui(state):
             if select.value == e.value:
                 select.set_options(options())
 
+    def default_id():
+        default = profiles.get_default_profile(email) if email else None
+        return default and default['id']
+
     def options():
         opts = {key: label for key, (_, label) in PRESETS.items()}
         if email:
+            chosen = default_id()
             for row in profiles.list_profiles(email):
-                opts[row['id']] = row['name']
+                opts[row['id']] = row['name'] + (' · default' if row['id'] == chosen else '')
             for row in profiles.shared_profiles(email):
                 opts[f'{SHARED_PREFIX}{row["id"]}'] = \
-                    f'{row["name"]} — shared by {row["owner_name"]}'
+                    f'{row["name"]} — shared by {row["owner_name"]}' + (' · default' if row['id'] == chosen else '')
         return opts
 
     def mark_custom():
+        state.body_choice = CUSTOM
         select.set_options({**options(), CUSTOM: 'Custom measurements'})
         select.set_value(CUSTOM)
+        refresh_default_button()
+
+    def selected_profile():
+        value = select.value
+        if isinstance(value, int):
+            return value
+        if str(value).startswith(SHARED_PREFIX):
+            return int(value[len(SHARED_PREFIX):])
+        return None
+
+    def toggle_default():
+        profile_id = selected_profile()
+        if profile_id is None:
+            return
+        try:
+            profiles.set_default_profile(email, None if profile_id == default_id() else profile_id)
+        except ValueError as error:
+            ui.notify(str(error), type='warning')
+            return
+        is_default = profile_id == default_id()
+        select.set_options({**options(), **({CUSTOM: 'Custom measurements'} if select.value == CUSTOM else {})})
+        refresh_default_button()
+        ui.notify('New designs open with these measurements' if is_default else 'No default measurements',
+                  type='positive' if is_default else 'info')
+
+    def refresh_default_button():
+        if not email or default_button is None:
+            return
+        profile_id = selected_profile()
+        is_default = profile_id is not None and profile_id == default_id()
+        default_button.set_visibility(profile_id is not None)
+        default_button.props(f'icon={"star" if is_default else "star_outline"}')
+        label = 'Stop opening new designs with these measurements' if is_default else 'Open new designs with these measurements'
+        default_button._props['aria-label'] = label
+        default_tooltip.set_text(label)
+        default_button.update()
 
     state.mark_custom_measurements = mark_custom
 
+    default_button = default_tooltip = None
+    initial_options = options()
+    # This draft's choice (a profile stays selected by name, not by numbers).
+    initial = state.body_choice if state.body_choice in initial_options else current_preset()
     with ui.row(wrap=False).classes('w-full items-center gap-1'):
-        select = ui.select(options(), value=current_preset() or DEFAULT, label='Measurements',
+        select = ui.select(initial_options, value=initial or DEFAULT, label='Measurements',
                            on_change=on_select) \
             .classes('grow').props('outlined dense options-dense')
+        if email:
+            default_button = ui.button(on_click=toggle_default).props('flat dense')
+            with default_button:
+                default_tooltip = ui.tooltip('')
         ui.button(icon='upload_file', on_click=state.ui_body_dialog.open) \
             .props('flat dense aria-label="Upload a measurements file"') \
             .tooltip('Upload a measurements file')
@@ -260,7 +313,11 @@ def body_source_ui(state):
                     email, name,
                     profiles.measurements_from_body(state.pattern_state.body_params),
                     skin_color=state.body_color)
+                saved = next((r['id'] for r in profiles.list_profiles(email) if r['name'] == name), None)
                 select.set_options(options())
+                if saved is not None:
+                    state.body_choice = saved
+                    select.set_value(saved)     # the same numbers, now under their name
                 save_dialog.close()
                 ui.notify(f'Saved "{name}"', type='positive')
 
@@ -290,20 +347,26 @@ def body_source_ui(state):
     def edit_current():
         from webapp import measurement_guide as guide
         baseline = profiles.measurements_from_body(state.pattern_state.body_params)
+        shown = guide.editor_values(baseline)
         fields = {}
         with ui.dialog() as dialog, ui.card().classes('w-[520px] max-w-full'):
             ui.label('Customize measurements').classes('text-lg font-semibold')
             ui.label('Centimeters. Related proportions adjust with your edits.').classes('se-param-label')
             with ui.element('div').classes('grid grid-cols-2 gap-3 w-full'):
-                for key, entry in guide.GUIDE.items():
-                    if entry.get('essential'):
-                        fields[key] = ui.number(entry['label'], value=baseline[key], min=1,
-                            step=.5, format='%.2f').props('outlined dense').classes('w-full')
+                from webapp.measurement_help import help_button
+                for key in guide.editor_keys(baseline, essential_only=True):
+                    with ui.row(wrap=False).classes('items-center gap-0 w-full'):
+                        fields[key] = ui.number(guide.label_for(key), value=round(shown[key], 2), min=1,
+                            step=.5, format='%.2f').props('outlined dense').classes('grow')
+                        help_button(key)
 
             async def apply():
                 try:
                     values = {**baseline, **{k: float(f.value) for k, f in fields.items()}}
+                    inseam = values.pop('inseam', None)
                     values.update(guide.scale_coupled(baseline, values))
+                    if inseam is not None:
+                        values = guide.apply_inseam(values, inseam)
                     errors, warnings = guide.validate_measurements(values)
                     if errors:
                         raise ValueError('\n'.join(errors))
@@ -326,8 +389,9 @@ def body_source_ui(state):
 
     ui.button('Customize measurements', on_click=edit_current) \
         .props('flat dense no-caps size=sm icon=straighten')
-    if current_preset() is None:
+    if initial is None:
         mark_custom()
+    refresh_default_button()
 
 
 def designs_ui(state):

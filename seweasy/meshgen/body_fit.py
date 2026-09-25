@@ -57,7 +57,9 @@ def levels(m):
 
 
 def arm_frame(m, side):
-    angle = np.deg2rad(m['arm_pose_angle'])
+    # arm_pose_angle is measured below horizontal (0 is a T-pose), as the
+    # garment programs place sleeves; this frame works from vertical.
+    angle = np.deg2rad(90 - m['arm_pose_angle'])
     joint = np.array([side * m['shoulder_w'] / 2,
         levels(m)['nape'] - np.tan(np.deg2rad(m['shoulder_incl'])) *
         (m['shoulder_w'] - m['neck_w']) / 2, 0.])

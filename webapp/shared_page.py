@@ -260,10 +260,11 @@ def shared_body(user, sharing, source, share_id, data, reopen):
             ui.label(data['name']).classes('se-home-title break-words')
             ui.label(f'Owned by {source["owner_name"]}' + (' · You are an admin' if source['role'] == 'admin' else '')) \
                 .classes('text-sm')
+            values = guide.editor_values(data['measurements'])
             with ui.grid(columns=2).classes('w-full gap-x-6 gap-y-1'):
-                for key in sorted(k for k in data['measurements'] if guide.is_essential(k)):
+                for key in guide.editor_keys(data['measurements'], essential_only=True):
                     try:
-                        shown = guide.display_value(key, data['measurements'][key], units)
+                        shown = guide.display_value(key, values[key], units)
                     except (TypeError, ValueError):
                         continue
                     ui.label(guide.label_for(key)).classes('text-sm')

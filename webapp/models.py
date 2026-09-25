@@ -6,7 +6,7 @@ mirroring the pattern proven out in Rivulet_Server.
 
 from datetime import datetime
 
-from sqlalchemy import (JSON, Boolean, Column, DateTime, ForeignKey, Integer,
+from sqlalchemy import (JSON, Boolean, Column, DateTime, Float, ForeignKey, Integer,
                         LargeBinary, String, Text, UniqueConstraint)
 from sqlalchemy.orm import deferred, relationship
 
@@ -29,6 +29,11 @@ class User(TimestampMixin, Base):
     # Preferred display units for body measurements ('in' or 'cm');
     # values are always stored in centimeters
     units = Column(String, nullable=False, default='in', server_default='in')
+    # Measurement profile a studio opens with when this browser has not
+    # picked one (a profile the user owns or that is shared with them)
+    default_profile_id = Column(Integer)
+    # 3D preview arm pose, degrees below horizontal; NULL = the mannequin's own
+    arm_pose = Column(Float)
 
     body_profiles = relationship('BodyProfile', back_populates='owner',
                                  cascade='all,delete')

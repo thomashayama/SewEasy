@@ -3,8 +3,10 @@
 Definitions follow `docs/Body Measurements GarmentCode.pdf` (the
 authoritative spec for how the pattern framework interprets each value),
 rephrased as practical tape-measure instructions. Every entry has a
-matching diagram at `assets/img/measurements/<key>.svg`, generated from
-the mean-body outline by `assets/img/measurements/generate.py`.
+matching diagram at `assets/img/measurements/<key>.svg`, drawn on the
+default mannequin by `assets/img/measurements/generate.py`, and many have a
+photo of the measurement being taken (`photos/credits.json` lists each
+photo with its author and license).
 
 `essential` marks the measurements shown in the editor's Essential mode:
 the ones with the largest effect on fit that a home sewist can take with
@@ -13,12 +15,34 @@ usually fine) until edited in All mode.
 
 All lengths are centimeters; angles are degrees.
 """
+import json
+from functools import lru_cache
+from pathlib import Path
 
 DIAGRAM_URL = '/img/measurements'
-OVERVIEW_DIAGRAM = f'{DIAGRAM_URL}/overview_body_measures.svg'
-# CC BY-SA 3.0 attribution for the overview illustration (see ReadMe.md)
-OVERVIEW_CREDIT = ('Overview illustration: "Body measures SVG" by '
-                   'MagentaGreen, CC BY-SA 3.0, via Wikimedia Commons')
+OVERVIEW_DIAGRAM = f'{DIAGRAM_URL}/overview.svg'
+PHOTO_DIR = Path(__file__).resolve().parents[1] / 'assets/img/measurements/photos'
+PHOTO_URL = f'{DIAGRAM_URL}/photos'
+
+
+@lru_cache(maxsize=1)
+def _photo_credits():
+    try:
+        return json.loads((PHOTO_DIR / 'credits.json').read_text(encoding='utf-8'))
+    except (OSError, ValueError):
+        return {}
+
+
+def photo_for(key: str):
+    """{url, credit, link} for a measurement's photo, or None. The credit names author, source and license."""
+    entry = _photo_credits().get(key)
+    if not entry or not (PHOTO_DIR / entry['file']).is_file():
+        return None
+    credit = f'Photo: {entry["author"]} · {entry["source"]}'
+    if entry.get('license') and entry['source'] == 'Wikimedia Commons':
+        credit += f' · {entry["license"]}'
+    return dict(url=f'{PHOTO_URL}/{entry["file"]}', credit=credit, link=entry.get('page'))
+
 
 GENERAL_TIPS = (
     'Measure over underwear or thin, close-fitting clothes. Keep the tape '
@@ -95,141 +119,150 @@ def unit_suffix(key: str, units: str) -> str:
         return ''
     return ' (in)' if units == 'in' else ' (cm)'
 
+# In the order you take them: height, then around the body, then lengths.
+# The editors list fields in this order.
 GUIDE = {
-    # --- Circumferences ---
     'height': dict(
-        label='Height', essential=True,
-        how='Your full height without shoes. Stand straight with your back '
-            'against a wall and measure from the floor to the top of your '
-            'head.'),
+        label='Height', essential=True, view='side',
+        how='Your full height without shoes. Stand with heels, seat and '
+            'shoulder blades against a wall, rest a hardcover book flat on '
+            'your head against the wall, mark its underside and measure from '
+            'the floor to the mark.'),
+
+    # --- Around the body ---
     'bust': dict(
-        label='Bust', essential=True,
+        label='Bust', essential=True, view='front',
         how='Around the fullest part of your bust, passing over the bust '
             'points. Keep the tape parallel to the floor all the way around '
             'and don\'t compress the bust.'),
     'underbust': dict(
-        label='Underbust', essential=True,
+        label='Underbust', essential=True, view='front',
         how='Around your ribcage directly below the bust, where a bra band '
             'sits. Tape parallel to the floor, snug against the ribs.'),
     'waist': dict(
-        label='Waist', essential=True,
+        label='Waist', essential=True, view='front',
         how='Around your natural waist — roughly midway between your lowest '
             'rib and your hip bones, usually the narrowest part of the '
             'torso. Tie a string there first if you\'re unsure; it settles '
             'into the natural waist when you bend sideways.'),
     'hips': dict(
-        label='Hips', essential=True,
+        label='Hips', essential=True, view='front',
         how='Around the fullest part of your seat, keeping the tape '
             'parallel to the floor. Check in a mirror that the tape sits on '
             'the widest point front and back.'),
     'leg_circ': dict(
-        label='Thigh', essential=True,
+        label='Thigh', essential=True, view='front',
         how='Around the thickest part of one thigh, near the top of the '
             'leg. Stand with weight even on both feet.'),
     'wrist': dict(
-        label='Wrist', essential=True,
+        label='Wrist', essential=True, view='front',
         how='Around the narrowest part of your wrist, just above the wrist '
             'bone at the root of the hand.'),
 
-    # --- Back widths ---
+    # --- Lengths ---
+    'shoulder_w': dict(
+        label='Shoulder width', essential=True, view='back',
+        how='Across the back, from one shoulder point to the other — the '
+            'bony tips where the shoulders begin to curve into the arms. '
+            'A helper makes this much easier.'),
+    'arm_length': dict(
+        label='Arm length', essential=True, view='side',
+        how='From the shoulder point down the outside of the arm to the '
+            'wrist bone, with the arm relaxed at your side.'),
+    'waist_line': dict(
+        label='Back length (nape to waist)', essential=True, view='back',
+        how='From the nape of your neck (the prominent bone at the base of '
+            'the back of the neck) down the center back to waist level. Let '
+            'the tape follow the curve of your back.'),
+    'hips_line': dict(
+        label='Waist to hip', essential=True, view='side',
+        how='On your side: the vertical distance from waist level down to '
+            'hip level (where you measured the hip circumference).'),
+    'inseam': dict(
+        label='Inseam (crotch to floor)', essential=True, view='front',
+        how='Along the inside of the leg, from the crotch straight down to '
+            'the floor, without shoes. Easiest: stand against a wall with a '
+            'hardcover book held up between your legs like a saddle, keep it '
+            'level, and measure from its top edge to the floor. It sets how '
+            'deep the crotch sits below your hips.'),
+
+    # --- Details (the defaults scale with the essentials) ---
+    'back_width': dict(
+        label='Back width', essential=False, view='back',
+        how='Across your back at bust level, from one side line of the '
+            'body to the other. This is the back portion of the bust '
+            'circumference.'),
     'waist_back_width': dict(
-        label='Waist back width', essential=False,
+        label='Waist back width', essential=False, view='back',
         how='The back portion of your waist circumference: across your '
             'back at waist level, from the side line of the body on one '
             'side to the other (the "balance line" — the vertical line '
             'running down the middle of your side).'),
-    'back_width': dict(
-        label='Back width', essential=False,
-        how='Across your back at bust level, from one side line of the '
-            'body to the other. This is the back portion of the bust '
-            'circumference.'),
     'hip_back_width': dict(
-        label='Hip back width', essential=False,
+        label='Hip back width', essential=False, view='back',
         how='Across your back at hip level, from one side line of the body '
             'to the other — the back portion of the hip circumference.'),
-
-    # --- Lengths & distances ---
-    'waist_line': dict(
-        label='Back length (nape to waist)', essential=True,
-        how='From the nape of your neck (the prominent bone at the base of '
-            'the back of the neck) down the center back to waist level. Let '
-            'the tape follow the curve of your back.'),
     'waist_over_bust_line': dict(
-        label='Front length over bust', essential=False,
+        label='Front length over bust', essential=False, view='side',
         how='From the neck base down the front to waist level, passing '
             'over the bust point. Let the tape lie on the body over the '
             'bust like a tailor\'s tape — don\'t bridge it straight down.'),
     'bust_line': dict(
-        label='Shoulder to bust point', essential=False,
+        label='Shoulder to bust point', essential=False, view='side',
         how='From shoulder level down to the bust point, measured along '
             'the same line as the front length. On the body surface, not '
             'straight through the air.'),
     'vert_bust_line': dict(
-        label='Nape to bust level', essential=False,
+        label='Nape to bust level', essential=False, view='side',
         how='The vertical drop from the nape of the neck to the height of '
             'the bust circumference. Best taken from a side photo: it\'s a '
             'straight vertical distance, not along the body.'),
-    'arm_length': dict(
-        label='Arm length', essential=True,
-        how='From the tip of your shoulder (the bony point where the '
-            'shoulder meets the arm) down to your wrist, with the arm '
-            'relaxed at your side or slightly bent.'),
     'armscye_depth': dict(
-        label='Armscye depth', essential=False,
+        label='Armscye depth', essential=False, view='back',
         how='On your back: the vertical distance from shoulder level down '
             'to the bottom of the armpit. Hold a ruler horizontally under '
             'the armpit to make the lower point easier to find.'),
     'head_l': dict(
-        label='Head length', essential=False,
+        label='Head length', essential=False, view='side',
         how='From the nape of the neck straight up to the top of your '
             'head (a vertical, straight-line distance).'),
-    'shoulder_w': dict(
-        label='Shoulder width', essential=True,
-        how='Across the front, from the outer end of one collarbone to the '
-            'outer end of the other — the bony points where the shoulders '
-            'begin to curve into the arms.'),
     'neck_w': dict(
-        label='Neck width', essential=False,
+        label='Neck width', essential=False, view='back',
         how='The width of the neck base, measured across the back of the '
             'neck from one side to the other.'),
     'bust_points': dict(
-        label='Bust point distance', essential=False,
+        label='Bust point distance', essential=False, view='front',
         how='The horizontal distance between the two bust points, measured '
             'straight across the front.'),
     'bum_points': dict(
-        label='Seat point distance', essential=False,
+        label='Seat point distance', essential=False, view='back',
         how='The horizontal distance between the fullest points of the '
             'seat, measured straight across the back.'),
-    'hips_line': dict(
-        label='Waist to hip', essential=True,
-        how='On your side: the vertical distance from waist level down to '
-            'hip level (where you measured the hip circumference).'),
     'crotch_hip_diff': dict(
-        label='Hip to crotch', essential=False,
-        how='The vertical distance from hip level down to the deepest '
-            'point of the crotch. Easiest sitting on a hard chair: measure '
-            'at the side from your hip line down to the seat, then '
-            'subtract the waist-to-hip value if you started at the waist.'),
+        label='Hip to crotch', essential=False, view='side', derived=True,
+        how='The vertical distance from hip level down to the crotch. '
+            'Worked out from your inseam: height, less head length, back '
+            'length, waist to hip and inseam.'),
 
     # --- Angles ---
     'hip_inclination': dict(
-        label='Hip inclination (°)', essential=False,
+        label='Hip inclination (°)', essential=False, view='front',
         how='The angle your side makes between waist and hip: 0° is a '
             'perfectly vertical side; bigger values mean more hip flare. '
             'Estimate it from a straight-on front photo with a protractor '
             'app, or leave the default.'),
     'shoulder_incl': dict(
-        label='Shoulder slope (°)', essential=False,
+        label='Shoulder slope (°)', essential=False, view='front',
         how='The slope of your shoulder line, from the neck base to the '
             'shoulder tip, against horizontal. Around 20° is average; '
             'square shoulders are lower, sloped shoulders higher. A front '
             'photo makes this easy to estimate.'),
-    'arm_pose_angle': dict(
-        label='Arm pose angle (°)', essential=False,
-        how='Not a body measurement: the arm pose (from vertical) used '
-            'when draping garments in 3D. Leave at the default unless you '
-            'specifically need a different pose.'),
 }
+
+# Stored with a body but not measured: the 3D preview's arm pose.
+NOT_MEASUREMENTS = {'arm_pose_angle'}
+# Shown and edited, never stored: inseam sets hip-to-crotch (see apply_inseam).
+VIRTUAL = {'inseam'}
 
 
 def label_for(key: str) -> str:
@@ -240,6 +273,44 @@ def label_for(key: str) -> str:
 def is_essential(key: str) -> bool:
     entry = GUIDE.get(key)
     return bool(entry and entry['essential'])
+
+
+def inseam_cm(m: dict) -> float:
+    """Crotch height above the floor: what the pattern and the mannequin already imply."""
+    return float(m['height']) - sum(float(m[k]) for k in ('head_l', 'waist_line', 'hips_line', 'crotch_hip_diff'))
+
+
+def apply_inseam(m: dict, inseam: float) -> dict:
+    """The measurements with hip-to-crotch set so the crotch sits `inseam` cm above the floor.
+
+    Height, head, back length and waist-to-hip are measured; the crotch depth
+    below the hips is the hardest to take yourself, so the inseam decides it.
+    """
+    result = dict(m)
+    result['crotch_hip_diff'] = round(float(m['height']) - float(inseam) - sum(
+        float(m[k]) for k in ('head_l', 'waist_line', 'hips_line')), 2)
+    return result
+
+
+def editor_keys(measurements: dict, essential_only: bool) -> list:
+    """Editable fields in measuring order: inseam in, derived and non-measurements out."""
+    keys = [k for k, entry in GUIDE.items()
+            if not entry.get('derived') and (k in measurements or k in VIRTUAL)
+            and (entry['essential'] or not essential_only)]
+    if not essential_only:
+        keys += sorted(k for k in measurements if k not in GUIDE and k not in NOT_MEASUREMENTS
+                       and not k.startswith('_'))
+    return keys
+
+
+def editor_values(measurements: dict) -> dict:
+    """Stored values plus the virtual inseam, in centimetres."""
+    values = dict(measurements)
+    try:
+        values['inseam'] = round(inseam_cm(measurements), 2)
+    except (KeyError, TypeError, ValueError):
+        pass
+    return values
 
 
 # --- Keeping hidden measurements consistent with essential edits ---
@@ -260,7 +331,7 @@ COUPLED = {
     'bust_line': 'waist_line',
     'waist_over_bust_line': 'waist_line',
     'armscye_depth': 'waist_line',
-    'crotch_hip_diff': 'hips_line',
+    # crotch_hip_diff is set from the inseam instead (apply_inseam).
 }
 
 
@@ -334,6 +405,18 @@ def validate_measurements(m: dict):
             'Height is smaller than head length + back length + '
             'waist-to-hip + hip-to-crotch combined — the legs would have '
             'negative length')
+    # Hip-to-crotch follows from the inseam: a sum that does not add up shows here.
+    crotch = val('crotch_hip_diff')
+    if crotch is not None and crotch < 1:
+        errors.append(
+            'The inseam is too long for your height, back length and '
+            'waist-to-hip: it would put the crotch at or above hip level. '
+            'Check those four measurements.')
+    elif crotch is not None and not 4 <= crotch <= 16:
+        warnings.append(
+            f'Your inseam puts the crotch {crotch:.1f} cm below hip level '
+            '(usually 5–13 cm). Check height, back length, waist-to-hip and '
+            'inseam.')
 
     # Suspicious: drafts, but the front/back split will be badly skewed
     check('waist_back_width', 'waist',

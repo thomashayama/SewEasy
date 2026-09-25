@@ -166,9 +166,10 @@ class HomeNavigationTest(unittest.TestCase):
         storage = {'pending_design': deepcopy(snapshot)}
         state = GUIState.__new__(GUIState)
         state.pattern_state = Mock()
+        state.user = None
         with patch('gui.callbacks.app', SimpleNamespace(storage=SimpleNamespace(user=storage))):
             state._restore_pending_design()
-            state._restore_pending_design()
+            state._restore_body(state._restore_pending_design())
         self.assertEqual(storage['pending_design'], snapshot)
         self.assertEqual(state._outfit_name, 'Test outfit')
         state.pattern_state.load_outfit.assert_called_with(snapshot['outfit'], 0)

@@ -201,6 +201,15 @@ class GUIPattern:
 
     def set_new_body_params(self, body_params):
         self.body_params.load_from_dict(body_params)
+        # The arm pose is a 3D viewing choice, never a profile's measurement.
+        if getattr(self, 'arm_pose', None) is not None:
+            self.body_params['arm_pose_angle'] = self.arm_pose
+
+    def set_arm_pose(self, degrees):
+        """Keep the 3D arm pose over every body loaded later; None keeps each body's own."""
+        self.arm_pose = degrees
+        if degrees is not None:
+            self.body_params['arm_pose_angle'] = degrees
 
     def sample_design(self, reload=True, preserve_composition=False):
         """Random design parameters"""

@@ -95,10 +95,41 @@ class BodyFitTest(unittest.TestCase):
                     self.assertLess(abs(hull.area*100-values[key]), 1.5, key)
 
     def test_arm_length_pose_and_height_change_geometry(self):
-        mesh, _ = fit_body(profile({'height':180, 'arm_length':62, 'arm_pose_angle':60}))
+        # The arm pose is measured below horizontal, as sleeves are placed:
+        # lowering the arms (a larger angle) narrows the span, raising widens it.
         original, _ = fit_body(BASE)
-        self.assertGreater(np.ptp(mesh.vertices[:, 0]), np.ptp(original.vertices[:, 0]))
-        self.assertAlmostEqual(mesh.vertices[:, 1].max(), 1.8, places=4)
+        lowered, _ = fit_body(profile({'height':180, 'arm_length':62, 'arm_pose_angle':60}))
+        raised, _ = fit_body(profile({'arm_pose_angle':30}))
+        self.assertLess(np.ptp(lowered.vertices[:, 0]), np.ptp(original.vertices[:, 0]))
+        self.assertGreater(np.ptp(raised.vertices[:, 0]), np.ptp(original.vertices[:, 0]))
+        self.assertAlmostEqual(lowered.vertices[:, 1].max(), 1.8, places=4)
+
+    def test_mannequin_arms_follow_the_sleeves(self):
+        """The fitted arm and a drafted sleeve point the same way at any pose."""
+        from scipy.spatial.transform import Rotation
+        from gui.gui_pattern import GUIPattern
+        from seweasy.meshgen.body_fit import arm_frame
+
+        def below_horizontal(direction):
+            d = direction if direction[0] > 0 else -direction
+            return np.degrees(np.arctan2(-d[1], d[0]))
+        pattern = GUIPattern(draft=False)
+        try:
+            offsets = []
+            for pose in (30, 45, 60):
+                pattern.set_arm_pose(pose)
+                pattern.reload_garment()
+                panels = pattern.sew_pattern.assembly().pattern['panels']
+                panel = next(p for name, p in panels.items() if name.startswith('left_sleeve'))
+                flat = np.c_[np.asarray(panel['vertices'], float), np.zeros(len(panel['vertices']))]
+                world = Rotation.from_euler('XYZ', panel['rotation'], degrees=True).apply(flat)
+                sleeve = np.linalg.svd(world - world.mean(0))[2][0]
+                _, axis, _ = arm_frame(dict(BASE, arm_pose_angle=pose), 1)
+                offsets.append(below_horizontal(sleeve) - below_horizontal(axis))
+            # A sleeve's taper tilts its own axis a little; the pose must not add to that.
+            self.assertLess(np.ptp(offsets), 1.0, offsets)
+        finally:
+            pattern.release()
 
     def test_cache_isolation_and_invalid_values(self):
         first, report = fit_body(profile(PROFILES[0]))

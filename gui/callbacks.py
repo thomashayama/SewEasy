@@ -12,7 +12,7 @@ from pathlib import Path
 import time
 from copy import deepcopy
 
-from nicegui import ui, app, events, background_tasks
+from nicegui import ui, app, events, background_tasks, run
 
 # Async execution of regular functions
 from concurrent.futures import ThreadPoolExecutor
@@ -97,10 +97,19 @@ class GUIState:
         self._preparing_3d = False
         self._released = False
 
+        # The 3D arm pose is a viewing preference, not a measurement: it is
+        # kept over every body loaded into this studio.
+        self.arm_pose = self._arm_pose_preference()
+        self.pattern_state.set_arm_pose(self.arm_pose)
+
         # A design stashed before an auth/account navigation survives the
         # round trip (signing in must not discard the work being saved)
         self._restored_skin = None
-        self._restore_pending_design()
+        # What the measurement picker chose: a profile id, 'shared:<id>', a
+        # default mannequin key or '__custom__'. None: nothing chosen here yet.
+        self.body_choice = None
+        snapshot = self._restore_pending_design()
+        self._restore_body(snapshot)
 
         # Elements
         self.ui_design_subtabs = {}
@@ -178,6 +187,7 @@ class GUIState:
                 'appearance': self.pattern_state.garment_appearance(),
                 'skin': self.body_color
                         if self.body_color != DEFAULT_BODY_COLOR else None,
+                'body_choice': self.body_choice,
             }
             return True
         except Exception:
@@ -191,7 +201,7 @@ class GUIState:
         except Exception:
             snapshot = None
         if not snapshot:
-            return
+            return None
         try:
             self._outfit_name = snapshot.get('outfit_name', 'Untitled outfit')
             self._outfit_revision_id = snapshot.get('outfit_revision_id')
@@ -202,8 +212,6 @@ class GUIState:
                 self.pattern_state.load_outfit(snapshot['outfit'], snapshot.get('active_garment', 0))
             if snapshot.get('design'):
                 self.pattern_state.set_new_design(snapshot['design'])
-            if snapshot.get('body'):
-                self.pattern_state.set_new_body_params(snapshot['body'])
             if snapshot.get('fabric'):
                 self.pattern_state.fabric_color = snapshot['fabric']
             if snapshot.get('appearance'):
@@ -211,9 +219,68 @@ class GUIState:
                 self.pattern_state.panel_fabrics = snapshot['appearance'].get('panel_fabrics', {})
                 self.pattern_state.panel_stiffness = snapshot['appearance'].get('panel_stiffness', {})
                 self.pattern_state.panel_materials = snapshot['appearance'].get('panel_materials', {})
-            self._restored_skin = snapshot.get('skin')
         except Exception:
             traceback.print_exc()   # a broken snapshot falls back to defaults
+        return snapshot
+
+    def _restore_body(self, snapshot):
+        """The body a studio opens with.
+
+        A choice made in this browser wins; a chosen saved profile is reread,
+        so edits made to it on the account page apply. Without a choice (a
+        new browser, or storage reset by a redeploy) the account's default
+        profile applies, then whatever body the draft carried.
+        """
+        snapshot = snapshot or {}
+        choice = snapshot.get('body_choice')
+        email = self.user['email'] if self.user else None
+        body, skin = snapshot.get('body'), snapshot.get('skin')
+        try:
+            from webapp import profiles
+            profile = None
+            if email and choice is None:
+                profile = profiles.get_default_profile(email)
+            elif email and (isinstance(choice, int) or str(choice).startswith('shared:')):
+                profile = profiles.get_profile(email, int(str(choice).removeprefix('shared:')))
+                if profile is None:
+                    choice = '__custom__'   # no longer yours to open: keep the numbers, not the link
+            if profile is not None:
+                body, skin = profile['measurements'], profile.get('skin_color')
+                if choice is None:
+                    choice = profile['id'] if profile['role'] == 'owner' else f'shared:{profile["id"]}'
+        except Exception:
+            traceback.print_exc()   # the database must not stop a studio from opening
+        if body:
+            self.pattern_state.set_new_body_params(body)
+        self.body_choice = choice
+        self._restored_skin = skin
+
+    def _arm_pose_preference(self):
+        from webapp import profiles
+        try:
+            saved = profiles.get_arm_pose(self.user['email']) if self.user else app.storage.user.get('arm_pose')
+            return profiles.clamp_arm_pose(saved) if saved is not None else None
+        except Exception:
+            traceback.print_exc()
+            return None
+
+    async def set_arm_pose(self, degrees):
+        """Re-pose the mannequin and the sleeves' 3D placement; the 2D pattern is unchanged."""
+        from webapp import profiles
+        degrees = profiles.clamp_arm_pose(degrees)
+        if degrees == self.arm_pose:
+            return
+        self.arm_pose = degrees
+        try:
+            if self.user:
+                await run.io_bound(profiles.set_arm_pose, self.user['email'], degrees)
+            else:
+                app.storage.user['arm_pose'] = degrees
+        except Exception:
+            traceback.print_exc()   # still applies to this session
+        self.pattern_state.set_arm_pose(degrees)
+        self.ui_browser_drape.configure(arm_pose=degrees)
+        await self.update_pattern_ui_state()
 
     # Initial definitions
     def stylings(self):
@@ -558,9 +625,10 @@ class GUIState:
     def def_3d_scene(self):
         self.ui_browser_drape = BrowserDrape(self.pattern_state.fabric_color, self.body_color) \
             .classes('w-full h-full p-0 m-0')
-        self.ui_browser_drape.configure(docked=True)
+        self.ui_browser_drape.configure(docked=True, arm_pose=round(float(self.pattern_state.body_params['arm_pose_angle']), 1))
         self.ui_browser_drape.on('retry', self.retry_3d_scene)
         self.ui_browser_drape.on('show-body', lambda e: self.ui_browser_drape.configure(show_body=e.args['value']))
+        self.ui_browser_drape.on('arm-pose', lambda e: self.set_arm_pose(e.args['value']))
 
     # !SECTION
     # SECTION -- Other UI details

@@ -32,6 +32,26 @@ the least deformation, because smaller changes fit more accurately; the choice
 follows the numbers, not a stated sex. A new measurement profile in the account
 can start from any of the three. Saved thumbnails keep the neutral mannequin.
 
+**Default measurements.** The ★ beside the picker (or **Make default** under
+Account → Measurements) makes a profile, yours or one shared with you, the one
+new designs open with. It is stored on the account, so it survives new browsers
+and redeploys, which reset browser storage. A choice made in the picker still
+wins for that browser's current draft, and a chosen profile is reread each time
+a studio opens, so edits made on the account page apply.
+
+**Inseam.** The editors ask for the inseam (crotch to floor) instead of the
+hip-to-crotch depth, which is hard to take yourself. The body model keeps its
+vertical chain (height = head + back length + waist-to-hip + hip-to-crotch +
+inseam), so the entered inseam sets hip-to-crotch; trouser lengths and the
+mannequin's legs then match it. Implausible combinations are flagged.
+
+**Arm pose** is a 3D setting, not a measurement: the preview's ⋯ menu has a
+slider (20–75° below horizontal, 0° being a T-pose), saved per account. It
+re-poses the mannequin and places the sleeves for draping; the 2D pattern does
+not change. The mannequin fitter reads the angle below horizontal, the same way
+the garment programs place sleeves (before, it read it from vertical, which only
+agreed at the default 45°).
+
 Drag to turn the mannequin; **Shift-drag** or right/middle-drag moves the
 view. On touch screens, two fingers pan and pinch to zoom. Scroll zooms; the
 arrow keys rotate and **Shift+arrows** pan when the canvas has focus.
@@ -42,7 +62,7 @@ Click the mannequin caption below the preview for a table comparing requested
 and measured height, bust, underbust, waist, hips, wrist and thigh (wrist/thigh
 values average the two sides). Custom bodies
 are checked against a 1 cm maximum section error before being used. The fitter
-also adjusts torso/leg landmarks, shoulder/neck width, arm length and arm pose.
+also adjusts torso/leg landmarks, shoulder/neck width, arm length and the arm pose.
 Underbust height and other proportions not specified by these controls are
 estimated from the template; front/back balance, bust/seat point spacing and
 surface tape lengths are not independently reconstructed. This is an approximate
