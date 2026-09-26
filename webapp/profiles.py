@@ -7,8 +7,9 @@ transfer it.
 
 from functools import lru_cache
 from pathlib import Path
-import re
 from typing import Optional
+
+from seweasy.meshgen.hair import clean_hair, preset
 
 from webapp import access
 from webapp.db import SessionLocal
@@ -71,34 +72,6 @@ def set_arm_pose(email: str, degrees: float) -> float:
     return degrees
 
 
-# Keep in step with gui/webgpu/hair.js (HAIR_STYLES, HAIR_COLORS, DEFAULT_HAIR).
-HAIR_STYLES = ('none', 'short', 'bun')
-DEFAULT_HAIR = {'style': 'short', 'color': '#3a2a22'}
-
-
-def clean_hair(style, color) -> dict:
-    """A valid hair choice; anything unknown falls back to the default."""
-    return {'style': style if style in HAIR_STYLES else DEFAULT_HAIR['style'],
-            'color': color.lower() if isinstance(color, str) and re.fullmatch(r'#[0-9a-fA-F]{6}', color)
-            else DEFAULT_HAIR['color']}
-
-
-def get_hair(email: str) -> dict:
-    with SessionLocal() as db:
-        row = db.get(User, email)
-        return clean_hair(row.hair_style, row.hair_color) if row else dict(DEFAULT_HAIR)
-
-
-def set_hair(email: str, style, color) -> dict:
-    hair = clean_hair(style, color)
-    with SessionLocal() as db:
-        row = db.get(User, email)
-        if row is not None:
-            row.hair_style, row.hair_color = hair['style'], hair['color']
-            db.commit()
-    return hair
-
-
 def clamp_arm_pose(degrees) -> float:
     low, high = ARM_POSE_RANGE
     return round(min(high, max(low, float(degrees))), 1)
@@ -119,6 +92,13 @@ def _default_measurements(name):
 def default_measurements(name='all') -> dict:
     """A default mannequin's measurements: the neutral average, a woman's, or a man's."""
     return dict(_default_measurements(name))
+
+
+def default_hair(name='all') -> dict:
+    """A default mannequin's hair: tied up for the woman, short otherwise."""
+    if name not in DEFAULT_BODIES:
+        raise ValueError('Unknown default body.')
+    return preset('bun' if name == 'female' else 'short')
 
 
 def measurements_from_body(body_params) -> dict:
@@ -175,8 +155,9 @@ def _open(db, email, profile_id, minimum='viewer'):
 
 
 def save_profile(email: str, name: str, measurements: dict,
-                 skin_color: Optional[str] = None) -> bool:
+                 skin_color: Optional[str] = None, hair: Optional[dict] = None) -> bool:
     """Create or update the profile with this name. Returns True if created"""
+    hair = clean_hair(hair) if hair is not None else None
     with SessionLocal() as db:
         row = (db.query(BodyProfile)
                .filter(BodyProfile.owner_email == email,
@@ -186,10 +167,12 @@ def save_profile(email: str, name: str, measurements: dict,
         if created:
             db.add(BodyProfile(owner_email=email, name=name,
                                measurements=measurements,
-                               skin_color=skin_color))
+                               skin_color=skin_color, hair=hair))
         else:
             row.measurements = measurements
             row.skin_color = skin_color
+            if hair is not None:
+                row.hair = hair
         db.commit()
         return created
 
@@ -202,12 +185,12 @@ def get_profile(email: str, profile_id: int) -> Optional[dict]:
             return None
         return {'id': row.id, 'name': row.name,
                 'measurements': row.measurements,
-                'skin_color': row.skin_color, 'role': role,
+                'skin_color': row.skin_color, 'hair': clean_hair(row.hair), 'role': role,
                 'owner_name': None if role == 'owner' else access.display_name(db, row.owner_email)}
 
 
 def update_profile(email: str, profile_id: int, measurements: dict,
-                   skin_color: Optional[str] = None) -> None:
+                   skin_color: Optional[str] = None, hair: Optional[dict] = None) -> None:
     """Save an existing profile's measurements, as its owner or an admin."""
     with SessionLocal() as db:
         row, role = _open(db, email, profile_id, 'admin')
@@ -216,6 +199,8 @@ def update_profile(email: str, profile_id: int, measurements: dict,
                              else 'This profile is no longer available.')
         row.measurements = measurements
         row.skin_color = skin_color
+        if hair is not None:
+            row.hair = clean_hair(hair)
         db.commit()
 
 
@@ -228,7 +213,7 @@ def copy_profile(email: str, profile_id: int) -> Optional[str]:
         taken = [name for (name,) in db.query(BodyProfile.name).filter(BodyProfile.owner_email == email)]
         name = access.unique_name(src.name, taken)
         db.add(BodyProfile(owner_email=email, name=name, measurements=dict(src.measurements),
-                           skin_color=src.skin_color))
+                           skin_color=src.skin_color, hair=src.hair))
         db.commit()
         return name
 

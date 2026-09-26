@@ -166,5 +166,39 @@ class GuidePicturesTest(unittest.TestCase):
             self.assertIsNotNone(guide.photo_for(key))
 
 
+class SkinToneTest(unittest.TestCase):
+    """Depth and undertone vary independently, with human hues throughout."""
+
+    def lab(self, depth, undertone):
+        return guide._rgb_lab(guide._hex_rgb(guide.skin_tone_hex(depth, undertone)))
+
+    def test_depth_darkens_every_undertone_without_turning_grey(self):
+        for undertone in guide.SKIN_UNDERTONES:
+            with self.subTest(undertone):
+                lightness = [self.lab(d / 10, undertone)[0] for d in range(11)]
+                self.assertEqual(lightness, sorted(lightness, reverse=True))
+                self.assertGreater(lightness[0] - lightness[-1], 55)
+                _, a, b = self.lab(1, undertone)
+                self.assertGreater((a * a + b * b) ** .5, 10)          # deep skin keeps its warmth
+                for depth in (0, .5, 1):
+                    self.assertGreater(self.lab(depth, undertone)[1], 4)   # never without red
+
+    def test_undertones_run_rosy_to_golden_to_olive(self):
+        import math
+        for depth in (.15, .5, .85):
+            hues = [math.degrees(math.atan2(*self.lab(depth, u)[:0:-1])) for u in ('cool', 'neutral', 'warm', 'olive')]
+            self.assertEqual(hues, sorted(hues))
+            self.assertGreater(hues[-1] - hues[0], 20)
+
+    def test_a_stored_colour_reads_back_as_its_choices(self):
+        for undertone in guide.SKIN_UNDERTONES:
+            for depth in (0., .25, .62, 1.):
+                with self.subTest(undertone=undertone, depth=depth):
+                    found = guide.skin_tone_params(guide.skin_tone_hex(depth, undertone))
+                    self.assertEqual(found[1], undertone)
+                    self.assertAlmostEqual(found[0], depth, delta=.02)
+        self.assertEqual(len(guide.skin_tone_gradient('warm')), 9)
+
+
 if __name__ == '__main__':
     unittest.main()

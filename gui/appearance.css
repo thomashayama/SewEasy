@@ -87,9 +87,6 @@ body .se-library-art>.se-thumbnail {background:transparent;}
  body :is(.se-drape-menu button,.se-drape-menu label) {color:var(--se-graphite);}
  body :is(.se-drape-message span,.se-drape-menu small,.se-drape-body-note) {color:var(--se-muted);}
  body :is(.se-drape-controls button:hover,.se-drape-icon:hover,.se-drape-more[open]>summary,.se-drape-controls button[aria-pressed=true],.se-drape-message button:hover,.se-fabric-icon:hover) {background:var(--se-selected); color:var(--se-indigo);}
- body .se-drape-hair select {background:var(--se-surface); color:var(--se-graphite); border-color:var(--se-chalkline);}
- body .se-drape-menu .se-drape-swatches button {border-color:var(--se-raised); box-shadow:0 0 0 1px var(--se-chalkline);}
- body .se-drape-menu .se-drape-swatches button.is-active {box-shadow:0 0 0 2px var(--se-indigo);}
  body :is(.se-drape-fit-details th,.se-drape-fit-details td) {border-color:var(--se-chalkline);}
  body .se-drape-loader {border-color:var(--se-chalkline); border-top-color:var(--se-indigo);}
  body .se-account-nav {background:var(--se-surface);}

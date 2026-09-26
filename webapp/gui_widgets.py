@@ -214,6 +214,7 @@ def body_source_ui(state):
             state.body_choice = e.value     # remembered with the draft; profiles are reread
         refresh_default_button()
         if e.value in PRESETS:
+            state.apply_hair(profiles.default_hair(PRESETS[e.value][0]))    # drawn with the redraft below
             await apply_measurements(profiles.default_measurements(PRESETS[e.value][0]))
             await state.apply_skin_color(None)
             if select.value == e.value:
@@ -226,6 +227,7 @@ def body_source_ui(state):
             if data is None:
                 ui.notify('Saved measurements not found', type='negative')
                 return
+            state.apply_hair(data['hair'])
             await apply_measurements(data['measurements'])
             await state.apply_skin_color(data.get('skin_color'))
             if select.value == e.value:
@@ -314,7 +316,7 @@ def body_source_ui(state):
                 profiles.save_profile(
                     email, name,
                     profiles.measurements_from_body(state.pattern_state.body_params),
-                    skin_color=state.body_color)
+                    skin_color=state.body_color, hair=state.hair)
                 saved = next((r['id'] for r in profiles.list_profiles(email) if r['name'] == name), None)
                 select.set_options(options())
                 if saved is not None:

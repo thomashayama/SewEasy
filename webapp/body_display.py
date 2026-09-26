@@ -31,6 +31,28 @@ def tinted_body_glb_url(color: str) -> str:
     return f'/body_tones/{name}'
 
 
+def profile_hair_glb_url(measurements, hair):
+    """The profile's hair on the same fitted surface, or None for none; cached by both."""
+    from seweasy.meshgen.body_fit import fit_body
+    from seweasy.meshgen.hair import clean_hair, hair_mesh
+    hair = clean_hair(hair)
+    key = json.dumps(['hair-v1', hair, measurements], sort_keys=True, allow_nan=False)
+    name = f'hair_{hashlib.sha256(key.encode()).hexdigest()[:24]}.glb'
+    path = BODY_TONE_CACHE / name
+    if not path.exists():
+        body, _ = fit_body(measurements)
+        mesh = hair_mesh(body.vertices, body.faces, hair, measurements)
+        if mesh is None:
+            return None
+        shell = trimesh.Trimesh(mesh['positions'], mesh['faces'], process=False)
+        # Both sides show: the hair's underside is seen beside the face.
+        shell.visual = trimesh.visual.TextureVisuals(material=trimesh.visual.material.PBRMaterial(
+            baseColorFactor=display_to_base_rgba(hair['color']), roughnessFactor=.62, metallicFactor=0,
+            doubleSided=True))
+        shell.export(path)
+    return f'/body_tones/{name}'
+
+
 def profile_body_glb_url(color, measurements):
     """Use the same fitted surface as the studio; cache by profile and tone."""
     from seweasy.meshgen.body_fit import fit_body

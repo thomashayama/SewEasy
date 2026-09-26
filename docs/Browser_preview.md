@@ -52,17 +52,44 @@ not change. The mannequin fitter reads the angle below horizontal, the same way
 the garment programs place sleeves (before, it read it from vertical, which only
 agreed at the default 45°).
 
-**Hair** is another ⋯ menu setting: None, Short (the default) or Bun, in one
-of six colours, saved per account (in the browser when signed out). It is built
-in the browser (`gui/webgpu/hair.js`) from the fitted mannequin's own head:
-the scalp above a hairline running from the forehead over the ears to the nape
-is cut out along that curve, then lifted along the surface normals into a shell
-that is fuller on top and feathers to the hairline; a bun adds a swirl at the
-back of the head, above the nape so collars stay clear. The shader draws fine
-strands along a flow that runs from the crown (or into the bun), fading to the
-plain colour at a distance so it does not shimmer. Hair is drawn only: it takes
-no part in cloth collision, is not in thumbnails or exports, and is hidden when
-a garment has a hood (a panel named `hood`).
+**Skin tone and hair** belong to a measurement profile, edited with its
+measurements on the account page (the mannequin there shows them as you
+change them) and worn wherever the profile is chosen. The default mannequins
+have their own: short hair, and a bun for the default woman.
+
+*Skin tone* is two choices: depth (fair to deep) and undertone — cool (rosy),
+neutral (peach), warm (golden) or olive (a muted green-gold).
+`webapp/measurement_guide.py` builds each colour in CIELAB: lightness and
+chroma follow depth, so deep skin keeps its warmth instead of turning grey,
+and the hue angle sets the undertone. A stored colour reads back as the
+nearest depth and undertone.
+
+*Hair* starts from a style — bald, buzz cut, short, side part, short curls,
+afro, bob, bob with bangs, shoulder length, long, long waves, bun or ponytail
+— in one of twelve natural shades or any colour, and every part can then be
+adjusted: length (buzz, short, ear, chin, shoulder, mid-back or waist,
+measured on that body), volume, texture (straight, wavy, curly, coily), tied
+(loose, bun, low bun, ponytail), fringe (none, full, side-swept), parting and
+a receding hairline. `seweasy/meshgen/hair.py` builds it on the fitted body
+with each 3D scene:
+
+- a scalp cap: the head above a hairline running from the forehead over the
+  ears to the nape, cut out along that curve and lifted along the surface
+  normals, fuller on top and feathered at the hairline; a fringe lowers the
+  hairline over the forehead, a parting dips it along a line, and coily hair
+  lifts it into a rounded shape;
+- for longer loose hair, a thick sheet falling from the widest part of the
+  head that follows it in and out gently, clears the neck, stops at the
+  shoulders beside the face and gathers down the back, with its ends curled
+  in; below the nape it keeps room for the garment being draped;
+- a bun, or a ponytail that falls under gravity and settles against the back.
+
+The scene carries the mesh; the shader draws fine strands along each part's
+flow, bent by waves and curls or broken into tufts for coils, fading to the
+plain colour at a distance so it does not shimmer. Hair is drawn only: it
+takes no part in cloth collision, is not in thumbnails or exports, and is left
+out when a garment has a hood (a panel named `hood`). **Show hair** in the ⋯
+menu hides it for the session, to see a neckline or back.
 
 Drag to turn the mannequin; **Shift-drag** or right/middle-drag moves the
 view. On touch screens, two fingers pan and pinch to zoom. Scroll zooms; the

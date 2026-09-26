@@ -34,9 +34,6 @@ class User(TimestampMixin, Base):
     default_profile_id = Column(Integer)
     # 3D preview arm pose, degrees below horizontal; NULL = the mannequin's own
     arm_pose = Column(Float)
-    # 3D preview hair: 'none', 'short' or 'bun', and a '#rrggbb' colour; NULL = defaults
-    hair_style = Column(String)
-    hair_color = Column(String)
 
     body_profiles = relationship('BodyProfile', back_populates='owner',
                                  cascade='all,delete')
@@ -75,6 +72,8 @@ class BodyProfile(TimestampMixin, Base):
     # Display-space '#rrggbb' mannequin skin tone; NULL = default muslin.
     # Kept out of the measurements dict, which feeds BodyParameters as-is.
     skin_color = Column(String)
+    # The mannequin's hair (seweasy.meshgen.hair.DEFAULT_HAIR's keys); NULL = default
+    hair = Column(JSON)
 
     owner = relationship('User', back_populates='body_profiles')
     shares = relationship('BodyProfileShare', back_populates='profile',

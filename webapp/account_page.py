@@ -20,7 +20,8 @@ from webapp import auth, designs, profiles, sharing
 from webapp import measurement_guide as guide
 # body_display registers the /body and /body_tones static mounts and owns
 # the tone-tinted mannequin cache (shared with the studio 3D view)
-from webapp.body_display import profile_body_glb_url
+from webapp.appearance_editor import HairEditor, SkinToneEditor
+from webapp.body_display import profile_body_glb_url, profile_hair_glb_url
 from webapp.access import Access
 from webapp.access_ui import item_share_dialog
 from webapp.measurement_help import measurement_overview, show_measurement_help
@@ -302,8 +303,9 @@ async def account_page(request: Request):
                 editor = ui.column().classes('se-measure-editor grow min-w-0')
 
             fields = {}
-            skin_ctl = {'slider': None, 'touched': False, 'stored': None}
-            scene_ctl = {'body': None, 'url': None}
+            # The profile's skin tone and hair editors, rebuilt with the editor
+            appearance = {'skin': None, 'hair': None}
+            scene_ctl = {'body': None, 'url': None, 'hair': None, 'hair_url': None, 'hair_request': 0}
 
             def set_mannequin_url(url):
                 if url == scene_ctl['url']:
@@ -313,6 +315,28 @@ async def account_page(request: Request):
                 with scene:
                     scene_ctl['body'] = scene.gltf(url).rotate(np.pi / 2, 0., 0.)
                 scene_ctl['url'] = url
+
+            def set_hair_url(url):
+                if url == scene_ctl['hair_url']:
+                    return
+                if scene_ctl['hair'] is not None:
+                    scene_ctl['hair'].delete()
+                    scene_ctl['hair'] = None
+                if url:
+                    with scene:
+                        scene_ctl['hair'] = scene.gltf(url).rotate(np.pi / 2, 0., 0.)
+                scene_ctl['hair_url'] = url
+
+            async def show_hair(hair, measurements):
+                # Off-loop, and only the newest request draws: sliders send many.
+                scene_ctl['hair_request'] += 1
+                request, selected = scene_ctl['hair_request'], profile_select.value
+                try:
+                    url = await run.io_bound(profile_hair_glb_url, measurements, hair)
+                except ValueError:
+                    return
+                if request == scene_ctl['hair_request'] and profile_select.value == selected:
+                    set_hair_url(url)
 
             def set_mannequin_tone(color):
                 data = profiles.get_profile(email, profile_select.value)
@@ -363,15 +387,13 @@ async def account_page(request: Request):
                               close_button=True)
                     return
 
-                # Skin tone: the slider hex when the user has set one,
-                # otherwise whatever the profile already had
-                if skin_ctl['touched'] and skin_ctl['slider'] is not None:
-                    skin_color = guide.skin_tone_hex(skin_ctl['slider'].value)
-                else:
-                    skin_color = data.get('skin_color')
+                # Skin tone and hair: as chosen here, otherwise as the profile had them
+                skin, hair_editor = appearance['skin'], appearance['hair']
+                skin_color = skin.value if skin is not None else data.get('skin_color')
+                hair = hair_editor.value if hair_editor is not None and hair_editor.touched else None
                 try:
                     await run.io_bound(profiles.update_profile, email,
-                                       data['id'], values, skin_color)
+                                       data['id'], values, skin_color, hair)
                 except ValueError as error:
                     ui.notify(str(error), type='negative')
                     return
@@ -417,48 +439,9 @@ async def account_page(request: Request):
                         ui.label(f'Shared by {data["owner_name"]} · '
                                  + ('As an admin, your saves update it for everyone.' if role == 'admin'
                                     else 'Save a copy to edit your own.')).classes('se-param-label')
-                    # Skin tone: shown on the 3D mannequin when this
-                    # profile is selected in the studio
                     stored_tone = data.get('skin_color')
-                    skin_ctl.update(touched=False, stored=stored_tone)
                     set_mannequin_tone(stored_tone)
-                    with ui.row(wrap=False).classes('se-skin-row items-center gap-3 mt-2 w-full'):
-                        ui.label('Skin tone').classes('se-param-label w-24')
-
-                        async def _touch_tone(e):
-                            skin_ctl['touched'] = True
-                            unsaved['dirty'] = True
-                            tone = guide.skin_tone_hex(e.args)
-                            skin_ctl['slider'].style(f'color: {tone}')
-                            # A first-time tone tints the mesh: off-loop
-                            selected_profile = profile_select.value
-                            try:
-                                url = await run.io_bound(profile_body_glb_url, tone, data['measurements'])
-                            except ValueError as error:
-                                if profile_select.value == selected_profile:
-                                    mannequin_note.set_text(str(error))
-                                return
-                            if profile_select.value == selected_profile:
-                                set_mannequin_url(url)
-
-                        skin_ctl['slider'] = ui.slider(
-                            value=guide.skin_tone_t(stored_tone)
-                                if stored_tone else 0.3,
-                            min=0., max=1., step=0.01,
-                        ).props('dense aria-label="Skin tone"') \
-                            .classes('se-skin-slider w-64') \
-                            .style('color: {}'.format(
-                                stored_tone or '#b9b2a6')) \
-                            .on('update:model-value',   # live thumb color only
-                                lambda e: skin_ctl['slider'].style(
-                                    f'color: {guide.skin_tone_hex(e.args)}'),
-                                throttle=0.1) \
-                            .on('change', _touch_tone)  # mesh tint on release
-                        if not stored_tone:
-                            ui.label('not set — mannequin uses muslin') \
-                                .classes('se-param-label')
-                        if readonly:
-                            skin_ctl['slider'].disable()
+                    set_hair_url(profile_hair_glb_url(data['measurements'], data['hair']))
 
                     with ui.grid(columns=2).classes('se-measure-grid w-full gap-x-4 gap-y-1 mt-2'):
                         for key in keys:
@@ -486,6 +469,28 @@ async def account_page(request: Request):
                                  'rest keep their current values. Switch to '
                                  '"All measurements" for fine-tuning.') \
                             .classes('se-param-label mt-1')
+
+                    # Skin tone and hair: the mannequin wears them wherever
+                    # this profile is chosen, in the studio as here.
+                    async def tone_changed(tone):
+                        unsaved['dirty'] = True
+                        selected_profile = profile_select.value
+                        try:
+                            url = await run.io_bound(profile_body_glb_url, tone, data['measurements'])
+                        except ValueError as error:
+                            if profile_select.value == selected_profile:
+                                mannequin_note.set_text(str(error))
+                            return
+                        if profile_select.value == selected_profile:
+                            set_mannequin_url(url)
+
+                    async def hair_changed(hair):
+                        unsaved['dirty'] = True
+                        await show_hair(hair, data['measurements'])
+
+                    ui.separator().classes('mt-3')
+                    appearance['skin'] = SkinToneEditor(stored_tone, readonly, tone_changed)
+                    appearance['hair'] = HairEditor(data['hair'], readonly, hair_changed)
                     if not readonly:
                         ui.button('Save changes', on_click=save_changes) \
                             .props('unelevated icon=save').classes('se-nowrap-button mt-3 self-end')
@@ -596,7 +601,8 @@ async def account_page(request: Request):
                 if not name:
                     ui.notify('Give the profile a name', type='warning')
                     return
-                profiles.save_profile(email, name, profiles.default_measurements(new_base.value))
+                profiles.save_profile(email, name, profiles.default_measurements(new_base.value),
+                                      hair=profiles.default_hair(new_base.value))
                 new_dialog.close()
                 new_name.value = ''
                 rows = profiles.list_profiles(email)

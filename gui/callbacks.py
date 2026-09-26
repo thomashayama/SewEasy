@@ -56,6 +56,8 @@ theme_colors = theme.colors
 # (body colors are kept in display space; display_to_base_rgba converts
 # them to material factors at export time)
 DEFAULT_BODY_COLOR = '#f9f2e4'
+# The measurement picker's keys for the default mannequins (webapp.profiles.DEFAULT_BODIES)
+PRESET_BODIES = {'__default__': 'all', '__woman__': 'female', '__man__': 'male'}
 
 # Static mounts are app-wide: registering them per connection only bloats
 # the router. Session-specific files under /geo get unique names, so long
@@ -101,7 +103,6 @@ class GUIState:
         # kept over every body loaded into this studio.
         self.arm_pose = self._arm_pose_preference()
         self.pattern_state.set_arm_pose(self.arm_pose)
-        self.hair = self._hair_preference()
 
         # A design stashed before an auth/account navigation survives the
         # round trip (signing in must not discard the work being saved)
@@ -188,6 +189,7 @@ class GUIState:
                 'appearance': self.pattern_state.garment_appearance(),
                 'skin': self.body_color
                         if self.body_color != DEFAULT_BODY_COLOR else None,
+                'hair': getattr(self, 'hair', None),
                 'body_choice': self.body_choice,
             }
             return True
@@ -236,8 +238,11 @@ class GUIState:
         choice = snapshot.get('body_choice')
         email = self.user['email'] if self.user else None
         body, skin = snapshot.get('body'), snapshot.get('skin')
+        hair = snapshot.get('hair')
         try:
             from webapp import profiles
+            if hair is None:
+                hair = profiles.default_hair(PRESET_BODIES.get(choice, 'all'))
             profile = None
             if email and choice is None:
                 profile = profiles.get_default_profile(email)
@@ -246,7 +251,7 @@ class GUIState:
                 if profile is None:
                     choice = '__custom__'   # no longer yours to open: keep the numbers, not the link
             if profile is not None:
-                body, skin = profile['measurements'], profile.get('skin_color')
+                body, skin, hair = profile['measurements'], profile.get('skin_color'), profile['hair']
                 if choice is None:
                     choice = profile['id'] if profile['role'] == 'owner' else f'shared:{profile["id"]}'
         except Exception:
@@ -255,6 +260,7 @@ class GUIState:
             self.pattern_state.set_new_body_params(body)
         self.body_choice = choice
         self._restored_skin = skin
+        self.apply_hair(hair)
 
     def _arm_pose_preference(self):
         from webapp import profiles
@@ -265,29 +271,11 @@ class GUIState:
             traceback.print_exc()
             return None
 
-    def _hair_preference(self):
-        from webapp import profiles
-        try:
-            if self.user:
-                return profiles.get_hair(self.user['email'])
-            saved = app.storage.user.get('hair') or {}
-            return profiles.clean_hair(saved.get('style'), saved.get('color'))
-        except Exception:
-            traceback.print_exc()
-            return dict(profiles.DEFAULT_HAIR)
-
-    async def set_hair(self, style, color):
-        """A viewing choice: redraws the preview's hair at once; no redraft or re-mesh."""
-        from webapp import profiles
-        self.hair = profiles.clean_hair(style, color)
-        self.ui_browser_drape.configure(hair_style=self.hair['style'], hair_color=self.hair['color'])
-        try:
-            if self.user:
-                await run.io_bound(profiles.set_hair, self.user['email'], style, color)
-            else:
-                app.storage.user['hair'] = dict(self.hair)
-        except Exception:
-            traceback.print_exc()   # still shown in this session
+    def apply_hair(self, hair):
+        """The mannequin's hair, part of its body: drawn with the next 3D scene."""
+        from seweasy.meshgen.hair import clean_hair
+        self.hair = clean_hair(hair)
+        self.pattern_state.hair = self.hair
 
     async def set_arm_pose(self, degrees):
         """Re-pose the mannequin and the sleeves' 3D placement; the 2D pattern is unchanged."""
@@ -652,12 +640,10 @@ class GUIState:
     def def_3d_scene(self):
         self.ui_browser_drape = BrowserDrape(self.pattern_state.fabric_color, self.body_color) \
             .classes('w-full h-full p-0 m-0')
-        self.ui_browser_drape.configure(docked=True, arm_pose=round(float(self.pattern_state.body_params['arm_pose_angle']), 1),
-                                        hair_style=self.hair['style'], hair_color=self.hair['color'])
+        self.ui_browser_drape.configure(docked=True, arm_pose=round(float(self.pattern_state.body_params['arm_pose_angle']), 1))
         self.ui_browser_drape.on('retry', self.retry_3d_scene)
         self.ui_browser_drape.on('show-body', lambda e: self.ui_browser_drape.configure(show_body=e.args['value']))
         self.ui_browser_drape.on('arm-pose', lambda e: self.set_arm_pose(e.args['value']))
-        self.ui_browser_drape.on('hair', lambda e: self.set_hair(e.args.get('style'), e.args.get('color')))
 
     # !SECTION
     # SECTION -- Other UI details

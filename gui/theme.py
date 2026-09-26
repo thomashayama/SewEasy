@@ -167,13 +167,11 @@ body {
     box-shadow: 0 1px 5px rgba(29, 43, 66, 0.14);
 }
 
-/* Mannequin skin-tone slider: the track shows the Monk Skin Tone scale
-   (CC BY 4.0, https://skintone.google). NOTE: gradient stops must match
-   SKIN_TONES in webapp/measurement_guide.py */
+/* Mannequin skin-tone slider: the track shows the depth scale for the
+   chosen undertone, set from code as --se-skin-track
+   (webapp/measurement_guide.py skin_tone_gradient) */
 .se-skin-slider .q-slider__track {
-    background: linear-gradient(90deg,
-        #f6ede4, #f3e7db, #f7ead0, #eadaba, #d7bd96,
-        #a07e56, #825c43, #604134, #3a312a, #292420) !important;
+    background: var(--se-skin-track, linear-gradient(90deg, #fedfd0, #442d21)) !important;
 }
 .se-skin-slider .q-slider__selection {
     background: transparent !important;

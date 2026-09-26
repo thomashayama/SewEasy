@@ -41,7 +41,7 @@ def _migrate():
 
     blob_type = 'BYTEA' if engine.dialect.name == 'postgresql' else 'BLOB'
     added = {
-        'body_profiles': {'skin_color': 'VARCHAR'},
+        'body_profiles': {'skin_color': 'VARCHAR', 'hair': 'JSON'},
         # DEFAULT backfills existing rows: pre-existing designs are outfits
         'designs': {'kind': "VARCHAR DEFAULT 'outfit' NOT NULL",
                     'preview': 'TEXT',
@@ -49,9 +49,7 @@ def _migrate():
                     'fabric_color': 'VARCHAR'},
         'users': {'units': "VARCHAR DEFAULT 'in' NOT NULL",
                   'default_profile_id': 'INTEGER',
-                  'arm_pose': 'FLOAT',
-                  'hair_style': 'VARCHAR',
-                  'hair_color': 'VARCHAR'},
+                  'arm_pose': 'FLOAT'},
         'wardrobe_shares': {'visibility': 'VARCHAR'},
         # DEFAULT backfills existing rows: every earlier invitation was read-only
         'wardrobe_invitations': {'role': "VARCHAR DEFAULT 'viewer' NOT NULL"},

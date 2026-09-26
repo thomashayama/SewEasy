@@ -36,6 +36,7 @@ class SceneDraft:
     garment_types: dict
     materials: dict = None
     textures: dict = None
+    hair: dict = None
 
 
 def snapshot_scene(pattern_state):
@@ -53,7 +54,8 @@ def snapshot_scene(pattern_state):
     garment = 'outfit' if items else 'element-top' if upper == 'ElementTubeTop' else 'current-design'
     return SceneDraft(pattern, deepcopy(pattern_state.body_params.params), deepcopy(colors), deepcopy(fabrics),
                       garment, {f'g{i}__': item['params']['meta']['upper']['v'] for i, item in enumerate(items)},
-                      pattern_state.display_panel_materials(), pattern_state.display_fabric_textures(fabrics))
+                      pattern_state.display_panel_materials(), pattern_state.display_fabric_textures(fabrics),
+                      deepcopy(getattr(pattern_state, 'hair', None)))
 
 
 def prepare_scene(pattern_state, target, resolution=1.5):
@@ -99,5 +101,20 @@ def prepare_scene(pattern_state, target, resolution=1.5):
         scene['panel_fabrics'] = draft.fabrics
         # Each set of maps once; the pieces name theirs by key in panel_fabrics.
         scene['fabric_textures'] = draft.textures or {}
+        scene['hair'] = scene_hair(data, draft, scene['vertex_panels'])
         target.write_text(json.dumps(scene, separators=(',', ':'), allow_nan=False), encoding='utf-8')
     return target
+
+
+def scene_hair(data, draft, panel_names):
+    """The body's hair for the renderer, or None: none chosen, or a hood covers the head."""
+    from seweasy.meshgen.hair import clean_hair, covered_head, hair_mesh
+    if not draft.hair or covered_head(set(panel_names)):
+        return None
+    mesh = hair_mesh(data['body_vertices'], data['body_faces'], draft.hair, draft.measurements)
+    if mesh is None:
+        return None
+    # Flat, rounded arrays keep the scene file small; normals are rebuilt in the browser.
+    return dict(positions=mesh['positions'].round(4).ravel().tolist(), uv=mesh['uv'].round(4).ravel().tolist(),
+                shade=mesh['shade'].round(3).tolist(), faces=mesh['faces'].ravel().tolist(),
+                texture=mesh['texture'], color=clean_hair(draft.hair)['color'])

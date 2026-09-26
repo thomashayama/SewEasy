@@ -16,6 +16,7 @@ usually fine) until edited in All mode.
 All lengths are centimeters; angles are degrees.
 """
 import json
+import math
 from functools import lru_cache
 from pathlib import Path
 
@@ -53,12 +54,16 @@ GENERAL_TIPS = (
 )
 
 # --- Skin tones ---
-# The Monk Skin Tone (MST) scale: a 10-tone scale of human skin colors by
-# Dr. Ellis Monk and Google LLC, CC BY 4.0 — https://skintone.google
-# (see the Attribution section in ReadMe.md). The mannequin slider
-# interpolates linearly between adjacent tones.
-SKIN_TONES = ['#f6ede4', '#f3e7db', '#f7ead0', '#eadaba', '#d7bd96',
-              '#a07e56', '#825c43', '#604134', '#3a312a', '#292420']
+# Two independent choices, as in person: depth (fair to deep) and undertone.
+# Colours are built in CIELAB from skin as it appears in photographs:
+# lightness and chroma follow depth (skin is most saturated at medium depths
+# and keeps its warmth when deep, rather than turning grey), and the hue angle
+# sets the undertone — rosy for cool, peach for neutral, golden for warm, and
+# a muted green-gold for olive.
+SKIN_UNDERTONES = {'cool': 'Cool', 'neutral': 'Neutral', 'warm': 'Warm', 'olive': 'Olive'}
+_SKIN_L = (91, 82, 72, 61, 50, 40, 30, 21)          # fair -> deep
+_SKIN_C = (14, 20, 26, 30, 29, 25, 20, 15)
+_SKIN_HUE = {'cool': (44, 1.0), 'neutral': (54, 1.0), 'warm': (63, 1.05), 'olive': (71, .92)}
 
 
 def _hex_rgb(hex_color):
@@ -66,25 +71,64 @@ def _hex_rgb(hex_color):
     return [int(hex_color[i:i + 2], 16) for i in (0, 2, 4)]
 
 
-def skin_tone_hex(t) -> str:
-    """Interpolate the skin-tone ramp at position t in [0, 1]"""
-    t = min(max(float(t), 0.), 1.)
-    pos = t * (len(SKIN_TONES) - 1)
-    i = min(int(pos), len(SKIN_TONES) - 2)
-    frac = pos - i
-    c0, c1 = _hex_rgb(SKIN_TONES[i]), _hex_rgb(SKIN_TONES[i + 1])
-    rgb = [round(a + (b - a) * frac) for a, b in zip(c0, c1)]
-    return '#{:02x}{:02x}{:02x}'.format(*rgb)
+def _skin_lab(depth, undertone):
+    t = min(max(float(depth), 0.), 1.) * (len(_SKIN_L) - 1)
+    i = min(int(t), len(_SKIN_L) - 2)
+    f = t - i
+    lightness = _SKIN_L[i] + (_SKIN_L[i + 1] - _SKIN_L[i]) * f
+    hue, gain = _SKIN_HUE[undertone if undertone in _SKIN_HUE else 'neutral']
+    chroma = (_SKIN_C[i] + (_SKIN_C[i + 1] - _SKIN_C[i]) * f) * gain
+    return lightness, chroma * math.cos(math.radians(hue)), chroma * math.sin(math.radians(hue))
 
 
-def skin_tone_t(hex_color) -> float:
-    """Closest slider position on the skin-tone ramp for a stored color"""
-    target = _hex_rgb(hex_color)
-    return min(
-        (i / 100 for i in range(101)),
-        key=lambda t: sum((a - b) ** 2
-                          for a, b in zip(_hex_rgb(skin_tone_hex(t)), target))
-    )
+def _lab_rgb(lightness, a, b):
+    fy = (lightness + 16) / 116
+    fx, fz = fy + a / 500, fy - b / 200
+
+    def inverse(f):
+        return f ** 3 if f ** 3 > 216 / 24389 else (116 * f - 16) / (24389 / 27)
+
+    x, y, z = inverse(fx) * .95047, inverse(fy), inverse(fz) * 1.08883
+    linear = (3.2406 * x - 1.5372 * y - .4986 * z,
+              -.9689 * x + 1.8758 * y + .0415 * z,
+              .0557 * x - .2040 * y + 1.0570 * z)
+    return [round(255 * min(1., max(0., 12.92 * c if c <= .0031308 else 1.055 * c ** (1 / 2.4) - .055)))
+            for c in linear]
+
+
+def _rgb_lab(rgb):
+    linear = [c / 255 / 12.92 if c / 255 <= .04045 else ((c / 255 + .055) / 1.055) ** 2.4 for c in rgb]
+    x = (.4124 * linear[0] + .3576 * linear[1] + .1805 * linear[2]) / .95047
+    y = .2126 * linear[0] + .7152 * linear[1] + .0722 * linear[2]
+    z = (.0193 * linear[0] + .1192 * linear[1] + .9505 * linear[2]) / 1.08883
+
+    def f(t):
+        return t ** (1 / 3) if t > 216 / 24389 else (24389 / 27 * t + 16) / 116
+
+    return 116 * f(y) - 16, 500 * (f(x) - f(y)), 200 * (f(y) - f(z))
+
+
+def skin_tone_hex(depth, undertone='neutral') -> str:
+    """The skin colour at a depth in [0, 1] (fair to deep) with an undertone."""
+    return '#{:02x}{:02x}{:02x}'.format(*_lab_rgb(*_skin_lab(depth, undertone)))
+
+
+def skin_tone_gradient(undertone, steps=9) -> list:
+    """Colours along the depth scale, for a slider track."""
+    return [skin_tone_hex(i / (steps - 1), undertone) for i in range(steps)]
+
+
+@lru_cache(maxsize=1)
+def _skin_table():
+    return [(depth / 100, undertone, _skin_lab(depth / 100, undertone))
+            for undertone in SKIN_UNDERTONES for depth in range(101)]
+
+
+def skin_tone_params(hex_color) -> tuple:
+    """The (depth, undertone) closest to a stored colour, in CIELAB distance."""
+    target = _rgb_lab(_hex_rgb(hex_color))
+    depth, undertone, _ = min(_skin_table(), key=lambda row: sum((a - b) ** 2 for a, b in zip(row[2], target)))
+    return depth, undertone
 
 
 # --- Display units (storage is always centimeters) ---

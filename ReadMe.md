@@ -55,11 +55,6 @@ their photographers, credited in the app and in `photos/credits.json`, used
 under the [Unsplash License](https://unsplash.com/license) or the
 [Pexels License](https://www.pexels.com/license/).
 
-The mannequin skin-tone slider uses the
-[Monk Skin Tone Scale](https://skintone.google) by Dr. Ellis Monk and
-Google LLC, licensed
-[CC BY 4.0](https://creativecommons.org/licenses/by/4.0/).
-
 ## Citation
 
 If you are using this system in your research, please cite the original papers:
