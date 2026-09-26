@@ -25,7 +25,7 @@ export default {
         // Cached library cards only need images. Do not download or parse the
         // cloth solver, shaders and renderer unless a missing image needs work.
         const [{Cloth},{Renderer}]=await Promise.all([
-          import('/webgpu/physics.js?v=18'),import('/webgpu/render.js?v=26'),
+          import('/webgpu/physics.js?v=18'),import('/webgpu/render.js?v=27'),
         ]);
         if(e.disposed)return;
         if(!e.device){

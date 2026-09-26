@@ -175,17 +175,48 @@
   .se-color-swatches {gap:5px;}
   .se-color-swatches button {width:23px; height:23px;}
 }
-@media(max-width:480px) {
-  .se-studio-stage {--inspector-width:0px; display:grid; grid-template-columns:minmax(0,1fr); grid-template-rows:minmax(250px,1fr) minmax(190px,36%); grid-template-areas:'pattern' 'preview';}
-  .se-stage-toolbar {top:38px;}
-  .se-studio-inspector {position:absolute; top:0; bottom:0; right:0; width:min(280px,85vw); z-index:5; box-shadow:-8px 0 20px #18345212; display:none;}
-  .se-studio-inspector:has(.se-fabric-panel:not(.is-empty)) {display:block;}
-  .se-preview-dock {border:0; padding:0 8px 8px;}
-  .se-preview-header {position:absolute; top:6px; left:18px; right:18px; z-index:3;}
-  .se-preview-dock .se-drape-body-note {top:35px;}
-  .se-expanded-3d {grid-template-areas:'preview' 'preview';}
+/* Beside a narrow screen's slide-over garment panel: tap to close it. */
+.se-wardrobe-scrim {display:none;}
+@media(max-width:760px) {
+  .se-wardrobe-open .se-wardrobe-scrim {display:block; position:absolute; inset:0; z-index:19; background:#0f1a2652;}
+}
+/* Phones: a two-row header (title and account, then actions), one view at a
+   time (the Pattern/3D toggle swaps them) and fabric settings in a bottom
+   sheet that leaves the top of the pattern in view. */
+@media(max-width:600px) {
+  .se-studio-header {position:relative; min-height:0; padding:6px 10px 8px; gap:4px;}
+  .se-studio-brand {width:100%; gap:2px; padding-right:40px;}
+  .se-studio-header .se-wordmark {font-size:21px; padding:0 4px;}
+  .se-studio-header .se-outfit-title {flex:1 1 auto; max-width:none; min-width:0; font-size:14px;}
+  .se-studio-account {position:absolute; top:8px; right:8px; margin:0; padding:0; border:0;}
+  .se-studio-header:has(.se-studio-account .q-btn) .se-studio-brand {padding-right:100px;}   /* "Sign in" */
+  .se-studio-account .se-account-chip {padding:2px; gap:0;}
+  .se-studio-account .se-account-name, .se-export-button .block {position:absolute!important; width:1px!important; height:1px!important; margin:-1px!important; padding:0!important; overflow:hidden!important; clip-path:inset(50%)!important; white-space:nowrap!important;}
+  .se-header-actions {gap:6px;}
+  .se-header-actions>* {flex-shrink:0;}
+  .se-header-actions .q-btn {min-height:34px; font-size:12px;}
+  .se-export-button .q-icon.on-left {margin-right:0;}
+  .se-studio-stage {--inspector-width:0px; grid-template-columns:minmax(0,1fr); grid-template-rows:minmax(0,1fr); grid-template-areas:'pattern';}
+  .se-studio-stage:not(.se-expanded-3d) .se-preview-dock {position:absolute; inset:0; visibility:hidden; pointer-events:none;}
+  /* The canvas sets its own visibility once a drape is ready. */
+  .se-studio-stage:not(.se-expanded-3d) .se-preview-dock canvas {visibility:hidden!important;}
+  .se-expanded-3d {grid-template-areas:'preview';}
   .se-expanded-3d .se-main-pattern {right:0;}
-  .se-expanded-3d .se-preview-header {bottom:auto; left:auto; top:8px;}
+  .se-stage-toolbar {top:38px; left:0; right:0;}
+  .se-preview-dock {border:0; padding:0;}
+  .se-preview-header {display:none;}       /* the toggle already swaps the views */
+  .se-preview-canvas {border-radius:0;}
+  .se-preview-dock .se-drape-body-note, .se-expanded-3d .se-drape-body-note {top:86px; bottom:auto; left:10px; transform:none; max-width:calc(100% - 64px); text-align:left;}
+  .se-preview-dock .se-drape-fit-details, .se-expanded-3d .se-drape-fit-details {top:100%; bottom:auto; left:0; transform:none; max-width:calc(100vw - 20px);}
+  .se-studio-inspector {position:absolute; left:0; right:0; bottom:0; top:auto; height:min(58%,460px); z-index:6; border:0; border-top:1px solid var(--studio-line); border-radius:14px 14px 0 0; box-shadow:0 -8px 24px #18345224; display:none;}
+  .se-studio-inspector:has(.se-fabric-panel:not(.is-empty)) {display:flex;}
+  .se-studio-inspector .se-fabric-panel {padding-top:12px; border-radius:14px 14px 0 0;}
+  .se-studio-inspector .se-fabric-panel header {padding:0 16px 8px;}
+  .se-studio-inspector .se-fabric-scroll {padding:0 16px 12px;}
+  .se-studio-inspector .se-fabric-panel footer {padding:6px 16px;}
+  .se-color-swatches {flex-wrap:wrap; justify-content:flex-start; gap:12px;}
+  .se-color-swatches button {width:32px; height:32px;}
+  .se-pattern-tools {left:10px; bottom:12px;}
 }
 @media(prefers-reduced-motion:reduce) {.se-studio *, .se-studio *:before {scroll-behavior:auto!important; animation-duration:.01ms!important; transition-duration:.01ms!important;}}
 

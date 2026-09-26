@@ -9,6 +9,10 @@
 .se-account .se-stitch-card {border:1px solid var(--home-line); border-radius:6px; padding:20px; box-shadow:none;}
 .se-account .se-section-label {color:var(--home-ink);}
 .se-account .se-param-label {color:var(--home-muted);}
+.se-account .se-nowrap-button {flex-shrink:0;}
+.se-account .se-nowrap-button .q-btn__content {flex-wrap:nowrap; white-space:nowrap;}
+.se-account-identity {flex:1 1 auto;}
+.se-account-identity .q-label, .se-account-identity > div {overflow-wrap:anywhere;}
 @media(prefers-color-scheme:dark) {
  .se-account .se-account-nav-active {background:var(--se-selected); color:var(--se-indigo);}
 }
@@ -26,4 +30,13 @@
  .se-account .se-home-subtitle {max-width:none;}
  .se-account .se-fabric-actions .q-btn {font-size:12px; padding:6px 8px; min-height:36px;}
  .se-account .se-fabric-actions .q-icon {font-size:18px;}
+ /* Measurements: the title above its actions, then the fields in one column, then the mannequin. */
+ /* ui.row(wrap=False) sets flex-wrap inline. */
+ .se-measure-head, .se-measure-actions, .se-measure-modes {flex-wrap:wrap!important; gap:8px;}
+ .se-measure-body {flex-direction:column; align-items:stretch;}
+ .se-measure-figure {order:2; align-self:center;}
+ .se-measure-editor {width:100%;}
+ .se-skin-row {flex-wrap:wrap!important; row-gap:4px;}
+ .se-skin-row .se-skin-slider {flex:1 1 140px; width:auto; min-width:0;}
+ .se-measure-grid {grid-template-columns:minmax(0,1fr)!important;}
 }

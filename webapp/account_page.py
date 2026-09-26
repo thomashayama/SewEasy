@@ -150,19 +150,19 @@ async def account_page(request: Request):
         n_garments = sum(kind_counts.values()) - n_outfits
 
         with ui.card().classes('se-stitch-card w-full'):
-            with ui.row(wrap=False).classes('items-center gap-4 w-full'):
+            with ui.row(wrap=False).classes('se-account-summary items-center gap-4 w-full'):
                 if user.get('picture'):
                     ui.image(user['picture']) \
                         .props('alt="Your account picture"') \
                         .classes('w-14 h-14 rounded-full')
                 else:
                     ui.icon('account_circle').classes('text-6xl text-gray-400')
-                with ui.column().classes('gap-0.5'):
+                with ui.column().classes('se-account-identity gap-0.5 min-w-0'):
                     ui.label(user.get('name') or email).classes('se-section-label text-lg')
                     ui.label(email).classes('se-param-label')
                 ui.space()
                 ui.button('Log out', on_click=lambda: ui.navigate.to('/auth/logout')) \
-                    .props('outline size=sm icon=logout')
+                    .props('outline size=sm icon=logout').classes('se-nowrap-button')
         with ui.card().classes('se-stitch-card w-full'):
             ui.label('At a glance').classes('se-section-label')
             ui.label(f'{n_profiles} measurement profile(s) · '
@@ -176,9 +176,9 @@ async def account_page(request: Request):
         with ui.card().classes('se-stitch-card w-full'):
             NEW_PROFILE = '__new__'
 
-            with ui.row(wrap=False).classes('items-center w-full justify-between'):
+            with ui.row(wrap=False).classes('se-measure-head items-center w-full justify-between'):
                 ui.label('Body measurements').classes('se-section-label text-lg')
-                with ui.row(wrap=False).classes('gap-2'):
+                with ui.row(wrap=False).classes('se-measure-actions gap-2'):
                     copy_btn = ui.button('Save a copy',
                                          on_click=lambda: copy_current()) \
                         .props('outline size=sm icon=content_copy no-caps')
@@ -276,7 +276,7 @@ async def account_page(request: Request):
                 unsaved['dirty'] = False
                 load_editor()
 
-            with ui.row(wrap=False).classes('items-center gap-3 mt-1'):
+            with ui.row(wrap=False).classes('se-measure-modes items-center gap-3 mt-1'):
                 mode = ui.toggle(
                     {'essential': 'Essential', 'all': 'All measurements'},
                     value='essential',
@@ -294,12 +294,12 @@ async def account_page(request: Request):
             update_unit_note()
 
             # Use the same fitted body as the studio, including the profile tone.
-            with ui.row(wrap=False).classes('w-full gap-4 items-start'):
-                with ui.column().classes('shrink-0 gap-1'):
+            with ui.row(wrap=False).classes('se-measure-body w-full gap-4 items-start'):
+                with ui.column().classes('se-measure-figure shrink-0 gap-1'):
                     scene = _mannequin_scene()
                     mannequin_note = ui.label('Measurement-fitted body; approximate shape') \
                         .classes('se-param-label w-64')
-                editor = ui.column().classes('grow min-w-0')
+                editor = ui.column().classes('se-measure-editor grow min-w-0')
 
             fields = {}
             skin_ctl = {'slider': None, 'touched': False, 'stored': None}
@@ -422,7 +422,7 @@ async def account_page(request: Request):
                     stored_tone = data.get('skin_color')
                     skin_ctl.update(touched=False, stored=stored_tone)
                     set_mannequin_tone(stored_tone)
-                    with ui.row(wrap=False).classes('items-center gap-3 mt-2 w-full'):
+                    with ui.row(wrap=False).classes('se-skin-row items-center gap-3 mt-2 w-full'):
                         ui.label('Skin tone').classes('se-param-label w-24')
 
                         async def _touch_tone(e):
@@ -460,7 +460,7 @@ async def account_page(request: Request):
                         if readonly:
                             skin_ctl['slider'].disable()
 
-                    with ui.grid(columns=2).classes('w-full gap-x-4 gap-y-1 mt-2'):
+                    with ui.grid(columns=2).classes('se-measure-grid w-full gap-x-4 gap-y-1 mt-2'):
                         for key in keys:
                             with ui.row(wrap=False).classes('items-center gap-0 w-full'):
                                 fields[key] = ui.number(
@@ -488,7 +488,7 @@ async def account_page(request: Request):
                             .classes('se-param-label mt-1')
                     if not readonly:
                         ui.button('Save changes', on_click=save_changes) \
-                            .props('unelevated icon=save').classes('mt-3 self-end')
+                            .props('unelevated icon=save').classes('se-nowrap-button mt-3 self-end')
 
             shared_rows = {}
             default_profile = {'id': None}

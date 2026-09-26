@@ -166,16 +166,18 @@ def auth_header_ui(state, compact=False):
 
     if user:
         with ui.row(wrap=False).classes(
-                'items-center gap-2 cursor-pointer rounded-md px-2 py-1 '
+                'se-account-chip items-center gap-2 cursor-pointer rounded-md px-2 py-1 '
                 'hover:bg-white/10') \
-                .on('click', lambda: go('/account')):
+                .props('role=link tabindex=0') \
+                .on('click', lambda: go('/account')) \
+                .on('keydown.enter', lambda: go('/account')):
             if user.get('picture'):
                 ui.image(user['picture']) \
                     .props('alt="Your account picture"') \
                     .classes('w-8 h-8 rounded-full')
             else:
                 ui.icon('account_circle').classes('text-3xl')
-            ui.label(user.get('name') or user['email']).classes('text-white')
+            ui.label(user.get('name') or user['email']).classes('se-account-name text-white')
     elif config.google_configured():
         ui.button('Sign in' if compact else 'Sign in with Google',
                   on_click=lambda: go('/auth/login')) \

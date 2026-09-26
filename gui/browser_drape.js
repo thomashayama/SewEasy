@@ -1,5 +1,5 @@
 import {Cloth} from '/webgpu/physics.js?v=21';
-import {Renderer} from '/webgpu/render.js?v=26';
+import {Renderer} from '/webgpu/render.js?v=27';
 import {HAIR_COLORS,HAIR_STYLES} from '/webgpu/hair.js?v=1';
 
 // GPU objects live outside Vue's reactive graph. Each mounted stage owns one

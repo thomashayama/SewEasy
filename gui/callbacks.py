@@ -351,7 +351,7 @@ class GUIState:
 
         with ui.element('main').classes('se-studio'):
             with ui.element('header').classes('se-studio-header'):
-                with ui.row(wrap=False).classes('items-center gap-3 min-w-0'):
+                with ui.row(wrap=False).classes('se-studio-brand items-center gap-3 min-w-0'):
                     ui.button(icon='menu', on_click=self.toggle_wardrobe).props(
                         'flat round dense aria-label="Toggle outfit list"').classes('se-mobile-menu')
                     ui.button('SewEasy', on_click=self.go_home).props(
@@ -369,7 +369,7 @@ class GUIState:
                         self.ui_save_button = ui.button('Save', on_click=lambda: self.save_current()).props('unelevated').classes('se-save-outfit')
                         with ui.button(icon='expand_more').props('unelevated aria-label="Save options"').classes('se-save-options') as self.ui_save_options:
                             self.ui_save_menu = ui.menu()
-                    with ui.button('Export', icon='file_download').props('outline'):
+                    with ui.button('Export', icon='file_download').props('outline').classes('se-export-button'):
                         with ui.menu():
                             ui.menu_item('Print-ready PDF', self.state_download)
                             ui.menu_item('Project for tracing (projector or TV)', self.open_trace)
@@ -378,6 +378,8 @@ class GUIState:
             with ui.element('div').classes('se-studio-body') as self.ui_studio_body:
                 with ui.element('aside').classes('se-wardrobe').props('aria-label="This garment"') as self.ui_wardrobe_panel:
                     self.def_side_panel()
+                # Narrow screens: the panel slides over the stage; tapping beside it closes it.
+                ui.element('div').classes('se-wardrobe-scrim').on('click', self.toggle_wardrobe)
                 self.view_stage()
 
         from webapp.wardrobe_ui import wardrobe_ui

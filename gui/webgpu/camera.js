@@ -1,6 +1,8 @@
 // Pan the framing separately from the mannequin's fixed rotation pivot.
+// Tall, narrow views (a phone held upright) pull back so outstretched arms fit;
+// the 384x448 thumbnails stay at 1.
 export function framingScale(width=Infinity,height=1) {
-  return Math.max(1,.72*height/Math.max(1,width));
+  return Math.max(1,.85*height/Math.max(1,width));
 }
 export function panCamera(camera,dx,dy,height,width=Infinity) {
   const scale=2*camera.distance*framingScale(width,height)*Math.tan(35*Math.PI/360)/Math.max(1,height);

@@ -1,5 +1,5 @@
 import {buffer} from './physics.js?v=21';
-import {cameraControls,framingScale} from './camera.js?v=15';
+import {cameraControls,framingScale} from './camera.js?v=16';
 import {Buttons} from './buttons.js?v=3';
 import {lightBackground,watchSystemBackground} from './appearance.js?v=1';
 import {STRAND_M,coveredHead,hairMesh} from './hair.js?v=1';

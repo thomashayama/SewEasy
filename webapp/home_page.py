@@ -395,16 +395,18 @@ def home_page(request: Request):
             ui.label('Your wardrobe').classes('se-home-location')
             ui.space()
             ui.button('Measurements', icon='straighten', on_click=lambda: ui.navigate.to(
-                '/account?section=measurements' if user else '/studio?measurements=1')).props('flat').classes('se-home-measurements')
+                '/account?section=measurements' if user else '/studio?measurements=1')).props('flat').classes('se-home-nav se-home-measurements')
             if user:
                 # The library lives in the account; Home is where a project starts.
                 ui.button('Fabrics', icon='texture', on_click=lambda: ui.navigate.to('/account?section=fabrics')).props(
-                    'flat aria-label="Fabric library"').classes('se-home-fabrics')
+                    'flat aria-label="Fabric library"').classes('se-home-nav se-home-fabrics')
                 incoming = len(Friends(store.email).list()['incoming'])
-                with ui.button('Friends', icon='people_outline', on_click=lambda: ui.navigate.to('/account?section=friends')).props('flat'):
+                with ui.button('Friends', icon='people_outline', on_click=lambda: ui.navigate.to('/account?section=friends')) \
+                        .props('flat').classes('se-home-nav'):
                     if incoming:
                         ui.badge(str(incoming), color='primary').props('floating')
-                ui.button(user.get('name') or 'Account', icon='account_circle', on_click=lambda: ui.navigate.to('/account')).props('flat')
+                ui.button(user.get('name') or 'Account', icon='account_circle', on_click=lambda: ui.navigate.to('/account')) \
+                    .props('flat').classes('se-home-nav se-home-account')
             else:
                 def sign_in():
                     if config.google_configured():
