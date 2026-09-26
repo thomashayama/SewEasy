@@ -14,10 +14,15 @@ import numpy as np
 from fastapi import Request
 from fastapi.responses import RedirectResponse
 from nicegui import app, run, ui
+from sqlalchemy.exc import SQLAlchemyError
 
 from gui import theme
 from webapp import auth, designs, profiles, sharing
 from webapp import measurement_guide as guide
+from webapp.favorites import Favorites
+from webapp.garment_catalog import studio_snapshot
+from webapp.thumbnail_ui import ThumbnailQueue
+from webapp.wardrobe import Wardrobe
 # body_display registers the /body and /body_tones static mounts and owns
 # the tone-tinted mannequin cache (shared with the studio 3D view)
 from webapp.appearance_editor import HairEditor, SkinToneEditor
@@ -143,12 +148,9 @@ async def account_page(request: Request):
     # SECTION Account
 
     async def build_account():
-        # Counts only — no reason to pull every design's preview SVG out
-        # of the database for three numbers
-        n_profiles = len(await run.io_bound(profiles.list_profiles, email))
-        kind_counts = await run.io_bound(designs.count_designs, email)
-        n_outfits = kind_counts.get('outfit', 0)
-        n_garments = sum(kind_counts.values()) - n_outfits
+        store = Wardrobe(email, app.storage.user)
+        favorites = Favorites(store)
+        entries = await run.io_bound(favorites.list)
 
         with ui.card().classes('se-stitch-card w-full'):
             with ui.row(wrap=False).classes('se-account-summary items-center gap-4 w-full'):
@@ -164,11 +166,94 @@ async def account_page(request: Request):
                 ui.space()
                 ui.button('Log out', on_click=lambda: ui.navigate.to('/auth/logout')) \
                     .props('outline size=sm icon=logout').classes('se-nowrap-button')
+
+        def open_favorite(entry):
+            if entry['favorite_kind'] == 'share':
+                ui.navigate.to(f'/shared/{entry["id"]}')
+                return
+            outfit = entry['kind'] == 'outfit'
+            # Re-read: it may have been renamed, edited or deleted since this page opened
+            item = next((x for x in store.read()['outfits' if outfit else 'garments']
+                         if x['id'] == entry['id']), None)
+            if item is None:
+                ui.notify('This saved item is no longer available.', type='warning')
+                return
+            storage = app.storage.user
+            storage['pending_design'] = studio_snapshot(
+                item['garments'] if outfit else [item], item['name'], storage.get('pending_design'),
+                outfit_revision_id=item.get('revision_id'), editor_mode=entry['kind'],
+                outfit_updated_at=item.get('updated_at'))
+            storage.pop('outfit_edit_return', None)
+            ui.navigate.to('/studio')
+
+        async def unfavorite(entry, button):
+            button.disable()    # One removal per click, however fast the clicks
+            try:
+                await run.io_bound(favorites.set, entry['favorite_kind'], entry['id'], False)
+            except (ValueError, SQLAlchemyError):
+                button.enable()
+                ui.notify('Could not update favorites. Please try again.', type='warning')
+                return
+            entries.remove(entry)
+            render_favorites()
+
+        def favorite_card(entry):
+            snapshot, kind = entry['snapshot'], entry['kind']
+            shared = entry['favorite_kind'] == 'share'
+            if shared:
+                detail = f'{kind.capitalize()} · {entry["owner_name"]}'
+            elif kind == 'outfit':
+                count = len(snapshot['garments'])
+                detail = f'Outfit · {count} garment' + ('s' if count != 1 else '')
+            else:
+                detail = 'Garment'
+            with ui.element('div').classes('se-library-entry'):
+                with ui.button(on_click=lambda: open_favorite(entry)) \
+                        .props('flat no-caps').classes('se-library-card') as card:
+                    card._props['aria-label'] = f'Open {kind} {snapshot["name"]}'
+                    with ui.element('div').classes('se-home-flats se-library-art'):
+                        previews.visual(snapshot['garments'] if kind == 'outfit' else [snapshot],
+                                        outfit_id=None if shared or kind != 'outfit' else snapshot['revision_id'],
+                                        image=entry.get('thumbnail'))
+                    with ui.column().classes('se-library-caption'):
+                        ui.label(snapshot['name']).classes('se-library-name')
+                        ui.label(detail).classes('se-home-muted')
+                heart = ui.button(icon='favorite', color=None,
+                                  on_click=lambda e: unfavorite(entry, e.sender)) \
+                    .props('flat round dense :ripple=false aria-pressed=true') \
+                    .classes('se-favorite is-favorite')
+                heart._props['aria-label'] = f'Remove {snapshot["name"]} from favorites'
+                heart.tooltip('Remove from favorites')
+
+        def render_favorites():
+            all_link.set_visibility(bool(entries))
+            grid.clear()
+            with grid:
+                if not entries:
+                    with ui.column().classes('se-library-empty w-full'):
+                        ui.icon('favorite_border').classes('se-empty-icon')
+                        ui.label('No favorites yet').classes('se-empty-title')
+                        ui.label('Tap the heart on a garment or outfit in your wardrobe to keep it here.') \
+                            .classes('se-home-muted')
+                        ui.link('Go to your wardrobe', '/').classes('text-sm')
+                    return
+                with ui.element('div').classes('se-library-grid'):
+                    for entry in entries:
+                        favorite_card(entry)
+
         with ui.card().classes('se-stitch-card w-full'):
-            ui.label('At a glance').classes('se-section-label')
-            ui.label(f'{n_profiles} measurement profile(s) · '
-                     f'{n_outfits} outfit(s) · {n_garments} garment(s)') \
-                .classes('text-sm text-stone-600')
+            with ui.row(wrap=False).classes('items-center w-full justify-between'):
+                ui.label('Favorites').classes('se-section-label text-lg')
+                all_link = ui.link('Open in your wardrobe', '/?tab=favorites').classes('text-sm')
+            grid = ui.element('div').classes('w-full')
+            previews = ThumbnailQueue(store)
+            render_favorites()
+        # Render any of your own favorites still missing a 3D thumbnail
+        for entry in entries:
+            if entry['favorite_kind'] == 'outfit':
+                previews.enqueue('outfit', entry['snapshot']['revision_id'], entry['snapshot']['garments'])
+            elif entry['favorite_kind'] == 'garment':
+                previews.enqueue('garment', entry['id'], [entry['snapshot']])
 
     # ------------------------------------------------------------------
     # SECTION Measurements

@@ -183,6 +183,11 @@ class ThumbnailQueue(Element, component='thumbnail_renderer.js'):
             pass
         self.scene = None
 
+    def _handle_delete(self):
+        # The account page clears its sections while the page stays open.
+        self.close()
+        super()._handle_delete()
+
     def close(self):
         self.closed = True
         self.pending.clear()
