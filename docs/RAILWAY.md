@@ -3,7 +3,7 @@
 One Railway service (this repo's Dockerfile) + the Postgres plugin.
 `railway.toml` at the repo root sets the Dockerfile build, `/health`
 healthcheck, and restart policy. The healthcheck timeout is generous
-because the image is large (the Warp build) and cold starts are slow.
+because the image is large and cold starts are slow.
 
 ## Setup
 

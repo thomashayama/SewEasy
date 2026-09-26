@@ -10,14 +10,14 @@ It is a commercial fork of [GarmentCode](https://github.com/maria-korosteleva/Ga
 
 - Build a commercial product on top of the GarmentCode framework under the SewEasy brand.
 - Longer term: explore AI-assisted pattern generation (the upstream ecosystem — ChatGarment, Design2GarmentCode — generates patterns targeting this framework's JSON/DSL representation).
-- Stay mergeable with upstream: pull future GarmentCode improvements via `git pull upstream main`.
+- Upstream mergeability is **not** a constraint: GarmentCode has been inactive since our fork point (last upstream commit 2025-06-29), so rename, restructure or delete upstream-derived code freely. The compatibility that does still matter is the design-parameter tree of the upstream garment programs: ChatGarment's photo→design output targets it (`chatgarment_modal.py`), so renaming those parameters breaks photo→design unless a mapping is added.
 
 ## Repo layout
 
 - `seweasy/` — the core library (renamed from `pygarment`; the PyPI-style package name in `setup.cfg` is `seweasy`)
-  - `seweasy/garmentcode/` — the DSL layer: Edge, Panel, Component, Interface, edge factory, operators. **Kept its upstream name deliberately** — renaming it would touch half the codebase and wreck upstream merges.
+  - `seweasy/garmentcode/` — the DSL layer: Edge, Panel, Component, Interface, edge factory, operators. Still carries its upstream name only because renaming it touches every import; no merge reason to keep it.
   - `seweasy/pattern/` — 2D pattern serialization (JSON wrappers, SVG/raster output, bundled cairo DLLs for Windows)
-  - `seweasy/meshgen/` — box mesh generation and cloth simulation (uses a patched NVIDIA Warp)
+  - `seweasy/meshgen/` — box mesh generation (feeds the in-browser drape) and the legacy Warp cloth simulation (offline dataset pipeline only)
   - `seweasy/mayaqltools/` — legacy Autodesk Maya + Qualoth simulation tools
 - `assets/garment_programs/` — example garment components written against the library
 - `assets/design_params/`, `assets/bodies/` — design and body-measurement presets (`default.yaml` is the GUI's initial state)
@@ -32,6 +32,7 @@ It is a commercial fork of [GarmentCode](https://github.com/maria-korosteleva/Ga
 - **Naming**: user-facing branding is "SewEasy"; the Python package is `seweasy`. References to the GarmentCode/GarmentCodeData *papers*, the *dataset*, the `Body Measurements GarmentCode.pdf` doc, and the upstream `NvidiaWarp-GarmentCode` dependency intentionally keep their original names — do not "fix" them in a rename sweep.
 - **Licensing**: MIT. `LICENSE` must retain Maria Korosteleva's original copyright line alongside the fork's line. Keep the Attribution and Citation sections in `ReadMe.md`.
 - **SMPL caveat**: body-shape assets in the upstream ecosystem derive from SMPL/CAESAR, which carry non-commercial restrictions (see `assets/bodies/Readme.md`). Before shipping anything commercial that bundles body models or dataset-derived assets, verify their licenses separately from the code.
+- **Warp caveat**: the patched `NvidiaWarp-GarmentCode` is Warp 1.0.0-beta.6 under the NVIDIA Source Code License, which allows non-commercial research/evaluation use only. Keep it out of the production image and anything the product runs; stock Warp is Apache-2.0 from v1.6.2 if server-side simulation is ever needed again.
 - The README file is `ReadMe.md` (not `README.md`).
 - Line endings: repo content is LF; Windows checkout with autocrlf — expect CRLF warnings from git, they're harmless.
 
@@ -42,10 +43,10 @@ It is a commercial fork of [GarmentCode](https://github.com/maria-korosteleva/Ga
 ## Git remotes
 
 - `origin` → https://github.com/thomashayama/SewEasy (this fork; push here)
-- `upstream` → https://github.com/maria-korosteleva/GarmentCode (pull updates: `git pull upstream main`, then resolve renames — `pygarment` → `seweasy`)
+- `upstream` → https://github.com/maria-korosteleva/GarmentCode (reference only; inactive since 2025-06-29. Anything cherry-picked from it needs the `pygarment` → `seweasy` rename)
 
 ## Environment notes
 
 - Python >= 3.6 (upstream tested ~3.9+); install with `pip install -e .` per `docs/Installation.md`
-- Simulation requires the patched NVIDIA Warp: https://github.com/maria-korosteleva/NvidiaWarp-GarmentCode (manual install)
+- The offline dataset simulation (and the legacy `GUIPattern.drape_3d()`) requires the patched NVIDIA Warp: https://github.com/maria-korosteleva/NvidiaWarp-GarmentCode (manual install). The app and its Docker image do not; the studio drapes in the browser.
 - Quick sanity check without full deps: `python -m compileall -q seweasy gui assets`

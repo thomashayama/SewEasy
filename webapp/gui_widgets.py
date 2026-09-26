@@ -1,5 +1,5 @@
-"""NiceGUI widgets for account features, kept out of gui/callbacks.py to
-minimize the diff against upstream GarmentCode."""
+"""NiceGUI widgets for account features, kept out of gui/callbacks.py so the
+studio module stays focused on pattern editing."""
 
 import asyncio
 import base64

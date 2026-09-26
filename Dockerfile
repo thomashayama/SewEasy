@@ -1,26 +1,11 @@
 # syntax=docker/dockerfile:1
 
-# ---------- Stage 1: build the patched NVIDIA Warp (CPU-only) ----------
-# The cloth simulator needs maria-korosteleva/NvidiaWarp-GarmentCode, which has
-# no prebuilt wheels. CUDA_PATH is left unset so the build is CPU-only —
-# suitable for cloud hosts (Railway etc.) that have no GPU. Simulation on CPU
-# works but is slow; for GPU simulation run outside this image.
-FROM python:3.11-slim-bookworm AS warp-builder
-
-RUN apt-get update && apt-get install -y --no-install-recommends \
-        build-essential git git-lfs ca-certificates curl \
-    && rm -rf /var/lib/apt/lists/*
-
-RUN git lfs install --skip-repo \
-    && git clone --depth 1 https://github.com/maria-korosteleva/NvidiaWarp-GarmentCode.git /opt/warp
-
-WORKDIR /opt/warp
-RUN chmod +x tools/packman/packman \
-    && pip install --no-cache-dir numpy \
-    && python build_lib.py \
-    && pip wheel --no-deps --wheel-dir /wheels .
-
-# ---------- Stage 2: runtime ----------
+# The image deliberately ships without the patched NVIDIA Warp
+# (maria-korosteleva/NvidiaWarp-GarmentCode): that fork is based on Warp
+# 1.0.0-beta.6 under the NVIDIA Source Code License, which restricts use to
+# non-commercial research/evaluation. The studio drapes in the browser, so the
+# app never needs it; only the offline dataset pipeline and the legacy
+# GUIPattern.drape_3d() do, and those run outside this image.
 FROM python:3.11-slim-bookworm
 
 # libcairo2 -> CairoSVG; libegl1/libgl1/mesa -> headless pyrender via EGL
@@ -41,10 +26,6 @@ ENV PYTHONUNBUFFERED=1 \
 # as described in docs/Installation.md.
 COPY pyproject.toml setup.cfg ./
 RUN mkdir -p seweasy && pip install --no-cache-dir .
-
-# Patched Warp simulator built in stage 1
-COPY --from=warp-builder /wheels /tmp/wheels
-RUN pip install --no-cache-dir /tmp/wheels/*.whl && rm -rf /tmp/wheels
 
 # Application code
 COPY . .

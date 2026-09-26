@@ -1,9 +1,10 @@
 """Modal GPU draping service for SewEasy.
 
-The GUI's 3D drape runs the patched NVIDIA Warp cloth simulation. Inside the
-app container Warp is CPU-only (see Dockerfile), which makes a drape take
-minutes. This module offloads meshgen + simulation + preview render to a
-Modal (modal.com) GPU container, where the same simulation takes seconds.
+The legacy GUIPattern.drape_3d() runs the patched NVIDIA Warp cloth
+simulation. The app container ships without Warp (see Dockerfile: the fork is
+licensed for non-commercial use only) and the studio drapes in the browser.
+This module offloads meshgen + simulation + preview render to a Modal
+(modal.com) GPU container, where the simulation takes seconds.
 
 Deploy (one-time, and after changing this file or the sim/meshgen code):
 
