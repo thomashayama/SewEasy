@@ -177,7 +177,7 @@ What the garment solver does with each measured property:
 | Weight | Per piece | Vertex mass is rest triangle area × g/m². Unassigned pieces keep 300 g/m². |
 | Warp/weft bending | Per piece | Averaged into one isotropic bending multiplier, rigidity ÷ 1e-5 N·m, clamped to 0.5–30. Retuning **Bending stiffness** afterwards keeps the piece's fabric identity. |
 | Damping | Per garment | Mean over the whole garment by rest area; a piece without a value counts at the solver default, so one cuff cannot set it. The solver damps velocity garment-wide. |
-| Friction | Per garment | The same rest-area mean, used as the positional body-friction factor. It is not a Coulomb coefficient. |
+| Friction | Per garment | The same rest-area mean, used as the positional body-friction factor; it also scales the body grip (see [Mannequin motion](Mannequin_motion.md)), so slippery fabrics hold on less. It is not a Coulomb coefficient. |
 | Thickness | Per garment | Raises the solver's 4 mm numerical contact margin when a fabric is thicker. It never lowers the margin, and the measurement is never overwritten by it. |
 | Warp/weft stretch, shear | Stored only | Garment panels use scalar distance constraints and a strain limiter, not N/m membrane stiffness. The orthotropic model exists only in the swatch. |
 | Base-colour map | Per piece | Drawn in the 2D pattern and the 3D drape, repeating at the size the file declares, with the file's multiply factor. The wrong side uses the back's map when the material has one, otherwise the front's. |

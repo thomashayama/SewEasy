@@ -102,18 +102,31 @@ fn body_value(p: vec3<f32>) -> vec4<f32> {
  let signed=select(-sqrt(best),sqrt(best),dot(p-closest,normal)>=0.0);
  return vec4<f32>(normal,signed);
 }`;
-const bodyCollision = common + bodyGeometry + bodyMotionWGSL + `
+// Cloth resting on the body is pressed onto it by gravity and by the garment's
+// own tension, which the tiny per-substep penetration badly under-represents.
+// The grip adds that contact pressure (an acceleration, scaled by the friction
+// coefficient): cloth in contact is carried by a turning body and holds on
+// steep skin instead of sliding off. Cloth within GRIP_BAND of the contact
+// shell grips without being pushed. It fades in with gravity after sewing, so
+// panels still slide into place while they are sewn.
+const bodyGrip = `
+const GRIP_BAND=0.002;
+fn grip_pressure()->f32{
+ let dt=params.motion.x;let ramp=clamp((params.motion.y-params.contact.w)/0.3,0.0,1.0);
+ return params.limits.z*ramp*dt*dt;
+}`;
+const bodyCollision = common + bodyGeometry + bodyMotionWGSL + bodyGrip + `
 @group(0) @binding(7) var<uniform> motion:BodyMotion;
 @group(0) @binding(6) var<storage, read_write> previous: array<vec4<f32>>;
 @compute @workgroup_size(64) fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
  let i=gid.x;if(i>=params.counts.x){return;}
  let p=q[i].xyz;let hit=body_value(body_local(p));let normal=body_normal(hit.xyz);let signed=hit.w;
  let depth=params.material.w-signed;
- if (depth>0.0) {
-   let push=min(depth,0.04);let corrected=p+normal*push;
+ if (depth>-GRIP_BAND) {
+   let push=clamp(depth,0.0,0.04);let corrected=p+normal*push;
    let movement=corrected-previous[i].xyz-body_movement(corrected);
    let tangent=movement-normal*dot(movement,normal);
-   let friction=min(1.0,params.contact.z*push/max(length(tangent),1e-8));
+   let friction=min(1.0,params.contact.z*(push+grip_pressure())/max(length(tangent),1e-8));
    q[i]=vec4<f32>(corrected-tangent*friction,q[i].w);
  }
  if (q[i].y<0.004) {q[i].y=0.004;}
@@ -146,7 +159,7 @@ fn sdf_normal(p:vec3<f32>)->vec3<f32>{
 }
 fn in_grid(p:vec3<f32>)->bool{let v=(p-grid.lo.xyz)/grid.step.xyz;return all(v>=vec3<f32>(1))&&all(v<vec3<f32>(grid.counts.xyz)-vec3<f32>(2));}
 `;
-const sdfCollision = common + gridType + bodyMotionWGSL + `
+const sdfCollision = common + gridType + bodyMotionWGSL + bodyGrip + `
 @group(0) @binding(2) var<storage,read> field:array<f32>;
 @group(0) @binding(3) var<uniform> grid:Grid;
 @group(0) @binding(4) var<storage,read_write> previous:array<vec4<f32>>;
@@ -157,10 +170,10 @@ const sdfCollision = common + gridType + bodyMotionWGSL + `
  let local=body_local(p);let v=(local-grid.lo.xyz)/grid.step.xyz;
  if(all(v>=vec3<f32>(1)) && all(v<vec3<f32>(grid.counts.xyz)-vec3<f32>(2))){
   let depth=params.material.w-sample_sdf(local);
-  if(depth>0.0){
-   let normal=body_normal(sdf_normal(local));let push=min(depth,0.04);let corrected=p+normal*push;
+  if(depth>-GRIP_BAND){
+   let normal=body_normal(sdf_normal(local));let push=clamp(depth,0.0,0.04);let corrected=p+normal*push;
    let movement=corrected-previous[i].xyz-body_movement(corrected);let tangent=movement-normal*dot(movement,normal);
-   let friction=min(1.0,params.contact.z*push/max(length(tangent),1e-8));
+   let friction=min(1.0,params.contact.z*(push+grip_pressure())/max(length(tangent),1e-8));
    q[i]=vec4<f32>(corrected-tangent*friction,q[i].w);
   }
  }
@@ -290,7 +303,7 @@ export class Cloth {
     this.time=0;this.frameDt=1/60;
     this.motion=new MannequinMotion(scene.body_vertices);
     const placement=placePanels(scene);this.initialPositions=placement.positions;this.placement=placement.adjustments;this.supportTargets=placement.support;
-    this.settings={substeps:12,width:1,wind:0,stretch:0.00001,bend:0.03,seam:0.0000001,thickness:0.004,gravity:9.81,damping:2,friction:0.4,sewDuration:1.6,selfCollision:true,bodyCollision:true,bodyMethod:'sdf',strainLimit:1.02,strainPasses:2,surfaceContact:true};
+    this.settings={substeps:12,width:1,wind:0,stretch:0.00001,bend:0.03,seam:0.0000001,thickness:0.004,gravity:9.81,damping:2,friction:0.4,grip:200,sewDuration:1.6,selfCollision:true,bodyCollision:true,bodyMethod:'sdf',strainLimit:1.02,strainPasses:2,surfaceContact:true};
     this.settings.holdNeckline=this.supportTargets.length>0;
     // Solver-wide values the assigned fabrics resolved on the server. Per-piece
     // mass and bending already arrive in the mesh itself.
@@ -581,6 +594,16 @@ export class Cloth {
     d.queue.writeBuffer(this.q,0,new Float32Array([0,.003,.01,1]));d.queue.writeBuffer(this.previous,0,new Float32Array([0,.003,.01,1]));
     const movingContact=d.createCommandEncoder();this.dispatch(movingContact,planeStage,1);d.queue.submit([movingContact.finish()]);const carried=(await this.readPositions())[0];
     this.kernelChecks.moving_body_friction_carries_cloth=carried[0]>.00039&&carried[0]<.00041&&Math.abs(carried[1]-.004)<1e-6;
+    // After sewing, cloth resting 1 mm outside the contact shell grips without
+    // being pushed: it keeps only the slip beyond the grip. 3 mm out it slides freely.
+    this.time=this.settings.sewDuration+1;this.updateParams();
+    const slip=1e-5,gripped=this.settings.friction*((this.settings.grip||0)/this.collisionPasses)*(this.frameDt/(this.frameSubsteps||this.settings.substeps))**2;
+    d.queue.writeBuffer(this.motionBuffer,0,new Float32Array([1,0,1,0,0,0,0,0]));
+    const resting=[[slip,this.settings.thickness+.001,0,1],[slip,this.settings.thickness+.003,.001,1]];
+    d.queue.writeBuffer(this.q,0,new Float32Array(resting.flat()));d.queue.writeBuffer(this.previous,0,new Float32Array(resting.flatMap(p=>[0,...p.slice(1)])));
+    const grip=d.createCommandEncoder();this.dispatch(grip,planeStage,2);d.queue.submit([grip.finish()]);const [held,free]=await this.readPositions();
+    this.kernelChecks.resting_contact_grips_after_sewing=Math.abs(held[0]-Math.max(0,slip-gripped))<1e-9&&Math.abs(held[1]-resting[0][1])<1e-7&&Math.abs(free[0]-slip)<1e-9;
+    this.time=0;this.updateParams();
     // Turn a vertical plane through 90 degrees; its world contact normal must
     // rotate too, while its cached distance field remains untouched.
     d.queue.writeBuffer(plane,0,Float32Array.from({length:125},(_,i)=>-.02+(i%5)*.01));
@@ -678,8 +701,11 @@ export class Cloth {
     const s=this.settings,count=this.frameSubsteps||s.substeps,raw=new ArrayBuffer(80),f=new Float32Array(raw),u=new Uint32Array(raw);
     f.set([this.frameDt/count,this.time,s.width,s.wind,s.stretch,s.bend,s.seam,s.thickness]);
     u.set([this.n,count,+s.selfCollision,this.hashSize],8);
-    f.set([s.gravity,s.damping,s.friction,s.sewDuration],12);f.set([s.strainLimit,s.swatchIterations||1,0,0],16);this.device.queue.writeBuffer(this.params,0,raw);
+    f.set([s.gravity,s.damping,s.friction,s.sewDuration],12);f.set([s.strainLimit,s.swatchIterations||1,(s.grip||0)/this.collisionPasses,0],16);this.device.queue.writeBuffer(this.params,0,raw);
   }
+  // Waistbands and button plackets repeat the body collision within a substep;
+  // each pass grips with its share, so the grip is the same for every garment.
+  get collisionPasses(){return 1+(this.waistBatches?.length?6:0)+(this.buttonBatches?.length&&this.collarWeld?1:0);}
   // A swatch is fifty vertices solved in one dispatch with no moving collider, so
   // its loaded tests may take the many small steps a stiff fabric needs. A garment
   // may not: each of its substeps is a set of dispatches and a collider pose.

@@ -1,4 +1,4 @@
-import { captureThumbnail } from '/webgpu/capture.js?v=2';
+import { captureThumbnail } from '/webgpu/capture.js?v=3';
 const root=location.pathname.replace(/\/$/,''),status=document.querySelector('#status'),progress=document.querySelector('#progress'),retry=document.querySelector('#retry');
 document.querySelector('#pattern').src=root+'/pattern.png';
 for(const [id,asset] of [['svg-link','pattern.svg'],['png-link','pattern.png']])document.getElementById(id).href=root+'/'+asset;

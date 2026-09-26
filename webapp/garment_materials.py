@@ -24,7 +24,7 @@ SUPPORT = {
                            'solver default. The solver damps velocity for the whole garment.'),
     'friction': ('garment', 'Mean over the garment by rest area; pieces without a value count at the '
                             'solver default. Used as the positional body-friction factor, which is '
-                            'not a Coulomb coefficient.'),
+                            'not a Coulomb coefficient, and scales the body grip.'),
     'thickness': ('garment', 'Raises the 4 mm numerical contact margin when a material is thicker. '
                              'It never lowers the margin and never replaces the measurement.'),
     'stretch_warp': ('stored', 'Garment panels use scalar distance constraints and a strain limiter, '
