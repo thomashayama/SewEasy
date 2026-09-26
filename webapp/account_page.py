@@ -34,7 +34,7 @@ from webapp.gui_widgets import (confirm_delete, open_share_dialog,
                                 preview_data_uri)
 
 
-def _mannequin_scene():
+def _mannequin_scene(width=260, height=400):
     """A small 3D stage matching the studio's lighting (the skin-tone
     calibration in display_to_base_rgba assumes these lights)"""
     camera = ui.scene.perspective_camera(fov=30)
@@ -42,7 +42,7 @@ def _mannequin_scene():
     camera.look_at_x = camera.look_at_y = 0
     camera.look_at_z = 1.25 * 2 / 3
     with ui.scene(
-        width=260, height=400, camera=camera, grid=False,
+        width=width, height=height, camera=camera, grid=False,
         background_color='#f7f5f0',
     ).classes('rounded') as scene:
         light_positions = np.array([
@@ -151,6 +151,8 @@ async def account_page(request: Request):
         store = Wardrobe(email, app.storage.user)
         favorites = Favorites(store)
         entries = await run.io_bound(favorites.list)
+        default = await run.io_bound(profiles.get_default_profile, email)
+        units = profiles.get_units(email)
 
         with ui.card().classes('se-stitch-card w-full'):
             with ui.row(wrap=False).classes('se-account-summary items-center gap-4 w-full'):
@@ -166,6 +168,57 @@ async def account_page(request: Request):
                 ui.space()
                 ui.button('Log out', on_click=lambda: ui.navigate.to('/auth/logout')) \
                     .props('outline size=sm icon=logout').classes('se-nowrap-button')
+
+        # The body new designs open on: the default profile, else the studio's standard body
+        if default:
+            measurements, skin, hair = default['measurements'], default.get('skin_color'), default['hair']
+        else:
+            measurements, skin, hair = profiles.default_measurements(), None, profiles.default_hair()
+        if not default:
+            note = 'No default measurements chosen, so new designs open on the standard body.'
+        elif default['role'] != 'owner':
+            note = f'Shared by {default["owner_name"]}. New designs open on this body.'
+        else:
+            note = 'New designs open on this body.'
+        # Before the stage is built: the Measurements editor's pattern. (A body
+        # never fitted before takes a few seconds; after that it is cached.)
+        try:
+            body_url = await run.io_bound(profile_body_glb_url, skin, measurements)
+            hair_url = await run.io_bound(profile_hair_glb_url, measurements, hair)
+        except ValueError as error:
+            body_url = hair_url = None
+            note = str(error)
+
+        async def edit_default():
+            if default:
+                arriving['profile'] = str(default['id'])
+            await show('measurements')
+
+        with ui.card().classes('se-stitch-card w-full'):
+            with ui.row(wrap=False).classes('se-mannequin-home w-full gap-6 items-start'):
+                scene = _mannequin_scene(208, 320)
+                with scene:
+                    for url in (body_url, hair_url):
+                        if url:
+                            scene.gltf(url).rotate(np.pi / 2, 0., 0.)
+                with ui.column().classes('se-mannequin-info gap-1 min-w-0'):
+                    ui.label('Default mannequin').classes('se-section-label text-lg')
+                    ui.label(default['name'] if default else profiles.DEFAULT_BODIES['all'])                         .classes('se-library-name')
+                    ui.label(note).classes('se-param-label')
+                    with ui.element('div').classes('se-mannequin-stats'):
+                        shown = guide.editor_values(measurements)
+                        for key, label in (('height', 'Height'), ('bust', 'Bust'), ('waist', 'Waist'),
+                                           ('hips', 'Hips'), ('inseam', 'Inseam')):
+                            if key in shown:
+                                ui.label(label).classes('se-param-label')
+                                ui.label(f'{guide.display_value(key, shown[key], units):.1f} {units}')                                     .classes('se-mono')
+                    if not default:
+                        action = 'Choose default measurements'
+                    elif default['role'] == 'viewer':
+                        action = 'View measurements'
+                    else:
+                        action = 'Edit measurements'
+                    ui.button(action, on_click=edit_default)                         .props('outline size=sm icon=straighten no-caps').classes('se-nowrap-button mt-3')
 
         def open_favorite(entry):
             if entry['favorite_kind'] == 'share':
@@ -246,7 +299,7 @@ async def account_page(request: Request):
                 ui.label('Favorites').classes('se-section-label text-lg')
                 all_link = ui.link('Open in your wardrobe', '/?tab=favorites').classes('text-sm')
             grid = ui.element('div').classes('w-full')
-            previews = ThumbnailQueue(store)
+            previews = ThumbnailQueue(store) if entries else None
             render_favorites()
         # Render any of your own favorites still missing a 3D thumbnail
         for entry in entries:

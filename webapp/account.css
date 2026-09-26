@@ -12,6 +12,9 @@
 .se-account .se-nowrap-button {flex-shrink:0;}
 .se-account .se-nowrap-button .q-btn__content {flex-wrap:nowrap; white-space:nowrap;}
 .se-account-identity {flex:1 1 auto;}
+/* Account home: the default mannequin beside its key measurements. */
+.se-mannequin-info {flex:1 1 auto;}
+.se-mannequin-stats {display:grid; grid-template-columns:max-content max-content; gap:2px 18px; margin-top:10px; font-size:13px;}
 .se-account-identity .q-label, .se-account-identity > div {overflow-wrap:anywhere;}
 /* Skin tone and hair, edited with the measurements. */
 .se-skin-end {font-size:11px; flex-shrink:0;}
@@ -44,7 +47,8 @@
  /* Measurements: the title above its actions, then the fields in one column, then the mannequin. */
  /* ui.row(wrap=False) sets flex-wrap inline. */
  .se-measure-head, .se-measure-actions, .se-measure-modes {flex-wrap:wrap!important; gap:8px;}
- .se-measure-body {flex-direction:column; align-items:stretch;}
+ .se-measure-body, .se-mannequin-home {flex-direction:column; align-items:stretch;}
+ .se-mannequin-home > .nicegui-scene {align-self:center;}
  .se-measure-figure {order:2; align-self:center;}
  .se-measure-editor {width:100%;}
  .se-skin-row {flex-wrap:wrap!important; row-gap:4px;}
